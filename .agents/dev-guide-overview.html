@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hoang-sdd-kit — Overview</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #3fb950;
+    --accent-3: #f0883e;
+    --accent-4: #f778ba;
+    --accent-5: #a371ff;
+    --mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+  #deck {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 80px;
+    animation: fadeIn 0.4s ease;
+  }
+  .slide.active { display: flex; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Progress bar */
+  #progress {
+    position: fixed;
+    bottom: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-5));
+    transition: width 0.3s ease;
+    z-index: 1000;
+  }
+
+  /* Nav */
+  #nav {
+    position: fixed;
+    bottom: 16px;
+    right: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 1000;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  #nav button {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    width: 32px; height: 32px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  #nav button:hover { border-color: var(--accent); color: var(--accent); }
+  #counter { min-width: 50px; text-align: center; }
+
+  /* Typography */
+  h1 { font-size: 3.2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+  h2 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+  h3 { font-size: 1.1rem; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+  p { font-size: 1.05rem; line-height: 1.6; color: var(--text-dim); }
+  .lead { font-size: 1.3rem; color: var(--text-dim); margin-top: 16px; }
+  code {
+    font-family: var(--mono);
+    background: var(--surface-2);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: var(--accent);
+    border: 1px solid var(--border);
+  }
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+  }
+
+  /* Slide-specific layouts */
+  .slide-title { text-align: center; }
+  .slide-title .tag {
+    background: rgba(88,166,255,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(88,166,255,0.3);
+  }
+  .slide-title h1 {
+    background: linear-gradient(135deg, var(--accent), var(--accent-5), var(--accent-4));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .slide-title .subtitle { font-size: 1.4rem; color: var(--text-dim); margin-top: 12px; }
+
+  /* Two column */
+  .two-col {
+    display: flex;
+    gap: 40px;
+    width: 100%;
+    max-width: 1000px;
+  }
+  .col {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+  }
+  .col.bad { border-color: rgba(248,81,73,0.3); }
+  .col.good { border-color: rgba(63,185,80,0.3); }
+  .col h2 { font-size: 1.5rem; }
+  .col .icon { font-size: 2rem; margin-bottom: 12px; }
+  .col ul { list-style: none; margin-top: 16px; }
+  .col ul li {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    padding: 6px 0;
+    padding-left: 24px;
+    position: relative;
+  }
+  .col ul li::before { content: '▸'; position: absolute; left: 0; color: var(--accent); }
+  .col.bad ul li::before { color: #f85149; }
+  .col.good ul li::before { color: var(--accent-2); }
+
+  /* Flow diagram */
+  .flow-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-width: 1100px;
+  }
+  .flow-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    text-align: center;
+    min-width: 120px;
+    transition: transform 0.2s;
+  }
+  .flow-step:hover { transform: translateY(-4px); border-color: var(--accent); }
+  .flow-step .num { font-family: var(--mono); font-size: 0.75rem; color: var(--accent); }
+  .flow-step .name { font-weight: 700; font-size: 0.95rem; margin: 4px 0; }
+  .flow-step .skill { font-family: var(--mono); font-size: 0.75rem; color: var(--text-dim); }
+  .flow-arrow { color: var(--border); font-size: 1.5rem; }
+
+  /* Card grid */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    width: 100%;
+    max-width: 1000px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    transition: all 0.2s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card .card-icon { font-size: 1.5rem; margin-bottom: 8px; }
+  .card .card-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
+  .card .card-desc { font-size: 0.8rem; color: var(--text-dim); line-height: 1.4; }
+  .card.highlight {
+    border-color: rgba(63,185,80,0.4);
+    background: rgba(63,185,80,0.05);
+  }
+  .card.highlight .card-title { color: var(--accent-2); }
+
+  /* KB tree */
+  .kb-tree {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.7;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 36px;
+    max-width: 680px;
+    width: 100%;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+  .kb-tree .dir { color: var(--accent); font-weight: 600; }
+  .kb-tree .file { color: var(--text); }
+  .kb-tree .cmt { color: var(--text-dim); }
+  .kb-tree .new { color: var(--accent-2); font-weight: 600; }
+  .kb-tree .new::after { content: ' ← NEW'; font-size: 0.7rem; color: var(--accent-2); }
+
+  /* Full text */
+  .text-full { max-width: 800px; text-align: left; }
+  .text-full .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .text-full .step:last-child { border-bottom: none; }
+  .text-full .step .num {
+    font-family: var(--mono);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 40px;
+  }
+  .text-full .step .content h3 { margin-bottom: 2px; }
+  .text-full .step .content p { font-size: 0.9rem; }
+
+  /* CTA */
+  .closing { text-align: center; }
+  .closing .cta-box {
+    margin-top: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 40px;
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--accent-2);
+  }
+
+  /* Three-perspective table */
+  .perspectives {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+    max-width: 900px;
+  }
+  .perspective {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .perspective .p-icon { font-size: 1.8rem; margin-bottom: 8px; }
+  .perspective .p-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
+  .perspective .p-q { font-size: 0.8rem; color: var(--accent); font-family: var(--mono); }
+  .perspective .p-scope { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+  <!-- Slide 1: Title -->
+  <div class="slide slide-title active">
+    <div class="tag">Spec-Driven Development Kit</div>
+    <h1>hoang-sdd-kit</h1>
+    <div class="subtitle">Architecture-first SDD for university Software Architecture projects</div>
+    <div style="margin-top: 32px; font-family: var(--mono); font-size: 0.9rem; color: var(--text-dim);">
+      KB-driven · 7-phase pipeline · 11 skills · agent-ready
+    </div>
+  </div>
+
+  <!-- Slide 2: SDD vs Traditional -->
+  <div class="slide">
+    <h2>Why Spec-Driven Development?</h2>
+    <p class="lead" style="text-align:center;">Stop coding before thinking. Start with the spec.</p>
+    <div class="two-col" style="margin-top: 32px;">
+      <div class="col bad">
+        <div class="icon">⚠️</div>
+        <h2 style="color: #f85149;">Traditional</h2>
+        <ul>
+          <li>Code first, document later (or never)</li>
+          <li>Architecture lives in someone's head</li>
+          <li>Decisions are forgotten or lost</li>
+          <li>No traceability from requirement to code</li>
+          <li>Onboarding = reading source code</li>
+        </ul>
+      </div>
+      <div class="col good">
+        <div class="icon">✅</div>
+        <h2 style="color: var(--accent-2);">SDD Kit</h2>
+        <ul>
+          <li>Spec before code — every feature</li>
+          <li>KB is the single source of truth</li>
+          <li>ADRs record why decisions were made</li>
+          <li>Full traceability: spec → plan → tasks → code</li>
+          <li>Onboarding = read the KB</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 3: 7-Phase Workflow -->
+  <div class="slide">
+    <h2>The 7-Phase SDD Pipeline</h2>
+    <p class="lead" style="text-align:center;">From feature idea to converged implementation</p>
+    <div class="flow-container" style="margin-top: 36px;">
+      <div class="flow-step">
+        <div class="num">PHASE 0</div>
+        <div class="name">Orchestrate</div>
+        <div class="skill">/hoang-sdd-on</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">PHASE 1</div>
+        <div class="name">Specify</div>
+        <div class="skill">/hoang-sdd-specify</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">PHASE 2</div>
+        <div class="name">Plan</div>
+        <div class="skill">/hoang-sdd-plan</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">PHASE 3</div>
+        <div class="name">Tasks</div>
+        <div class="skill">/hoang-sdd-tasks</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">PHASE 4</div>
+        <div class="name">Implement</div>
+        <div class="skill">/hoang-sdd-implement</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">PHASE 5</div>
+        <div class="name">Analyze</div>
+        <div class="skill">/hoang-sdd-analyze</div>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="num">PHASE 6</div>
+        <div class="name">Converge</div>
+        <div class="skill">/hoang-sdd-converge</div>
+      </div>
+    </div>
+    <p style="margin-top: 28px; font-family: var(--mono); font-size: 0.85rem; color: var(--text-dim);">
+      Each phase produces artifacts. Each artifact feeds the next phase. The KB grounds every phase.
+    </p>
+  </div>
+
+  <!-- Slide 4: KB Structure (with flows/ highlighted) -->
+  <div class="slide">
+    <h2>Knowledge Base Structure</h2>
+    <p class="lead" style="text-align:center;">Single source of truth — progressive disclosure, never loaded all at once</p>
+    <div class="kb-tree" style="margin-top: 24px;">
+<span class="file">kb/</span>
+├── <span class="file">INDEX.md</span>              <span class="cmt"># KB sitemap</span>
+├── <span class="file">CONSTITUTION.md</span>       <span class="cmt"># Non-negotiable principles</span>
+├── <span class="file">ARCHITECTURE.md</span>       <span class="cmt"># System architecture</span>
+├── <span class="file">DESIGN.md</span>             <span class="cmt"># FE/UX design system</span>
+├── <span class="file">MODULES.md</span>            <span class="cmt"># Module boundaries (index)</span>
+├── <span class="file">GLOSSARY.md</span>           <span class="cmt"># Domain terms</span>
+├── <span class="file">CONTRIBUTING.md</span>       <span class="cmt"># Team conventions</span>
+├── <span class="dir">ADR/</span>                   <span class="cmt"># Why + How (decisions)</span>
+├── <span class="dir">contracts/</span>             <span class="cmt"># API/data contracts (SSoT)</span>
+├── <span class="dir">modules/</span>               <span class="cmt"># Per-module architecture (WHAT)</span>
+├── <span class="dir new">flows/</span>              <span class="cmt"># E2E business use cases (cross-module)</span>
+└── <span class="dir">patterns/</span>              <span class="cmt"># Design pattern catalog</span>
+    </div>
+  </div>
+
+  <!-- Slide 5: Three Perspectives -->
+  <div class="slide">
+    <h2>Three Perspectives, One KB</h2>
+    <p class="lead" style="text-align:center;">Module files, flow files, and ADRs work together</p>
+    <div class="perspectives">
+      <div class="perspective" style="border-color: rgba(88,166,255,0.3);">
+        <div class="p-icon">📦</div>
+        <div class="p-title">Module Files</div>
+        <div class="p-q">What's inside?</div>
+        <div class="p-scope">kb/modules/{name}.md</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 8px; line-height: 1.5;">
+          Components, design patterns, internal data flows, sequence diagrams
+        </div>
+      </div>
+      <div class="perspective" style="border-color: rgba(63,185,80,0.3);">
+        <div class="p-icon" style="color: var(--accent-2);">🔄</div>
+        <div class="p-title" style="color: var(--accent-2);">Flow Files</div>
+        <div class="p-q" style="color: var(--accent-2);">How do modules cooperate?</div>
+        <div class="p-scope">kb/flows/{name}.md</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 8px; line-height: 1.5;">
+          E2E steps, preconditions, business rules, alternative & error paths
+        </div>
+      </div>
+      <div class="perspective" style="border-color: rgba(247,120,186,0.3);">
+        <div class="p-icon" style="color: var(--accent-4);">💡</div>
+        <div class="p-title" style="color: var(--accent-4);">ADR Files</div>
+        <div class="p-q" style="color: var(--accent-4);">Why was it decided?</div>
+        <div class="p-scope">kb/ADR/000X-*.md</div>
+        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 8px; line-height: 1.5;">
+          Decision context, rationale, alternatives, consequences
+        </div>
+      </div>
+    </div>
+    <p style="margin-top: 24px; font-size: 0.85rem; color: var(--text-dim); text-align: center;">
+      The 4+1 View Model's "Scenarios" view — the glue that ties modules together
+    </p>
+  </div>
+
+  <!-- Slide 6: 11 Skills -->
+  <div class="slide">
+    <h2>11 Skills, 3 Categories</h2>
+    <div class="card-grid" style="margin-top: 24px;">
+      <div class="card">
+        <div class="card-icon">🧱</div>
+        <div class="card-title">hoang-kb-init</div>
+        <div class="card-desc">Initialize KB from project description</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">📝</div>
+        <div class="card-title">hoang-kb-update</div>
+        <div class="card-desc">Update KB with changes, maintain cross-refs</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">📖</div>
+        <div class="card-title">hoang-kb-explain</div>
+        <div class="card-desc">Explain any KB file or cross-reference</div>
+      </div>
+      <div class="card" style="grid-column: span 3; border-color: rgba(88,166,255,0.2);">
+        <div style="font-family: var(--mono); font-size: 0.75rem; color: var(--text-dim); margin-bottom: 8px;">SDD PIPELINE (7 phases)</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔮</div>
+        <div class="card-title">hoang-sdd-on</div>
+        <div class="card-desc">Orchestrator — proposes the workflow</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">📋</div>
+        <div class="card-title">hoang-sdd-specify</div>
+        <div class="card-desc">Feature spec → spec.md</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🏗️</div>
+        <div class="card-title">hoang-sdd-plan</div>
+        <div class="card-desc">Implementation plan, contracts, data model</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">✂️</div>
+        <div class="card-title">hoang-sdd-tasks</div>
+        <div class="card-desc">Decompose plan into phased tasks</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <div class="card-title">hoang-sdd-implement</div>
+        <div class="card-desc">Execute tasks, write code + lessons</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔍</div>
+        <div class="card-title">hoang-sdd-analyze</div>
+        <div class="card-desc">Cross-artifact consistency check (read-only)</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🎯</div>
+        <div class="card-title">hoang-sdd-converge</div>
+        <div class="card-desc">Find spec↔code gaps, append remediation</div>
+      </div>
+      <div class="card" style="grid-column: span 3;">
+        <div class="card-icon">📊</div>
+        <div class="card-title">hoang-sdd-status</div>
+        <div class="card-desc">Dashboard — KB health, feature progress, task completion</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 7: Quick Start -->
+  <div class="slide">
+    <h2>Quick Start</h2>
+    <p class="lead" style="text-align:center;">From zero to first feature in 5 steps</p>
+    <div class="text-full" style="margin-top: 24px;">
+      <div class="step">
+        <div class="num">01</div>
+        <div class="content">
+          <h3>Initialize the KB</h3>
+          <p>Run <code>/hoang-kb-init "e-commerce with catalog, cart, checkout"</code> — creates all KB files including <code>modules/</code> and <code>flows/</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <div class="content">
+          <h3>Customize & Assign Owners</h3>
+          <p>Fill <code>CONSTITUTION.md</code>, adjust <code>ARCHITECTURE.md</code>, assign module owners to <code>kb/modules/{name}.md</code> and flow owners to <code>kb/flows/{name}.md</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <div class="content">
+          <h3>Start Your First Feature</h3>
+          <p>Run <code>/hoang-sdd-on "allow user to login"</code> — the orchestrator proposes the full 7-phase workflow</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">04</div>
+        <div class="content">
+          <h3>Execute the Pipeline</h3>
+          <p><code>/hoang-sdd-specify</code> → <code>/hoang-sdd-plan</code> → <code>/hoang-sdd-tasks</code> → <code>/hoang-sdd-implement</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">05</div>
+        <div class="content">
+          <h3>Verify & Converge</h3>
+          <p>Run <code>/hoang-sdd-analyze</code> for consistency, then <code>/hoang-sdd-converge</code> to close any gaps</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide 8: Closing CTA -->
+  <div class="slide closing">
+    <div class="tag" style="background: rgba(63,185,80,0.12); color: var(--accent-2); border: 1px solid rgba(63,185,80,0.3);">Ready to publish</div>
+    <h1 style="background: linear-gradient(135deg, var(--accent-2), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+      Ship with confidence
+    </h1>
+    <p class="lead" style="max-width: 600px; text-align: center;">
+      Every decision is documented. Every requirement is traceable. Every module knows its boundaries. Every business flow is mapped end-to-end.
+    </p>
+    <div class="cta-box">
+      /hoang-kb-init "your project description"
+    </div>
+    <p style="margin-top: 20px; font-family: var(--mono); font-size: 0.8rem; color: var(--text-dim);">
+      hoang-sdd-kit · Spec-Driven Development for university projects
+    </p>
+  </div>
+
+</div>
+
+<div id="progress"></div>
+<div id="nav">
+  <button onclick="prev()">◀</button>
+  <span id="counter">1 / 8</span>
+  <button onclick="next()">▶</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let current = 0;
+  const total = slides.length;
+
+  function show(n) {
+    slides[current].classList.remove('active');
+    current = Math.max(0, Math.min(total - 1, n));
+    slides[current].classList.add('active');
+    document.getElementById('counter').textContent = `${current + 1} / ${total}`;
+    document.getElementById('progress').style.width = `${((current + 1) / total) * 100}%`;
+  }
+
+  function next() { if (current < total - 1) show(current + 1); }
+  function prev() { if (current > 0) show(current - 1); }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(total - 1);
+  });
+
+  show(0);
+</script>
+</body>
+</html>
