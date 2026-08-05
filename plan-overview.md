@@ -141,6 +141,8 @@ The KB is the single source of truth. Each file has a clear owner responsible fo
 | `kb/CONTRIBUTING.md` | **Hoàng** | Git workflow, commit conventions, PR process, code style, review checklist |
 | `kb/ADR/` | **Hoàng** (core ADRs) + module owner (module-specific ADRs) | Architecture decisions. Core ADRs (monolith choice, plugin arch, event-driven) by Hoàng. Module-specific ADRs by the module owner. |
 | `kb/contracts/` | **Each module owner** writes their own, **Hoàng reviews** | `market-data.contract.md` → Hoàng, `strategy.contract.md` → Member B, `news.contract.md` → Member C, `events.contract.md` → Member D |
+| `kb/modules/` | **Each module owner** writes their own, **Hoàng reviews** | Per-module detailed architecture. `modules/market-data.md` → Hoàng, `modules/strategy-engine.md` → Member B, `modules/news-sentiment.md` → Member C, `modules/event-infrastructure.md` → Member D |
+| `kb/flows/` | **Flow owner** (primary module owner), **Hoàng reviews** | E2E business use case flows. `flows/realtime-market-data.md` → Hoàng, `flows/strategy-backtest.md` → Member B, `flows/strategy-search-loop.md` → Member D, `flows/news-sentiment-pipeline.md` → Member C, `flows/composite-with-sentiment.md` → Member B, `flows/leaderboard-update.md` → Member D |
 | `kb/patterns/` | **Hoàng** (initial) → any member can add | Design patterns used (Strategy, Adapter, Observer, Registry, etc.) |
 
 ### 3.2 KB Maintenance Rules
@@ -200,7 +202,7 @@ Every member must be able to explain **at least 2 architectural patterns** they 
 | `hooks/useWebSocket.ts` | WebSocket connection hook |
 | `hooks/useMarketData.ts` | Market data fetching + real-time updates hook |
 
-**KB Ownership**: INDEX, CONSTITUTION, ARCHITECTURE, MODULES, CONTRIBUTING, core ADRs, contracts/market-data, patterns
+**KB Ownership**: INDEX, CONSTITUTION, ARCHITECTURE, MODULES, CONTRIBUTING, core ADRs, contracts/market-data, patterns, **modules/market-data.md**, **flows/realtime-market-data.md**
 
 ---
 
@@ -230,7 +232,7 @@ Member B owns **the domain logic** of strategy analysis, composition, and search
 | `components/strategy/CompositeBuilder.tsx` | Drag/combine strategies into composites |
 | `components/strategy/TradeTable.tsx` | Trade detail table with P&L |
 
-**KB Ownership**: contracts/strategy, ADRs for Plugin Architecture (ADR-003 co-author), Strategy Versioning
+**KB Ownership**: contracts/strategy, ADRs for Plugin Architecture (ADR-003 co-author), Strategy Versioning, **modules/strategy-engine.md**, **flows/strategy-backtest.md**, **flows/composite-with-sentiment.md**
 
 ---
 
@@ -261,7 +263,7 @@ Member B owns **the domain logic** of strategy analysis, composition, and search
 | `components/news/SentimentChart.tsx` | Sentiment timeline visualization (POSITIVE/NEGATIVE/NEUTRAL over time) |
 | `components/news/SentimentGauge.tsx` | Current aggregate sentiment gauge |
 
-**KB Ownership**: contracts/news, ADRs for News Adapter Pattern, Sentiment Service Isolation
+**KB Ownership**: contracts/news, ADRs for News Adapter Pattern, Sentiment Service Isolation, **modules/news-sentiment.md**, **flows/news-sentiment-pipeline.md**
 
 ---
 
@@ -295,7 +297,7 @@ Member D owns the **"nervous system"** of the application — the event bus, the
 | `components/common/` | WebSocketProvider, LoadingState, ErrorBoundary, shared UI components |
 | Design system (DESIGN.md) | Color palette, typography, spacing, component library |
 
-**KB Ownership**: contracts/events, DESIGN.md, ADRs for Event-Driven Architecture (ADR-005 co-author), Job Queue Pattern, Leaderboard as Observer
+**KB Ownership**: contracts/events, DESIGN.md, ADRs for Event-Driven Architecture (ADR-005 co-author), Job Queue Pattern, Leaderboard as Observer, **modules/event-infrastructure.md**, **flows/strategy-search-loop.md**, **flows/leaderboard-update.md**
 
 ---
 
@@ -366,10 +368,10 @@ This section explains the **event-driven communication** that Member D designs. 
 | **Tue** | Write ARCHITECTURE.md, MODULES.md, CONSTITUTION.md, CONTRIBUTING.md. Set up Prisma schema + DB. Initialize NestJS module structure. | Scaffold Strategy Engine NestJS module. Create `strategy.registry.ts`, empty `IStrategy` implementations. Prove `register(MAStrategy)` works. | Scaffold News NestJS module. Create `INewsProvider` interface, empty `NewsService`. Scaffold Python FastAPI service with `/analyze` stub. | Scaffold Next.js App Router. Create layout, navigation, WebSocket provider. Set up chart grid with empty panels. Scaffold `events/` NestJS module with EventEmitter2 config. |
 | **Wed** | Write ADR-001 (Modular Monolith), ADR-002 (Plugin Architecture), ADR-003 (Event-Driven), ADR-004 (Adapter Pattern). Define shared event type interfaces. | Implement `MAStrategy` (first real strategy). Prove Registry + analyze() pipeline end-to-end with mock data. | Implement first `INewsProvider` (RSS adapter). Prove collection → normalization → storage pipeline with mock data. | Implement `CandlestickChart` component with lightweight-charts and mock candle data. Implement EventEmitter2 wrapper. Define all event types (`MarketDataUpdated`, `BacktestRequested`, `BacktestCompleted`, `LeaderboardUpdated`). Write `events.contract.md`. |
 | **Thu** | Implement `BinanceAdapter` (historical API first). `MarketDataService` with caching. Prisma migrations. Write `market-data.contract.md`. | Implement `RSIStrategy`, `BollingerBandsStrategy`, `SupportResistanceStrategy`. Write `strategy.contract.md`. | Implement Python sentiment service (VADER). Wire `SentimentClient` in NestJS. Prove: RSS news → analyze → score. Write `news.contract.md`. | Implement `MultiTimeframeGrid` — 4 charts, independent timeframes. Real-time chart updates with mock WebSocket. **Scaffold Job Queue**: in-memory queue with worker stub, `IJobQueue` interface. Write DESIGN.md. |
-| **Fri** | **Architecture Review Day**: All members merge skeletons. Validate contracts. Verify module boundaries. Integration test: market data → event bus → chart renders. Write ADR-005 (Job Queue for Backtesting). Update KB. | Demo 4 strategies producing signals. Verify `register(newStrategy)` requires zero changes elsewhere. | Demo news collection + sentiment analysis pipeline. Verify `SentimentStrategy` can plug into `StrategyRegistry`. | Demo: event bus relaying events between mock publishers/subscribers. 4-chart dashboard with mock real-time data. Present DESIGN.md for review. |
+| **Fri** | **Architecture Review Day**: All members merge skeletons. Validate contracts. Verify module boundaries. Each member presents their filled `kb/modules/{name}.md` and `kb/flows/{name}.md` files. Integration test: market data → event bus → chart renders. Write ADR-005 (Job Queue for Backtesting). Update KB. | Demo 4 strategies producing signals. Verify `register(newStrategy)` requires zero changes elsewhere. Present `modules/strategy-engine.md` + `flows/strategy-backtest.md`. | Demo news collection + sentiment analysis pipeline. Verify `SentimentStrategy` can plug into `StrategyRegistry`. Present `modules/news-sentiment.md` + `flows/news-sentiment-pipeline.md`. | Demo: event bus relaying events between mock publishers/subscribers. 4-chart dashboard with mock real-time data. Present DESIGN.md + `modules/event-infrastructure.md` + `flows/leaderboard-update.md`. |
 
 **W1 Deliverables**:
-- ✅ KB fully populated (all files with assigned owners)
+- ✅ KB fully populated (all files with assigned owners, including `modules/` and `flows/` directories)
 - ✅ Monorepo: `apps/backend` (NestJS) + `apps/frontend` (Next.js) + `libs/shared`
 - ✅ Shared types & interfaces package published
 - ✅ Prisma schema + migrations deployed
@@ -648,6 +650,20 @@ crypto-strategy-lab/
 │   ├── CONTRIBUTING.md                  # Hoàng
 │   ├── ADR/                             # Hoàng (core) + module owners
 │   ├── contracts/                       # Module owners (Hoàng reviews)
+│   ├── modules/                         # Per-module architecture (module owners)
+│   │   ├── README.md                    # Hoàng (index)
+│   │   ├── market-data.md              # Hoàng
+│   │   ├── strategy-engine.md          # Member B
+│   │   ├── news-sentiment.md            # Member C
+│   │   └── event-infrastructure.md      # Member D
+│   ├── flows/                           # E2E business use case flows (flow owners)
+│   │   ├── README.md                    # Hoàng (index)
+│   │   ├── realtime-market-data.md     # Hoàng
+│   │   ├── strategy-backtest.md         # Member B
+│   │   ├── strategy-search-loop.md     # Member D
+│   │   ├── news-sentiment-pipeline.md  # Member C
+│   │   ├── composite-with-sentiment.md  # Member B
+│   │   └── leaderboard-update.md        # Member D
 │   └── patterns/                        # Hoàng (seed) → all contribute
 │
 ├── sdd_artifacts/                       # Per-feature SDD artifacts

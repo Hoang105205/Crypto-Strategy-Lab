@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Strategy Lab — Plan Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #21262d;
+  --ink: #e6edf3;
+  --ink-2: #8b949e;
+  --ink-3: #484f58;
+  --line: #30363d;
+  --accent: #58a6ff;
+  --accent-light: #1a2332;
+  --green: #3fb950;
+  --green-light: #0d2818;
+  --red: #f85149;
+  --red-light: #2d1215;
+  --amber: #d29922;
+  --amber-light: #2a1f0e;
+  --purple: #bc8cff;
+  --purple-light: #1e1533;
+  --cyan: #39d2c0;
+  --pink: #f778ba;
+  --font: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--ink); overflow: hidden; -webkit-font-smoothing: antialiased; }
+
+.slide {
+  width: 100vw; height: 100vh; height: 100dvh; display: none; flex-direction: column;
+  justify-content: center; align-items: center;
+  padding: clamp(28px, 5vh, 56px) clamp(36px, 6vw, 80px) clamp(48px, 7vh, 64px);
+  position: relative; overflow: hidden;
+}
+.slide.active { display: flex; }
+
+.sn {
+  position: absolute; top: clamp(16px, 2.5vh, 24px); right: clamp(24px, 3vw, 40px);
+  font: 500 clamp(11px, 1.1vw, 13px) var(--mono); color: var(--ink-3); letter-spacing: .06em;
+}
+
+h1 {
+  font-size: clamp(2.6rem, 5.5vw, 4.5rem); font-weight: 800; line-height: 1.08;
+  letter-spacing: -.035em;
+}
+h2 {
+  font-size: clamp(1.6rem, 3.2vw, 2.6rem); font-weight: 700; line-height: 1.15;
+  letter-spacing: -.025em; margin-bottom: clamp(8px, 1.2vh, 16px);
+}
+h3 {
+  font-size: clamp(1rem, 1.5vw, 1.3rem); font-weight: 600; line-height: 1.3;
+}
+p, li {
+  font-size: clamp(.9rem, 1.25vw, 1.12rem); line-height: 1.6; color: var(--ink-2);
+}
+code {
+  font-family: var(--mono); font-size: .86em; background: var(--surface-2);
+  padding: 2px 8px; border-radius: 4px; color: var(--cyan);
+}
+.subtitle {
+  font-size: clamp(1rem, 1.7vw, 1.35rem); color: var(--ink-2); font-weight: 400;
+  margin-top: clamp(6px, 1vh, 12px); max-width: 720px; text-align: center;
+}
+.accent { color: var(--accent); }
+.accent-green { color: var(--green); }
+.accent-purple { color: var(--purple); }
+
+.tag {
+  display: inline-block; padding: 3px 12px; border-radius: 100px;
+  font: 600 clamp(11px, 1vw, 13px) var(--mono); letter-spacing: .03em;
+  margin-bottom: clamp(10px, 1.6vh, 18px);
+}
+.tag-blue { background: var(--accent-light); color: var(--accent); border: 1px solid rgba(88,166,255,.25); }
+.tag-green { background: var(--green-light); color: var(--green); border: 1px solid rgba(63,185,80,.25); }
+.tag-red { background: var(--red-light); color: var(--red); border: 1px solid rgba(248,81,73,.25); }
+.tag-amber { background: var(--amber-light); color: var(--amber); border: 1px solid rgba(210,153,34,.25); }
+.tag-purple { background: var(--purple-light); color: var(--purple); border: 1px solid rgba(188,140,255,.25); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: clamp(8px, 1vw, 12px); padding: clamp(12px, 1.6vw, 20px);
+}
+.card h3 { margin-bottom: clamp(4px, .6vh, 8px); }
+.card-accent { border-left: 3px solid var(--accent); }
+.card-green { border-left: 3px solid var(--green); }
+.card-purple { border-left: 3px solid var(--purple); }
+.card-amber { border-left: 3px solid var(--amber); }
+.card-pink { border-left: 3px solid var(--pink); }
+.card .role { font: 600 clamp(10px, .95vw, 12px) var(--mono); letter-spacing: .04em; margin-bottom: clamp(4px, .6vh, 8px); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(10px, 1.2vw, 16px); width: 100%; max-width: 1080px; }
+.grid-4 { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(10px, 1.2vw, 16px); width: 100%; max-width: 1120px; }
+
+.bullet { list-style: none; padding: 0; width: 100%; max-width: 860px; }
+.bullet li {
+  padding: clamp(3px, .5vh, 6px) 0 clamp(3px, .5vh, 6px) 18px; position: relative;
+  font-size: clamp(.9rem, 1.2vw, 1.1rem);
+}
+.bullet li::before {
+  content: ''; position: absolute; left: 0; top: clamp(11px, 1.4vh, 16px);
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.bullet li.green::before { background: var(--green); }
+.bullet li.purple::before { background: var(--purple); }
+.bullet li.amber::before { background: var(--amber); }
+
+.tbl {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: clamp(.78rem, 1.05vw, .98rem);
+  border: 1px solid var(--line); border-radius: clamp(8px, 1vw, 12px); overflow: hidden;
+}
+.tbl th {
+  background: var(--surface-2); color: var(--ink);
+  padding: clamp(6px, .9vh, 12px) clamp(8px, 1.1vw, 14px);
+  font-weight: 600; text-align: left; border-bottom: 1px solid var(--line);
+}
+.tbl td {
+  padding: clamp(5px, .8vh, 10px) clamp(8px, 1.1vw, 14px);
+  border-bottom: 1px solid var(--line); color: var(--ink-2);
+}
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:nth-child(even) td { background: var(--surface); }
+.tbl td strong, .tbl td b { color: var(--ink); }
+.tbl .mono { font-family: var(--mono); font-size: .9em; color: var(--cyan); }
+
+.mermaid-wrap { width: 100%; max-width: 940px; display: flex; justify-content: center; padding: clamp(8px, 1.4vh, 16px) 0; }
+.mermaid-wrap pre.mermaid { background: transparent; text-align: center; font-size: clamp(12px, 1.1vw, 15px); }
+.slide-hero-diagram .mermaid-wrap { max-width: 1080px; }
+
+.nav {
+  position: fixed; bottom: 0; left: 0; right: 0; height: 40px;
+  background: var(--surface); border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; gap: 16px; z-index: 99;
+}
+.nav button {
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  padding: 5px 18px; border-radius: 6px; font: 500 13px var(--font); cursor: pointer;
+}
+.nav button:hover { border-color: var(--accent); color: var(--accent); }
+.nav button:disabled { opacity: .25; cursor: default; border-color: var(--line); color: var(--ink-3); }
+.nav span { color: var(--ink-3); font: 500 12px var(--mono); }
+
+.closing-box {
+  margin-top: clamp(16px, 2.6vh, 28px);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: clamp(8px, 1vw, 12px);
+  padding: clamp(14px, 2vh, 22px) clamp(20px, 3vw, 36px);
+  font: 500 clamp(.9rem, 1.3vw, 1.15rem) var(--mono); color: var(--green);
+  text-align: center; line-height: 1.7;
+}
+
+@media print { .slide { display:flex !important; page-break-after:always; height:auto; min-height:100vh; } .nav { display:none; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- 01: Title -->
+<div class="slide active">
+  <span class="sn">01 / 20</span>
+  <span class="tag tag-blue">Software Architecture · Project Plan</span>
+  <h1>Crypto <span class="accent">Strategy Lab</span></h1>
+  <p class="subtitle">Analyze, combine, and evaluate crypto trading strategies — with real-time Binance data, backtesting, ranking, and a continuous search loop.</p>
+  <p style="margin-top: clamp(14px, 2.4vh, 24px); font: 500 clamp(.8rem, 1vw, .95rem) var(--mono); color: var(--ink-3);">
+    4 fullstack members · 4 weeks · Modular Monolith
+  </p>
+</div>
+
+<!-- 02: Core Thesis -->
+<div class="slide">
+  <span class="sn">02 / 20</span>
+  <span class="tag tag-green">Core Thesis</span>
+  <h2>Architecture quality over <span class="accent-green">trading profit</span></h2>
+  <ul class="bullet" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <li class="green">The grading target is <strong style="color:var(--ink)">modifiability, scalability, extensibility</strong> — not P&amp;L</li>
+    <li>New strategy → <code>1 file + 1 register() call</code></li>
+    <li>New search algorithm → <code>1 class implementing IStrategyGenerator</code></li>
+    <li>New data provider → <code>1 class implementing IMarketDataAdapter</code></li>
+    <li class="purple">Every extension point must be <strong style="color:var(--ink)">demonstrable in the demo</strong></li>
+  </ul>
+</div>
+
+<!-- 03: Key Decisions -->
+<div class="slide">
+  <span class="sn">03 / 20</span>
+  <span class="tag tag-blue">Architecture Decisions</span>
+  <h2>The stack is decided <span class="accent">up front</span></h2>
+  <div style="width:100%; max-width:1000px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:26%">Decision</th><th style="width:30%">Choice</th><th>Rationale</th></tr>
+      <tr><td><b>Architecture</b></td><td class="mono">Modular Monolith</td><td>4 people / 4 weeks. Clean boundaries now, extract later.</td></tr>
+      <tr><td><b>Backend</b></td><td class="mono">NestJS (TS)</td><td>Each NestJS module maps to a domain module. Built-in DI + events.</td></tr>
+      <tr><td><b>Frontend</b></td><td class="mono">Next.js (TS)</td><td>App router dashboard, real-time via WebSocket.</td></tr>
+      <tr><td><b>Module comm</b></td><td class="mono">EventEmitter2</td><td>Event-driven. Swap to Redis Pub/Sub later if needed.</td></tr>
+      <tr><td><b>Extensibility</b></td><td class="mono">Registry + Adapter</td><td>Plugin arch for strategies, adapters for data sources.</td></tr>
+      <tr><td><b>Database</b></td><td class="mono">PostgreSQL + Prisma</td><td>Type-safe ORM. JSONB for flexible strategy params.</td></tr>
+      <tr><td><b>Sentiment</b></td><td class="mono">Python FastAPI</td><td>ML ecosystem, isolated process. Frontend never touches it.</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 04: System Architecture (UNMISSABLE) -->
+<div class="slide slide-hero-diagram">
+  <span class="sn">04 / 20</span>
+  <span class="tag tag-purple">High-Level Architecture</span>
+  <h2 style="font-size: clamp(1.9rem, 3.8vw, 3rem);">One system, <span class="accent-purple">four independent modules</span></h2>
+  <div class="mermaid-wrap">
+    <pre class="mermaid">
+graph TD
+  FE["Next.js Frontend<br/>Dashboard · Builder · Leaderboard · News"]
+  MD["Market Data<br/>(Hoàng)<br/>Binance Adapter"]
+  SE["Strategy Engine<br/>(Member B)<br/>Plugin Registry"]
+  NW["News & Sentiment<br/>(Member C)<br/>Python FastAPI"]
+  INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Member D)"]
+  DB[("PostgreSQL + Prisma")]
+  FE <-->|REST + WebSocket| MD
+  FE <-->|REST + WebSocket| SE
+  FE <-->|REST| NW
+  MD --> INF
+  SE --> INF
+  NW --> INF
+  INF --> DB
+  classDef blue fill:#1a2332,stroke:#58a6ff,color:#e6edf3
+  classDef green fill:#0d2818,stroke:#3fb950,color:#e6edf3
+  classDef pink fill:#2d1215,stroke:#f778ba,color:#e6edf3
+  classDef purple fill:#1e1533,stroke:#bc8cff,color:#e6edf3
+  classDef grey fill:#21262d,stroke:#30363d,color:#8b949e
+  class FE blue
+  class MD green
+  class SE green
+  class NW pink
+  class INF purple
+  class DB grey
+    </pre>
+  </div>
+  <p style="font: 500 clamp(.8rem, 1vw, .95rem) var(--mono); color: var(--ink-3);">Modules depend on shared interfaces only — never on each other's implementations</p>
+</div>
+
+<!-- 05: Module Ownership -->
+<div class="slide">
+  <span class="sn">05 / 20</span>
+  <span class="tag tag-green">Team Assignment</span>
+  <h2>Each member owns a module <span class="accent-green">end-to-end</span></h2>
+  <div style="width:100%; max-width:1040px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:16%">Member</th><th style="width:28%">Fullstack Module</th><th>Signature Patterns</th></tr>
+      <tr><td><b>Hoàng</b> (Leader)</td><td>Market Data + Shared Infra</td><td>Adapter Pattern · Modular Monolith boundaries</td></tr>
+      <tr><td><b>Member B</b></td><td>Strategy Engine (domain logic)</td><td>Plugin Registry · Composite Pattern · Open-Closed</td></tr>
+      <tr><td><b>Member C</b></td><td>News & Sentiment (+ Python)</td><td>Adapter Pattern · Process Isolation · Fault Tolerance</td></tr>
+      <tr><td><b>Member D</b></td><td>Event Arch + Queue + Dashboard</td><td>Event-Driven · Job Queue/Worker · Observer</td></tr>
+    </table>
+  </div>
+  <div style="margin-top: clamp(12px, 2vh, 20px); max-width:1040px; width:100%;" class="card card-accent">
+    <p style="font-size: clamp(.85rem, 1.1vw, 1.02rem);"><strong style="color:var(--ink)">Interview rule:</strong> every member must personally explain <strong style="color:var(--accent)">at least 2 architectural patterns</strong> they designed and implemented.</p>
+  </div>
+</div>
+
+<!-- 06: Event Flow -->
+<div class="slide">
+  <span class="sn">06 / 20</span>
+  <span class="tag tag-purple">Member D's Architecture</span>
+  <h2>Modules talk through <span class="accent-purple">events, never calls</span></h2>
+  <div class="mermaid-wrap">
+    <pre class="mermaid">
+graph LR
+  A["Market Data<br/>(Hoàng)"] -->|MarketDataUpdated| B["Strategy Engine<br/>(Member B)"]
+  B -->|BacktestRequested| Q["Job Queue<br/>(Member D)"]
+  Q -->|BacktestCompleted| L["Leaderboard<br/>(Member D)"]
+  L -->|LeaderboardUpdated| WS["WebSocket → Frontend"]
+  L --> LC["Loop Controller"]
+  LC -->|next candidate| Q
+  classDef green fill:#0d2818,stroke:#3fb950,color:#e6edf3
+  classDef blue fill:#1a2332,stroke:#58a6ff,color:#e6edf3
+  classDef purple fill:#1e1533,stroke:#bc8cff,color:#e6edf3
+  class A green
+  class B blue
+  class Q purple
+  class L purple
+  class LC purple
+  class WS grey
+  classDef grey fill:#21262d,stroke:#30363d,color:#8b949e
+    </pre>
+  </div>
+  <p style="font: 500 clamp(.8rem, 1vw, .95rem) var(--mono); color: var(--ink-3);">Strategy Engine and Infrastructure never call each other directly — fully decoupled through the event bus</p>
+</div>
+
+<!-- 07: Weekly Plan -->
+<div class="slide">
+  <span class="sn">07 / 20</span>
+  <span class="tag tag-amber">Timeline</span>
+  <h2>Four weeks, <span style="color:var(--amber)">four milestones</span></h2>
+  <div style="width:100%; max-width:1040px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:12%">Week</th><th style="width:26%">Goal</th><th>Key Deliverables</th></tr>
+      <tr><td><b>W1</b></td><td>Foundation</td><td>KB populated · monorepo · contracts · module skeletons · 5 ADRs</td></tr>
+      <tr><td><b>W2</b></td><td>Core Implementation</td><td>Live Binance data · backtester + evaluator · job queue · leaderboard reacts to events</td></tr>
+      <tr><td><b>W3</b></td><td>Integration & Advanced</td><td>Strategy search loop · full event flow E2E · trade visualization · 8 ADRs</td></tr>
+      <tr><td><b>W4</b></td><td>Polish & Report</td><td>Extensibility verification · architecture document · 12+ ADRs · demo rehearsal</td></tr>
+    </table>
+  </div>
+  <div style="margin-top: clamp(12px, 2vh, 20px); max-width:1040px; width:100%;" class="card card-amber">
+    <p style="font-size: clamp(.85rem, 1.1vw, 1.02rem);"><strong style="color:var(--amber)">Review gates:</strong> W1 Fri — architecture review · W2 Fri — integration review · W3 Fri — end-to-end demo day</p>
+  </div>
+</div>
+
+<!-- 08: KB as SSoT -->
+<div class="slide">
+  <span class="sn">08 / 20</span>
+  <span class="tag tag-blue">Knowledge Base</span>
+  <h2>The KB is the <span class="accent">single source of truth</span></h2>
+  <ul class="bullet" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <li>Created in <strong style="color:var(--ink)">Week 1</strong>, updated throughout the project</li>
+    <li>Owner drafts, <strong style="color:var(--ink)">architect reviews</strong> — every file has a named owner</li>
+    <li>Contracts are the SSoT — module B reads module A's <code>contract</code>, never its source</li>
+    <li class="amber">ADR for every non-trivial decision — core ADRs by W1 Friday</li>
+    <li class="purple">Interface changed? Owner updates contract <strong style="color:var(--ink)">and notifies the team</strong></li>
+  </ul>
+</div>
+
+<!-- 09: KB File Ownership -->
+<div class="slide">
+  <span class="sn">09 / 20</span>
+  <span class="tag tag-blue">KB Ownership</span>
+  <h2>Every KB file has an <span class="accent">owner</span></h2>
+  <div style="width:100%; max-width:1000px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:30%">KB File</th><th style="width:32%">Owner</th><th>Purpose</th></tr>
+      <tr><td class="mono">INDEX · CONSTITUTION · ARCHITECTURE</td><td><b>Hoàng</b></td><td>Sitemap, principles, system architecture</td></tr>
+      <tr><td class="mono">MODULES.md · CONTRIBUTING.md</td><td><b>Hoàng</b></td><td>Boundaries, team conventions</td></tr>
+      <tr><td class="mono">DESIGN.md</td><td><b>Member D</b></td><td>FE/UX design system</td></tr>
+      <tr><td class="mono">contracts/</td><td><b>Each module owner</b></td><td>API contracts — Hoàng reviews</td></tr>
+      <tr><td class="mono">modules/</td><td><b>Each module owner</b></td><td>Per-module detailed architecture</td></tr>
+      <tr><td class="mono">flows/</td><td><b>Flow owner</b></td><td>E2E business use case scenarios</td></tr>
+      <tr><td class="mono">ADR/</td><td><b>Hoàng</b> + module owners</td><td>Core ADRs + module-specific ADRs</td></tr>
+      <tr><td class="mono">GLOSSARY.md</td><td><b>Hoàng</b> seeds → all contribute</td><td>Domain terms</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 10: modules/ + flows/ -->
+<div class="slide">
+  <span class="sn">10 / 20</span>
+  <span class="tag tag-green">Architecture Documentation</span>
+  <h2>Three perspectives, <span class="accent-green">one KB</span></h2>
+  <div class="grid-4" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <div class="card card-accent">
+      <h3><code>kb/modules/{name}.md</code></h3>
+      <p style="font-size: clamp(.82rem, 1.05vw, .98rem);">What's inside each module — components, design patterns, internal data flow, sequence diagrams. One file per member.</p>
+    </div>
+    <div class="card card-green">
+      <h3><code>kb/flows/{name}.md</code></h3>
+      <p style="font-size: clamp(.82rem, 1.05vw, .98rem);">How modules cooperate E2E — steps, preconditions, business rules, alternative &amp; error paths. Six flows mapped.</p>
+    </div>
+    <div class="card card-pink">
+      <h3><code>kb/ADR/000X-*.md</code></h3>
+      <p style="font-size: clamp(.82rem, 1.05vw, .98rem);">Why a decision was made — context, options considered, consequences. 12 ADRs planned.</p>
+    </div>
+    <div class="card card-purple">
+      <h3>Flow owners</h3>
+      <p style="font-size: clamp(.82rem, 1.05vw, .98rem);">realtime-market-data → Hoàng · strategy-backtest → B · search-loop → D · news-pipeline → C · composite-sentiment → B · leaderboard → D</p>
+    </div>
+  </div>
+  <p style="margin-top: clamp(10px, 1.8vh, 18px); font: 500 clamp(.78rem, 1vw, .92rem) var(--mono); color: var(--ink-3);">All members present their filled module + flow files at W1 Friday architecture review</p>
+</div>
+
+<!-- 11: Hoàng profile -->
+<div class="slide">
+  <span class="sn">11 / 20</span>
+  <span class="tag tag-blue">Module Deep-Dive</span>
+  <h2>Hoàng — Market Data + <span class="accent">Shared Infra</span></h2>
+  <div class="grid-2" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <div class="card card-accent">
+      <div class="role" style="color:var(--accent)">BACKEND · NESTJS</div>
+      <ul class="bullet">
+        <li><code>BinanceAdapter</code> — historical + WebSocket, auto-reconnect</li>
+        <li><code>MarketDataService</code> — caching, rate-limit handling</li>
+        <li>WebSocket Gateway → relays live candles to frontend</li>
+        <li><code>shared/</code> — all interfaces, Prisma schema, migrations</li>
+      </ul>
+    </div>
+    <div class="card card-accent">
+      <div class="role" style="color:var(--accent)">FRONTEND · NEXT.JS</div>
+      <ul class="bullet">
+        <li>Dashboard — 4-chart multi-timeframe grid</li>
+        <li><code>CandlestickChart</code> + MA / Bollinger / SR overlays</li>
+        <li><code>useWebSocket</code> + <code>useMarketData</code> hooks</li>
+      </ul>
+      <p style="margin-top: 8px; font-size: clamp(.8rem, 1vw, .95rem);"><strong style="color:var(--ink)">Interview:</strong> Adapter Pattern — adding OKX = 1 class implementing <code>IMarketDataAdapter</code></p>
+    </div>
+  </div>
+</div>
+
+<!-- 12: Member B profile -->
+<div class="slide">
+  <span class="sn">12 / 20</span>
+  <span class="tag tag-green">Module Deep-Dive</span>
+  <h2>Member B — <span class="accent-green">Strategy Engine</span></h2>
+  <div class="grid-2" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <div class="card card-green">
+      <div class="role" style="color:var(--green)">BACKEND · DOMAIN LOGIC</div>
+      <ul class="bullet">
+        <li class="green"><code>StrategyRegistry</code> — <code>register()</code> + <code>analyze()</code> pipeline</li>
+        <li class="green">4 strategies: MA · RSI · Bollinger · Support/Resistance</li>
+        <li class="green">Composite: MajorityVote + WeightedScore combiners</li>
+        <li class="green">Backtester + Evaluator (Return, WinRate, MDD, Sharpe)</li>
+        <li class="green">Search Engine: Random + Domain-Guided generators</li>
+      </ul>
+    </div>
+    <div class="card card-green">
+      <div class="role" style="color:var(--green)">FRONTEND · STRATEGY BUILDER</div>
+      <ul class="bullet">
+        <li class="green">Strategy selection + parameter editor</li>
+        <li class="green">Composite builder — drag &amp; combine strategies</li>
+        <li class="green">Trade detail table with P&amp;L</li>
+      </ul>
+      <p style="margin-top: 8px; font-size: clamp(.8rem, 1vw, .95rem);"><strong style="color:var(--ink)">Interview:</strong> Plugin Architecture = Open-Closed Principle. New strategy → zero changes elsewhere.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 13: Member C profile -->
+<div class="slide">
+  <span class="sn">13 / 20</span>
+  <span class="tag tag-red">Module Deep-Dive</span>
+  <h2>Member C — News &amp; <span style="color:var(--red)">Sentiment</span></h2>
+  <div class="grid-2" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <div class="card" style="border-left: 3px solid var(--red);">
+      <div class="role" style="color:var(--red)">NESTJS + PYTHON SERVICE</div>
+      <ul class="bullet">
+        <li class="red"><code>INewsProvider</code> — RSS adapter + CryptoPanic adapter</li>
+        <li class="red">Cron collection → normalize → dedupe → store</li>
+        <li class="red"><code>SentimentClient</code> → isolated Python FastAPI (VADER)</li>
+        <li class="red"><code>SentimentStrategy</code> — plugs into Registry, returns HOLD when service is down</li>
+      </ul>
+    </div>
+    <div class="card" style="border-left: 3px solid var(--red);">
+      <div class="role" style="color:var(--red)">FRONTEND · NEWS FEED</div>
+      <ul class="bullet">
+        <li class="red">News feed with sentiment badges</li>
+        <li class="red">Sentiment timeline chart + aggregate gauge</li>
+      </ul>
+      <p style="margin-top: 8px; font-size: clamp(.8rem, 1vw, .95rem);"><strong style="color:var(--ink)">Interview:</strong> Process Isolation — Python crashes ≠ NestJS crashes. Graceful degradation via HOLD fallback.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 14: Member D profile -->
+<div class="slide">
+  <span class="sn">14 / 20</span>
+  <span class="tag tag-purple">Module Deep-Dive</span>
+  <h2>Member D — the system's <span class="accent-purple">nervous system</span></h2>
+  <div class="grid-2" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <div class="card card-purple">
+      <div class="role" style="color:var(--purple)">BACKEND · INFRASTRUCTURE</div>
+      <ul class="bullet">
+        <li class="purple"><code>events/</code> — EventEmitter2, typed events, flow docs</li>
+        <li class="purple"><code>queue/</code> — worker pool, retry, dead-letter queue</li>
+        <li class="purple"><code>leaderboard/</code> — Observer of <code>BacktestCompleted</code>, Top-K</li>
+        <li class="purple"><code>loop/</code> — orchestrates search via events, not calls</li>
+        <li class="purple"><code>dashboard/</code> — API composition layer (BFF)</li>
+      </ul>
+    </div>
+    <div class="card card-purple">
+      <div class="role" style="color:var(--purple)">FRONTEND · DASHBOARD + DESIGN</div>
+      <ul class="bullet">
+        <li class="purple">Leaderboard table — sortable by any metric</li>
+        <li class="purple">Loop status panel — progress, start/stop/pause</li>
+        <li class="purple">App shell, WebSocket provider, common UI</li>
+        <li class="purple">Design system — <code>DESIGN.md</code> owner</li>
+      </ul>
+      <p style="margin-top: 8px; font-size: clamp(.8rem, 1vw, .95rem);"><strong style="color:var(--ink)">Interview:</strong> Event-Driven + Job Queue/Worker + Observer — three patterns, one owner.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 15: Independence -->
+<div class="slide">
+  <span class="sn">15 / 20</span>
+  <span class="tag tag-green">Parallel Work</span>
+  <h2>Everyone can <span class="accent-green">run alone</span></h2>
+  <div style="width:100%; max-width:1040px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:24%">Module</th><th>Depends On</th><th style="width:22%">Runs Alone?</th></tr>
+      <tr><td><b>Market Data</b> (Hoàng)</td><td>Shared types only</td><td class="mono" style="color:var(--green)">✅ with mock data</td></tr>
+      <tr><td><b>Strategy Engine</b> (B)</td><td><code>IMarketDataService</code> + <code>IEventBus</code> + <code>IJobQueue</code> interfaces</td><td class="mono" style="color:var(--green)">✅ with mocks</td></tr>
+      <tr><td><b>News & Sentiment</b> (C)</td><td>Shared types + <code>IEventBus</code> interface</td><td class="mono" style="color:var(--green)">✅ fully independent</td></tr>
+      <tr><td><b>Event Arch + Dashboard</b> (D)</td><td><code>IBacktester</code> + <code>IStrategyGenerator</code> interfaces</td><td class="mono" style="color:var(--green)">✅ with mock backtester</td></tr>
+    </table>
+  </div>
+  <div style="margin-top: clamp(12px, 2vh, 20px); max-width:1040px; width:100%;" class="card card-green">
+    <p style="font-size: clamp(.85rem, 1.1vw, 1.02rem);">B never touches <code>events/</code> code — just <code>publish('BacktestRequested')</code>. C never touches <code>strategy/</code>. D consumes interfaces only. <strong style="color:var(--ink)">Zero cross-module source dependencies.</strong></p>
+  </div>
+</div>
+
+<!-- 16: Extensibility -->
+<div class="slide">
+  <span class="sn">16 / 20</span>
+  <span class="tag tag-amber">W4 Verification</span>
+  <h2>10 scenarios that <span style="color:var(--amber)">prove the architecture</span></h2>
+  <div style="width:100%; max-width:1040px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:40%">Scenario</th><th>Expected Change</th></tr>
+      <tr><td>Add <code>MACDStrategy</code></td><td>1 new file + 1 <code>register()</code> call</td></tr>
+      <tr><td>Swap Random → Genetic search</td><td>1 generator class — backtester/evaluator untouched</td></tr>
+      <tr><td>Add OKX data source</td><td>1 adapter class — frontend unchanged</td></tr>
+      <tr><td>Scale 100 → 100k backtests</td><td>Add workers to queue — architecture supports it</td></tr>
+      <tr><td>News service down</td><td>Charts still work · <code>SentimentStrategy</code> returns HOLD</td></tr>
+      <tr><td>Swap queue → BullMQ</td><td>Config change only — same <code>IJobQueue</code> interface</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 17: ADRs -->
+<div class="slide">
+  <span class="sn">17 / 20</span>
+  <span class="tag tag-purple">Decision Records</span>
+  <h2>12 ADRs — <span class="accent-purple">every "why" is written down</span></h2>
+  <div class="grid-2" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <div class="card">
+      <div class="role" style="color:var(--purple)">W1 — FOUNDATION</div>
+      <ul class="bullet">
+        <li class="purple"><b>0001</b> Record Architecture Decisions</li>
+        <li class="purple"><b>0002</b> Modular Monolith over Microservices</li>
+        <li class="purple"><b>0003</b> Plugin Architecture for Strategies</li>
+        <li class="purple"><b>0004</b> Adapter Pattern for Data Sources</li>
+        <li class="purple"><b>0005</b> Event-Driven Communication</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="role" style="color:var(--purple)">W2–W3 — MODULE DECISIONS</div>
+      <ul class="bullet">
+        <li class="purple"><b>0006</b> Job Queue + Worker for Backtesting</li>
+        <li class="purple"><b>0007</b> Auto-Reconnect for External APIs</li>
+        <li class="purple"><b>0008</b> Strategy Versioning</li>
+        <li class="purple"><b>0009</b> Sentiment as Separate Process</li>
+        <li class="purple"><b>0010</b> News Provider Adapter · <b>0011</b> Leaderboard Observer · <b>0012</b> BullMQ Migration Path</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 18: Risks -->
+<div class="slide">
+  <span class="sn">18 / 20</span>
+  <span class="tag tag-red">Risk Mitigation</span>
+  <h2>What could break — <span style="color:var(--red)">and the fix</span></h2>
+  <div style="width:100%; max-width:1000px; margin-top: clamp(6px, 1vh, 12px);">
+    <table class="tbl">
+      <tr><th style="width:34%">Risk</th><th>Mitigation</th></tr>
+      <tr><td>Binance API rate limits</td><td>Caching, batch requests, respect limits</td></tr>
+      <tr><td>Member falls behind</td><td>Shared interfaces allow parallel work · Hoàng covers critical path</td></tr>
+      <tr><td>Member D overloaded (bus + queue + dashboard)</td><td>Dashboard can simplify · Hoàng takes queue as fallback</td></tr>
+      <tr><td>Slow backtesting</td><td>Job queue + workers · in-memory first, Redis later</td></tr>
+      <tr><td>WebSocket disconnect</td><td>Auto-reconnect + connection status indicator</td></tr>
+      <tr><td>Scope creep</td><td>MVP first: 4 strategies + random search + basic leaderboard</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 19: Deliverables -->
+<div class="slide">
+  <span class="sn">19 / 20</span>
+  <span class="tag tag-green">Final Deliverables</span>
+  <h2>What we <span class="accent-green">ship</span></h2>
+  <ul class="bullet" style="margin-top: clamp(8px, 1.4vh, 16px);">
+    <li class="green"><strong style="color:var(--ink)">Source code</strong> — monorepo: NestJS + Next.js + Python sentiment service</li>
+    <li class="green"><strong style="color:var(--ink)">Architecture document</strong> — context, decomposition, data/event/strategy flows</li>
+    <li class="green"><strong style="color:var(--ink)">12+ ADRs</strong> — every architectural decision recorded</li>
+    <li class="green"><strong style="color:var(--ink)">README</strong> — install, run, architecture overview, demo instructions</li>
+    <li class="green"><strong style="color:var(--ink)">Live demo</strong> — 11 scenarios: realtime charts, strategy composition, backtest via queue, leaderboard updates, search loop, news + sentiment</li>
+  </ul>
+</div>
+
+<!-- 20: Closing -->
+<div class="slide">
+  <span class="sn">20 / 20</span>
+  <span class="tag tag-blue">Plan Approved</span>
+  <h1 style="font-size: clamp(2.2rem, 4.5vw, 3.6rem);">Architecture is the <span class="accent">deliverable</span></h1>
+  <p class="subtitle">Code proves the architecture. The KB documents it. The demo shows it extends.</p>
+  <div class="closing-box">
+    4 weeks · 4 modules · 12 ADRs · 10 extensibility proofs<br>
+    <span style="color:var(--ink-3)">Crypto Strategy Lab — Software Architecture (TKPM)</span>
+  </div>
+</div>
+
+<div class="nav">
+  <button id="prevBtn" onclick="nav(-1)">← Prev</button>
+  <span id="counter">1 / 20</span>
+  <button id="nextBtn" onclick="nav(1)">Next →</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  securityLevel: 'loose',
+  themeVariables: {
+    background: '#0d1117',
+    primaryColor: '#21262d',
+    primaryTextColor: '#e6edf3',
+    primaryBorderColor: '#58a6ff',
+    lineColor: '#8b949e',
+    secondaryColor: '#161b22',
+    tertiaryColor: '#21262d',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '1rem',
+    nodeBkg: '#21262d',
+    nodeBorder: '#30363d',
+    clusterBkg: '#161b22',
+    clusterBorder: '#30363d'
+  }
+});
+
+const slides = document.querySelectorAll('.slide');
+const counter = document.getElementById('counter');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+let cur = 0;
+
+function show(i) {
+  slides[cur].classList.remove('active');
+  cur = Math.max(0, Math.min(slides.length - 1, i));
+  slides[cur].classList.add('active');
+  counter.textContent = (cur + 1) + ' / ' + slides.length;
+  prevBtn.disabled = cur === 0;
+  nextBtn.disabled = cur === slides.length - 1;
+}
+function nav(d) { show(cur + d); }
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); nav(1); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); nav(-1); }
+  if (e.key === 'Home') show(0);
+  if (e.key === 'End') show(slides.length - 1);
+});
+show(0);
+</script>
+</body>
+</html>

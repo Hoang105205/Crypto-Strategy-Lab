@@ -1,0 +1,25 @@
+# Contract: Market Data
+# Owner: Hoàng | Status: Draft — fill field names/types during W1
+# This file is the Single Source of Truth for the Market Data module's API.
+
+entities:
+  Candle:
+    fields: {}   # TODO: e.g. symbol, timeframe, open, high, low, close, volume, timestamp
+
+interfaces:
+  IMarketDataAdapter:
+    methods: []  # TODO: e.g. fetchKlines(symbol, timeframe, range), connectStream(symbol)
+  IMarketDataService:
+    methods: []  # TODO: e.g. getCandles(symbol, timeframe, limit)
+
+endpoints:
+  - method: GET
+    path: /api/market-data/candles   # TODO: confirm params + response shape
+    response: TODO
+
+websocket:
+  - channel: market-data:candles     # TODO: payload shape
+    payload: TODO
+
+events_published:
+  - MarketDataUpdated                # TODO: payload — see contracts/events.yaml

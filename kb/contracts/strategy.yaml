@@ -1,0 +1,28 @@
+# Contract: Strategy Engine
+# Owner: Member B | Status: Draft — fill field names/types during W1
+# This file is the Single Source of Truth for the Strategy Engine module's API.
+
+entities:
+  Strategy:
+    fields: {}   # TODO: e.g. id, type, params (JSONB), version
+  BacktestResult:
+    fields: {}   # TODO: e.g. strategyId, return, winRate, maxDrawdown, sharpe, trades
+
+interfaces:
+  IStrategy:
+    methods: []  # TODO: e.g. analyze(candles) => Signal
+  IBacktester:
+    methods: []  # TODO: e.g. run(strategy, candles) => BacktestResult
+  IStrategyGenerator:
+    methods: []  # TODO: e.g. generate(count) => Strategy[]
+
+endpoints:
+  - method: POST
+    path: /api/strategy/backtest     # TODO: confirm request/response shape
+    response: TODO
+  - method: GET
+    path: /api/strategy              # TODO: list strategies
+    response: TODO
+
+events_published:
+  - BacktestRequested                # TODO: payload — see contracts/events.yaml

@@ -1,0 +1,26 @@
+# Contract: News & Sentiment
+# Owner: Member C | Status: Draft — fill field names/types during W1
+# This file is the Single Source of Truth for the News & Sentiment module's API.
+
+entities:
+  NewsArticle:
+    fields: {}   # TODO: e.g. id, source, title, url, publishedAt, hash (dedupe)
+  SentimentScore:
+    fields: {}   # TODO: e.g. articleId, score, label, scoredAt
+
+interfaces:
+  INewsProvider:
+    methods: []  # TODO: e.g. fetchLatest(limit) => RawArticle[]
+  SentimentClient:
+    methods: []  # TODO: e.g. score(text) => SentimentScore
+
+endpoints:
+  - method: GET
+    path: /api/news                  # TODO: confirm params + response shape
+    response: TODO
+  - method: GET
+    path: /api/sentiment/aggregate   # TODO: aggregate gauge for dashboard
+    response: TODO
+
+internal_service:
+  python_sentiment_api: POST /score  # TODO: request/response — NestJS-only, never exposed to frontend

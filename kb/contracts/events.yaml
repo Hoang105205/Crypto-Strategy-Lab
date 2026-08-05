@@ -1,0 +1,31 @@
+# Contract: Events
+# Owner: Member D | Status: Draft — fill payloads during W1
+# This file is the Single Source of Truth for all typed events on the bus.
+
+interfaces:
+  IEventBus:
+    methods: []  # TODO: e.g. publish(event, payload), subscribe(event, handler)
+  IJobQueue:
+    methods: []  # TODO: e.g. enqueue(job), retry(jobId), deadLetter(jobId)
+
+events:
+  MarketDataUpdated:
+    publisher: Market Data
+    subscribers: [Event Infrastructure]   # TODO: confirm + payload
+    payload: TODO
+  BacktestRequested:
+    publisher: Strategy Engine
+    subscribers: [Queue Worker]
+    payload: TODO
+  BacktestCompleted:
+    publisher: Queue Worker
+    subscribers: [Strategy Engine, Leaderboard, Loop Controller]
+    payload: TODO
+  LeaderboardUpdated:
+    publisher: Leaderboard
+    subscribers: [WebSocket Gateway]
+    payload: TODO
+  NewsCollected:
+    publisher: News & Sentiment
+    subscribers: [TODO]
+    payload: TODO
