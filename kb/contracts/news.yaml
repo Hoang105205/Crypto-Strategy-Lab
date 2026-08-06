@@ -1,26 +1,67 @@
 # Contract: News & Sentiment
-# Owner: Member C | Status: Draft — fill field names/types during W1
-# This file is the Single Source of Truth for the News & Sentiment module's API.
+# Owner: Thuận | Status: Active — SSoT for News & Sentiment module
+# This file is the Single Source of Truth for the News & Sentiment module's API and data contracts.
 
 entities:
   NewsArticle:
-    fields: {}   # TODO: e.g. id, source, title, url, publishedAt, hash (dedupe)
+    fields:
+      id: string (uuid)
+      source: string # e.g. 'CoinDesk RSS', 'CryptoPanic', 'News API'
+      title: string
+      content: string
+      url: string (unique)
+      publishedAt: string (ISO8601)
+      crawledAt: string (ISO8601) # Timestamp when collected
+      relatedCoins: string[] # e.g. ['BTC', 'ETH']
+      sentimentScore: number # -1.0 to 1.0
+      sentimentLabel: string # POSITIVE | NEGATIVE | NEUTRAL
+      createdAt: string (ISO8601)
+
   SentimentScore:
-    fields: {}   # TODO: e.g. articleId, score, label, scoredAt
+    fields:
+      id: string (uuid)
+      articleId: string (fk -> NewsArticle.id)
+      score: number # -1.0 to 1.0
+      label: string # POSITIVE | NEGATIVE | NEUTRAL
+      model: string # 'VADER'
+      scoredAt: string (ISO8601)
 
 interfaces:
   INewsProvider:
-    methods: []  # TODO: e.g. fetchLatest(limit) => RawArticle[]
+    methods:
+      - fetchLatest(limit?: number, coin?: string): Promise<RawArticle[]>
+  
   SentimentClient:
-    methods: []  # TODO: e.g. score(text) => SentimentScore
+    methods:
+      - analyzeText(text: string): Promise<SentimentResult>
 
 endpoints:
   - method: GET
-    path: /api/news                  # TODO: confirm params + response shape
-    response: TODO
+    path: /api/news
+    queryParams:
+      limit: number # default 10, max 50
+      coin: string # e.g. 'BTC'
+    response:
+      success: boolean
+      data: NewsArticle[]
+
   - method: GET
-    path: /api/sentiment/aggregate   # TODO: aggregate gauge for dashboard
-    response: TODO
+    path: /api/sentiment/aggregate
+    queryParams:
+      timeframe: string # '1h' | '24h' | '7d'
+      coin: string # e.g. 'BTC'
+    response:
+      score: number # average score -1.0 to 1.0
+      label: string # POSITIVE | NEGATIVE | NEUTRAL
+      articleCount: number
+      updatedAt: string (ISO8601)
 
 internal_service:
-  python_sentiment_api: POST /score  # TODO: request/response — NestJS-only, never exposed to frontend
+  python_sentiment_api:
+    endpoint: POST http://localhost:8000/analyze
+    request:
+      text: string
+    response:
+      score: number # -1.0 to 1.0
+      label: string # POSITIVE | NEGATIVE | NEUTRAL
+    notes: "Internal HTTP call from NestJS SentimentClient to Python FastAPI. Never exposed to frontend."
