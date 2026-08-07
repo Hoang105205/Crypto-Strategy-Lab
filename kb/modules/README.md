@@ -6,7 +6,7 @@ owned by the team member responsible for that module.
 | Module | File | Owner | Status |
 |--------|------|-------|--------|
 | Market Data | `modules/market-data.md` | Hoàng | Draft |
-| Strategy Engine | `modules/strategy-engine.md` | Member B | Draft |
+| Strategy Engine | `modules/strategy-engine.md` | Huy | Active |
 | News & Sentiment | `modules/news-sentiment.md` | Member C | Draft |
 | Event Infrastructure | `modules/event-infrastructure.md` | Member D | Draft |
 

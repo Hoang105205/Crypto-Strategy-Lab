@@ -21,6 +21,12 @@ in code, documentation, and communication.
 | Worker | Queue consumer process executing jobs | Event Infrastructure |
 | Dead-letter Queue | Destination for jobs that exhausted retries | Event Infrastructure |
 | BFF | Backend-for-Frontend — dashboard composition layer | Event Infrastructure |
+| Strategy Registry | Central registry implementing Plugin Pattern — `register()` adds a strategy, `get()` retrieves by name, `analyze()` delegates to the registered strategy | Strategy Engine |
+| Strategy Version | Immutable snapshot of a strategy's type + parameters + version number. New params = new version. Used for reproducibility (ADR-0008) | Strategy Engine |
+| ICombiner | Interface for combining multiple strategy signals into one. Implementations: `MajorityVoteCombiner`, `WeightedScoreCombiner` | Strategy Engine |
+| Open-Closed Principle (OCP) | Software design principle: open for extension (new strategies), closed for modification (existing code). Enforced by Plugin Architecture (ADR-0003) | Strategy Engine |
+| Domain-Guided Generator | Strategy candidate generator that ensures diversity by selecting from strategy groups: Trend, Momentum, Volatility, Structure, Sentiment | Strategy Engine |
+| Reproducibility | Ability to re-run experiment #N with the exact same strategy version + params and get the same result. Enabled by immutable `StrategyVersion` snapshots (ADR-0008) | Strategy Engine |
 
 ## Naming Conventions
 - **API paths**: kebab-case (e.g., `/api/market-data`, `/api/strategy-backtest`)
