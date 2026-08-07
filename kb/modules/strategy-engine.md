@@ -8,7 +8,7 @@
 - **Responsibility**: Register, analyze, compose, backtest, evaluate, and search trading strategies using a plugin architecture
 - **Layer**: Backend (NestJS module) + Frontend (Next.js pages)
 - **Depends on**: `IMarketDataService`, `IEventBus`, `IJobQueue` (shared interfaces only)
-- **Depended by**: Event Infrastructure (via `IBacktester`, `IStrategyGenerator` interfaces), News & Sentiment (`SentimentStrategy` registered in StrategyRegistry)
+- **Depended by**: Event Infrastructure (via `IBacktester`, `IStrategyGenerator` interfaces), News & Sentiment (`NewsSentimentStrategy` registered in StrategyRegistry)
 - **Contracts**: `kb/contracts/strategy.yaml`
 - **Source files**:
   - Backend: `apps/backend/src/strategy/`
@@ -78,7 +78,7 @@
 │  │     → raw trade list      │  │     → Sharpe, ProfitFactor   │    │
 │  └───────────────────────────┘  └──────────────────────────────┘    │
 │                                                                       │
-│  * SentimentStrategy is registered by News module (Member C)         │
+│  * NewsSentimentStrategy is registered by News module (Member C)         │
 └──────────────────────────────────────────────────────────────────────┘
           │                        │                    │
           ▼                        ▼                    ▼
