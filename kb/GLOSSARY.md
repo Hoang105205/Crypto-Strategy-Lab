@@ -27,6 +27,11 @@ in code, documentation, and communication.
 | Open-Closed Principle (OCP) | Software design principle: open for extension (new strategies), closed for modification (existing code). Enforced by Plugin Architecture (ADR-0003) | Strategy Engine |
 | Domain-Guided Generator | Strategy candidate generator that ensures diversity by selecting from strategy groups: Trend, Momentum, Volatility, Structure, Sentiment | Strategy Engine |
 | Reproducibility | Ability to re-run experiment #N with the exact same strategy version + params and get the same result. Enabled by immutable `StrategyVersion` snapshots (ADR-0008) | Strategy Engine |
+| INewsProvider | Abstraction interface for news sources (RSS, News API, Web Crawlers) returning normalized `RawArticle` payloads (ADR-0010) | News & Sentiment |
+| NewsArticle | Standardized news data entity containing `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins`, `url` | News & Sentiment |
+| NewsSentimentStrategy | Strategy plugin generating BUY/SELL/HOLD signals from news sentiment scores for composite strategies (e.g. `MA + RSI + News Sentiment`) | News & Sentiment, Strategy Engine |
+| Process Isolation | Architecture pattern running Python ML service as an isolated process from NestJS backend to contain CPU loads and crashes (ADR-0009) | News & Sentiment |
+| Graceful Degradation | Reliability mechanism falling back to neutral sentiment (`0.0`) and `HOLD` signal when ML sentiment service is unreachable | News & Sentiment |
 
 ## Naming Conventions
 - **API paths**: kebab-case (e.g., `/api/market-data`, `/api/strategy-backtest`)

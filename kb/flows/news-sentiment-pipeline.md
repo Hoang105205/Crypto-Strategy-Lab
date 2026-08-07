@@ -78,6 +78,6 @@
 ---
 
 ## 8. Related
-- **Contracts**: [kb/contracts/news.yaml](file:///d:/STD/Y3/Y3S3/KienTrucPM/pj/kb/contracts/news.yaml)
-- **ADRs**: [ADR-0009](file:///d:/STD/Y3/Y3S3/KienTrucPM/pj/plan-overview.md#L695) (Process Isolation), [ADR-0010](file:///d:/STD/Y3/Y3S3/KienTrucPM/pj/plan-overview.md#L696) (News Adapter)
-- **Module Architecture**: [kb/modules/news-sentiment.md](file:///d:/STD/Y3/Y3S3/KienTrucPM/pj/kb/modules/news-sentiment.md)
+- **Contracts**: `kb/contracts/news.yaml`
+- **ADRs**: ADR-0009, ADR-0010
+- **Module Architecture**: `kb/modules/news-sentiment.md`
