@@ -85,7 +85,7 @@
   IMarketDataService         IEventBus             IJobQueue
   (shared interface)      (shared interface)    (shared interface)
   fetch historical        publish events        submit backtest jobs
-  candles for backtest    (BacktestRequested)    (consumed by Member D)
+  candles for backtest    (BacktestRequested)    (consumed by Phương)
 ```
 
 ## 3. Design Patterns
@@ -158,7 +158,7 @@ StrategyController (REST)
               ▼
          return { jobId, status: 'queued' }
               │
-              │   ← (async, handled by Member D's Job Queue worker) ─────┐
+              │   ← (async, handled by Phương's Job Queue worker) ─────┐
               │                                                           │
               │   Worker calls:                                           │
               │     1. IMarketDataService.getHistorical(pair, tf, range)  │
@@ -219,7 +219,7 @@ sequenceDiagram
 sequenceDiagram
     participant SC as StrategyController
     participant EB as IEventBus
-    participant JQ as JobQueue (Member D)
+    participant JQ as JobQueue (Phương)
     participant BT as Backtester
     participant EV as Evaluator
     participant MD as IMarketDataService
@@ -262,21 +262,21 @@ See `kb/contracts/strategy.yaml` for the full contract. Summary:
 | `/api/strategies/:id/versions` | GET | List strategy version history |
 
 Events:
-- **Publishes**: `BacktestRequested` (consumed by Member D's Job Queue)
-- **Consumes**: `BacktestCompleted` (published by Member D after worker finishes)
+- **Publishes**: `BacktestRequested` (consumed by Phương's Job Queue)
+- **Consumes**: `BacktestCompleted` (published by Phương after worker finishes)
 
 ## 8. Quality Attributes
 
 - **Security**: No auth required (course project). Input validation on strategy parameters (type checking, range validation for periods/thresholds). SQL injection prevented by Prisma parameterized queries.
 - **Performance**: 
-  - Backtesting is CPU-bound — offloaded to Job Queue workers (Member D's infrastructure).
+  - Backtesting is CPU-bound — offloaded to Job Queue workers (Phương's infrastructure).
   - Strategy analysis is O(N × M) where N = strategies, M = candles. Acceptable for project scale (4 strategies × ~1000 candles).
   - Composite analysis is sequential (child strategies run one by one). Parallelization is a stretch goal.
   - Version lookup is indexed by `strategyVersionId` (UUID PK).
 - **Error handling**:
   - Invalid strategy parameters → 400 Bad Request with validation errors.
   - Strategy not found in registry → 404 Not Found.
-  - Backtest job failure → handled by Job Queue retry logic (Member D). Strategy Engine publishes the event and trusts the queue.
+  - Backtest job failure → handled by Job Queue retry logic (Phương). Strategy Engine publishes the event and trusts the queue.
   - Empty candle data → Backtester returns zero trades, Evaluator returns default metrics (0% return, 0 trades).
 
 ## 9. Testing Strategy
@@ -298,5 +298,5 @@ Events:
 - [x] Confirm exact parameter ranges for each strategy (MA periods: 1-200, RSI thresholds: 10-90, Bollinger stdDev: 1.0-5.0)
 - [x] Decide maximum number of child strategies in a composite (limit to 10 for performance reasons)
 - [x] Confirm DomainGuidedGenerator strategy group categories with Hoàng (Trend, Momentum, Volatility, Structure, Sentiment)
-- [x] Coordinate with Member D on exact `BacktestRequested` event payload format (see `contracts/events.yaml` - Synced)
+- [x] Coordinate with Phương on exact `BacktestRequested` event payload format (see `contracts/events.yaml` - Synced)
 - [x] Determine if Search Engine should deduplicate candidates by parameter hash before submitting to queue (Yes, deduplicate using SHA-256 hash of parameters)

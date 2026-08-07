@@ -7,8 +7,8 @@
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
 | News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
-| Event Infrastructure | Member D | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) |
-| Frontend | All (shell: Member D) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
+| Event Infrastructure | Phương | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) |
+| Frontend | All (shell: Phương) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
 
 ## Module Details
 
@@ -33,7 +33,7 @@
 - **Module doc**: `kb/modules/news-sentiment.md`
 - **Contracts**: `kb/contracts/news.yaml`
 
-### Event Infrastructure (Member D)
+### Event Infrastructure (Phương)
 - **Scope**: events/ (EventEmitter2, typed events), queue/ (worker pool, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
 - **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs
 - **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces (the Job Queue worker calls `IMarketDataService.getHistorical()` directly to fetch candles for backtesting)

@@ -176,7 +176,7 @@ endpoints:
 events_published:
   - name: BacktestRequested
     payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string }"
-    description: "Published when a backtest is submitted — consumed by Job Queue (Member D)"
+    description: "Published when a backtest is submitted — consumed by Job Queue (Phương)"
     see_also: "contracts/events.yaml"
   - name: BacktestFailed
     payload: "{ jobId: string, error: string }"
@@ -186,4 +186,4 @@ events_consumed:
   - name: BacktestCompleted
     payload: "{ jobId: string, backtestResultId: UUID, strategyVersionId: UUID }"
     description: "Consumed to link result back to the strategy version"
-    published_by: "Event Infrastructure (Member D)"
+    published_by: "Event Infrastructure (Phương)"

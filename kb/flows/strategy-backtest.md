@@ -8,7 +8,7 @@
 - **Description**: A user requests a backtest of a strategy (single or composite); the job is enqueued, executed by a worker, evaluated for metrics, and the result is stored and pushed to the frontend
 - **Primary Actor**: User (via Frontend Strategy Builder page)
 - **Business Value**: Users evaluate strategy quality on historical data before ranking or composing. This is the core feedback loop for strategy development.
-- **Modules Involved**: Strategy Engine (Huy), Event Infrastructure — Job Queue + Event Bus (Member D), Market Data (Hoàng)
+- **Modules Involved**: Strategy Engine (Huy), Event Infrastructure — Job Queue + Event Bus (Phương), Market Data (Hoàng)
 
 ## 2. Preconditions
 - Strategy must be registered in `StrategyRegistry` (via `register()`)
@@ -21,16 +21,16 @@
 1. **User configures backtest** — Frontend Strategy Builder → user selects strategy, pair (e.g. BTCUSDT), timeframe (e.g. 1h), date range
 2. **Frontend submits backtest request** — Frontend → `POST /api/strategies/backtest` → Strategy Engine (StrategyController)
 3. **Strategy Engine validates request** — StrategyController verifies `strategyVersionId` exists, pair is valid, date range is reasonable
-4. **Strategy Engine publishes event** — StrategyController → `IEventBus.publish('BacktestRequested', { strategyVersionId, pair, timeframe, startDate, endDate, jobId })` → Event Bus (Member D)
+4. **Strategy Engine publishes event** — StrategyController → `IEventBus.publish('BacktestRequested', { strategyVersionId, pair, timeframe, startDate, endDate, jobId })` → Event Bus (Phương)
 5. **Strategy Engine returns queued status** — StrategyController → Frontend: `202 Accepted { jobId, status: 'queued' }`
-6. **Job Queue worker picks up job** — Event Infrastructure (Member D) → worker receives `BacktestRequested` event
+6. **Job Queue worker picks up job** — Event Infrastructure (Phương) → worker receives `BacktestRequested` event
 7. **Worker fetches historical candles** — Worker → `IMarketDataService.getHistorical(pair, timeframe, startDate, endDate)` → Market Data (Hoàng)
 8. **Worker reconstructs strategy** — Worker → `StrategyRegistry.get(strategyVersionId)` → the `IStrategy` instance
 9. **Worker runs backtest** — Worker → `Backtester.run(strategy, candles, config)` → replays candles chronologically, calls `strategy.analyze()` on each window, simulates trades based on signals
 10. **Worker evaluates results** — Worker → `Evaluator.evaluate(trades, initialCapital)` → computes Return, WinRate, MaxDrawdown, SharpeRatio, ProfitFactor
 11. **Worker saves result** — Worker → `BacktestResult` saved to PostgreSQL via Prisma (linked to `strategyVersionId`)
 12. **Worker publishes completion** — Worker → `IEventBus.publish('BacktestCompleted', { jobId, backtestResultId, strategyVersionId })` → Event Bus
-13. **Leaderboard reacts** — Leaderboard (Member D, Observer) → receives `BacktestCompleted` → updates Top-K ranking
+13. **Leaderboard reacts** — Leaderboard (Phương, Observer) → receives `BacktestCompleted` → updates Top-K ranking
 14. **Frontend receives result** — Via WebSocket push (`LeaderboardUpdated` event) or REST polling (`GET /api/strategies/backtest/:id`)
 
 ## 4. Postconditions
@@ -48,7 +48,7 @@
 - All other steps are identical — the Backtester treats composites and singles uniformly (Composite Pattern)
 
 ### Search Loop Automated Backtest
-- Steps 1–5 are replaced by the Loop Controller (Member D) programmatically generating candidates and publishing `BacktestRequested` events
+- Steps 1–5 are replaced by the Loop Controller (Phương) programmatically generating candidates and publishing `BacktestRequested` events
 - Steps 6–14 are identical — the queue and worker don't know if the request came from a user or the loop
 
 ## 6. Error & Exception Flows
@@ -68,7 +68,7 @@
 
 ### Backtest job fails (worker error)
 - Step 9 or 10: Unhandled exception in Backtester or Evaluator
-- Job Queue retry logic (Member D): 3 attempts with exponential backoff (1s, 4s, 16s)
+- Job Queue retry logic (Phương): 3 attempts with exponential backoff (1s, 4s, 16s)
 - After max retries → job moves to dead-letter queue
 - `BacktestFailed` event published with error details
 

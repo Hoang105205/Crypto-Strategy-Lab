@@ -218,7 +218,7 @@ graph TD
   MD["Market Data<br/>(Hoàng)<br/>Binance Adapter"]
   SE["Strategy Engine<br/>(Member B)<br/>Plugin Registry"]
   NW["News & Sentiment<br/>(Member C)<br/>Python FastAPI"]
-  INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Member D)"]
+  INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Phương)"]
   DB[("PostgreSQL + Prisma")]
   FE <-->|REST + WebSocket| MD
   FE <-->|REST + WebSocket| SE
@@ -254,7 +254,7 @@ graph TD
       <tr><td><b>Hoàng</b> (Leader)</td><td>Market Data + Shared Infra</td><td>Adapter Pattern · Modular Monolith boundaries</td></tr>
       <tr><td><b>Member B</b></td><td>Strategy Engine (domain logic)</td><td>Plugin Registry · Composite Pattern · Open-Closed</td></tr>
       <tr><td><b>Member C</b></td><td>News & Sentiment (+ Python)</td><td>Adapter Pattern · Process Isolation · Fault Tolerance</td></tr>
-      <tr><td><b>Member D</b></td><td>Event Arch + Queue + Dashboard</td><td>Event-Driven · Job Queue/Worker · Observer</td></tr>
+      <tr><td><b>Phương</b></td><td>Event Arch + Queue + Dashboard</td><td>Event-Driven · Job Queue/Worker · Observer</td></tr>
     </table>
   </div>
   <div style="margin-top: clamp(12px, 2vh, 20px); max-width:1040px; width:100%;" class="card card-accent">
@@ -265,14 +265,14 @@ graph TD
 <!-- 06: Event Flow -->
 <div class="slide">
   <span class="sn">06 / 20</span>
-  <span class="tag tag-purple">Member D's Architecture</span>
+  <span class="tag tag-purple">Phương's Architecture</span>
   <h2>Modules talk through <span class="accent-purple">events, never calls</span></h2>
   <div class="mermaid-wrap">
     <pre class="mermaid">
 graph LR
   A["Market Data<br/>(Hoàng)"] -->|MarketDataUpdated| B["Strategy Engine<br/>(Member B)"]
-  B -->|BacktestRequested| Q["Job Queue<br/>(Member D)"]
-  Q -->|BacktestCompleted| L["Leaderboard<br/>(Member D)"]
+  B -->|BacktestRequested| Q["Job Queue<br/>(Phương)"]
+  Q -->|BacktestCompleted| L["Leaderboard<br/>(Phương)"]
   L -->|LeaderboardUpdated| WS["WebSocket → Frontend"]
   L --> LC["Loop Controller"]
   LC -->|next candidate| Q
@@ -334,7 +334,7 @@ graph LR
       <tr><th style="width:30%">KB File</th><th style="width:32%">Owner</th><th>Purpose</th></tr>
       <tr><td class="mono">INDEX · CONSTITUTION · ARCHITECTURE</td><td><b>Hoàng</b></td><td>Sitemap, principles, system architecture</td></tr>
       <tr><td class="mono">MODULES.md · CONTRIBUTING.md</td><td><b>Hoàng</b></td><td>Boundaries, team conventions</td></tr>
-      <tr><td class="mono">DESIGN.md</td><td><b>Member D</b></td><td>FE/UX design system</td></tr>
+      <tr><td class="mono">DESIGN.md</td><td><b>Phương</b></td><td>FE/UX design system</td></tr>
       <tr><td class="mono">contracts/</td><td><b>Each module owner</b></td><td>API contracts — Hoàng reviews</td></tr>
       <tr><td class="mono">modules/</td><td><b>Each module owner</b></td><td>Per-module detailed architecture</td></tr>
       <tr><td class="mono">flows/</td><td><b>Flow owner</b></td><td>E2E business use case scenarios</td></tr>
@@ -451,11 +451,11 @@ graph LR
   </div>
 </div>
 
-<!-- 14: Member D profile -->
+<!-- 14: Phương profile -->
 <div class="slide">
   <span class="sn">14 / 20</span>
   <span class="tag tag-purple">Module Deep-Dive</span>
-  <h2>Member D — the system's <span class="accent-purple">nervous system</span></h2>
+  <h2>Phương — the system's <span class="accent-purple">nervous system</span></h2>
   <div class="grid-2" style="margin-top: clamp(8px, 1.4vh, 16px);">
     <div class="card card-purple">
       <div class="role" style="color:var(--purple)">BACKEND · INFRASTRUCTURE</div>
@@ -556,7 +556,7 @@ graph LR
       <tr><th style="width:34%">Risk</th><th>Mitigation</th></tr>
       <tr><td>Binance API rate limits</td><td>Caching, batch requests, respect limits</td></tr>
       <tr><td>Member falls behind</td><td>Shared interfaces allow parallel work · Hoàng covers critical path</td></tr>
-      <tr><td>Member D overloaded (bus + queue + dashboard)</td><td>Dashboard can simplify · Hoàng takes queue as fallback</td></tr>
+      <tr><td>Phương overloaded (bus + queue + dashboard)</td><td>Dashboard can simplify · Hoàng takes queue as fallback</td></tr>
       <tr><td>Slow backtesting</td><td>Job queue + workers · in-memory first, Redis later</td></tr>
       <tr><td>WebSocket disconnect</td><td>Auto-reconnect + connection status indicator</td></tr>
       <tr><td>Scope creep</td><td>MVP first: 4 strategies + random search + basic leaderboard</td></tr>

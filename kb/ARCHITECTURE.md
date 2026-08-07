@@ -16,7 +16,7 @@ graph TD
   MD["Market Data<br/>(Hoàng)<br/>Binance Adapter"]
   SE["Strategy Engine<br/>(Huy)<br/>Plugin Registry"]
   NW["News & Sentiment<br/>(Thuận)<br/>Python FastAPI"]
-  INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Member D)"]
+  INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Phương)"]
   DB[("PostgreSQL + Prisma")]
   FE <-->|REST + WebSocket| MD
   FE <-->|REST + WebSocket| SE
@@ -49,11 +49,11 @@ apps/
 │   ├── market-data/      # Hoàng
 │   ├── strategy/         # Huy
 │   ├── news/             # Thuận
-│   ├── events/           # Member D — event bus
-│   ├── queue/            # Member D — job queue + workers
-│   ├── leaderboard/      # Member D
-│   ├── loop/             # Member D
-│   └── dashboard/        # Member D — BFF composition layer
+│   ├── events/           # Phương — event bus
+│   ├── queue/            # Phương — job queue + workers
+│   ├── leaderboard/      # Phương
+│   ├── loop/             # Phương
+│   └── dashboard/        # Phương — BFF composition layer
 ├── frontend/             # Next.js
 └── sentiment-service/    # Python FastAPI — Thuận
 shared/                   # All shared interfaces + Prisma schema

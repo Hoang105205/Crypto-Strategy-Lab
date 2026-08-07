@@ -1,6 +1,6 @@
 # Business Flow: Leaderboard Update
 
-> **Owner**: Member D
+> **Owner**: Phương
 > **Status**: Active
 > **Last Updated**: 2026-08-07
 

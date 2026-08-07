@@ -1,5 +1,5 @@
 # Contract: Events
-# Owner: Member D | Status: Active — SSoT for the event bus, job queue, and all typed events
+# Owner: Phương | Status: Active — SSoT for the event bus, job queue, and all typed events
 # This file is the Single Source of Truth for all typed events on the bus.
 # See also: kb/modules/event-infrastructure.md, ADR-0005, ADR-0006, ADR-0011, ADR-0012
 

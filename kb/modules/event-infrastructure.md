@@ -1,6 +1,6 @@
 # Module: Event Infrastructure
 
-> **Owner**: Member D
+> **Owner**: Phương
 > **Status**: Active
 > **Last Updated**: 2026-08-07
 
@@ -38,7 +38,7 @@ flowchart TD
         SC[StrategyController]
     end
 
-    subgraph EventInfra["Event Infrastructure (Member D)"]
+    subgraph EventInfra["Event Infrastructure (Phương)"]
         EB[EventBus]
         JQ[JobQueue]
         W[BacktestWorker]
@@ -310,9 +310,9 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 - **Manual/demo verification**: kill and restart the mock backtester mid-loop to show retry/backoff in logs; disconnect the WebSocket client to show the frontend's `connection:status` indicator switch to "reconnecting".
 
 ## 10. Open Questions / TODOs
-- [ ] Confirm `BacktestRequested`/`BacktestCompleted` field ownership split with Huy — see `openQuestions` in `kb/contracts/events.yaml` (extra fields `backtestConfig`, `source`, `loopRunId`, `metrics` are additive on top of `kb/contracts/strategy.yaml`). — Owner: Member D + Huy
-- [ ] Resolve `BacktestFailed` publisher mismatch: `kb/contracts/strategy.yaml` lists it under Strategy Engine's `events_published`, this module treats the Job Queue worker as the actual publisher. — Owner: Member D + Huy
+- [ ] Confirm `BacktestRequested`/`BacktestCompleted` field ownership split with Huy — see `openQuestions` in `kb/contracts/events.yaml` (extra fields `backtestConfig`, `source`, `loopRunId`, `metrics` are additive on top of `kb/contracts/strategy.yaml`). — Owner: Phương + Huy
+- [ ] Resolve `BacktestFailed` publisher mismatch: `kb/contracts/strategy.yaml` lists it under Strategy Engine's `events_published`, this module treats the Job Queue worker as the actual publisher. — Owner: Phương + Huy
 - [ ] Confirm Prisma schema/table ownership for `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, `DeadLetterJob` with Hoàng (who owns `shared/` + the Prisma schema). — Owner: Hoàng
-- [ ] Decide whether `JobQueue` should give `source: "USER"` jobs FIFO priority over `source: "SEARCH_LOOP"` jobs, or process strictly FIFO for MVP simplicity. — Owner: Member D
-- [ ] Confirm final leaderboard scoring formula and default Top-K value with the team (see `kb/flows/leaderboard-update.md` Business Rules). — Owner: Member D
+- [ ] Decide whether `JobQueue` should give `source: "USER"` jobs FIFO priority over `source: "SEARCH_LOOP"` jobs, or process strictly FIFO for MVP simplicity. — Owner: Phương
+- [ ] Confirm final leaderboard scoring formula and default Top-K value with the team (see `kb/flows/leaderboard-update.md` Business Rules). — Owner: Phương
 - [ ] Confirm whether `NewsCollected` will actually be published in W2+ (currently reserved/unused) — see `kb/contracts/events.yaml`. — Owner: Thuận

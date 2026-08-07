@@ -65,7 +65,7 @@ These are **my decisions as the architect**. The team implements within these bo
 │  ┌──────┴─────────────────┴──────────────────┴───────────────┐  │
 │  │         Event Bus + Job Queue + Leaderboard               │  │
 │  │         Continuous Loop + Dashboard API                   │  │
-│  │                      (Member D)                           │  │
+│  │                      (Phương)                           │  │
 │  └──────────────────────┬───────────────────────────────────┘  │
 │                         │                                        │
 │  ┌──────────────────────┴────────────────────────────────────┐  │
@@ -102,7 +102,7 @@ Each member owns a NestJS module + its corresponding Next.js pages end-to-end (f
 ┌───────────────────────────────┐
 │   Event Bus + Job Queue       │
 │   + Leaderboard + Loop        │
-│        (Member D)             │
+│        (Phương)             │
 └───────────────┬───────────────┘
                 ▼
         ┌──────────────┐
@@ -136,13 +136,13 @@ The KB is the single source of truth. Each file has a clear owner responsible fo
 | `kb/CONSTITUTION.md` | **Hoàng** | Define non-negotiable principles, coding standards, testing gates |
 | `kb/ARCHITECTURE.md` | **Hoàng** | High-level system architecture, tech stack, data flow, deployment topology |
 | `kb/MODULES.md` | **Hoàng** | Module boundaries, responsibilities, dependencies, cross-module communication |
-| `kb/DESIGN.md` | **Member D** (with Hoàng review) | FE/UX design system — component library, color palette, typography, routing, page layout |
+| `kb/DESIGN.md` | **Phương** (with Hoàng review) | FE/UX design system — component library, color palette, typography, routing, page layout |
 | `kb/GLOSSARY.md` | **Hoàng** (initial) → all members contribute | Domain terms, naming conventions (everyone adds terms for their module) |
 | `kb/CONTRIBUTING.md` | **Hoàng** | Git workflow, commit conventions, PR process, code style, review checklist |
 | `kb/ADR/` | **Hoàng** (core ADRs) + module owner (module-specific ADRs) | Architecture decisions. Core ADRs (monolith choice, plugin arch, event-driven) by Hoàng. Module-specific ADRs by the module owner. |
-| `kb/contracts/` | **Each module owner** writes their own, **Hoàng reviews** | `market-data.contract.md` → Hoàng, `strategy.contract.md` → Member B, `news.contract.md` → Member C, `events.contract.md` → Member D |
-| `kb/modules/` | **Each module owner** writes their own, **Hoàng reviews** | Per-module detailed architecture. `modules/market-data.md` → Hoàng, `modules/strategy-engine.md` → Member B, `modules/news-sentiment.md` → Member C, `modules/event-infrastructure.md` → Member D |
-| `kb/flows/` | **Flow owner** (primary module owner), **Hoàng reviews** | E2E business use case flows. `flows/realtime-market-data.md` → Hoàng, `flows/strategy-backtest.md` → Member B, `flows/strategy-search-loop.md` → Member D, `flows/news-sentiment-pipeline.md` → Member C, `flows/composite-with-sentiment.md` → Member B, `flows/leaderboard-update.md` → Member D |
+| `kb/contracts/` | **Each module owner** writes their own, **Hoàng reviews** | `market-data.contract.md` → Hoàng, `strategy.contract.md` → Member B, `news.contract.md` → Member C, `events.contract.md` → Phương |
+| `kb/modules/` | **Each module owner** writes their own, **Hoàng reviews** | Per-module detailed architecture. `modules/market-data.md` → Hoàng, `modules/strategy-engine.md` → Member B, `modules/news-sentiment.md` → Member C, `modules/event-infrastructure.md` → Phương |
+| `kb/flows/` | **Flow owner** (primary module owner), **Hoàng reviews** | E2E business use case flows. `flows/realtime-market-data.md` → Hoàng, `flows/strategy-backtest.md` → Member B, `flows/strategy-search-loop.md` → Phương, `flows/news-sentiment-pipeline.md` → Member C, `flows/composite-with-sentiment.md` → Member B, `flows/leaderboard-update.md` → Phương |
 | `kb/patterns/` | **Hoàng** (initial) → any member can add | Design patterns used (Strategy, Adapter, Observer, Registry, etc.) |
 
 ### 3.2 KB Maintenance Rules
@@ -165,7 +165,7 @@ The KB is the single source of truth. Each file has a clear owner responsible fo
 | **Hoàng (Leader)** | Architect / Fullstack | **Market Data** (NestJS module + Next.js pages) + **Shared Infrastructure** (types, DB, Prisma, WebSocket gateway) | Medium-High — data spine + infrastructure |
 | **Member B** | Fullstack Engineer | **Strategy Engine** (NestJS domain logic + Next.js pages) | Full |
 | **Member C** | Fullstack Engineer | **News & Sentiment** (NestJS module + Python service + Next.js pages) | Full |
-| **Member D** | Fullstack Engineer | **Event Architecture + Backtest Infrastructure + Dashboard** (Event Bus, Job Queue, Leaderboard, Loop Controller, Dashboard API + Next.js pages) | Full |
+| **Phương** | Fullstack Engineer | **Event Architecture + Backtest Infrastructure + Dashboard** (Event Bus, Job Queue, Leaderboard, Loop Controller, Dashboard API + Next.js pages) | Full |
 
 ### 4.2 Interview Architecture Focus
 
@@ -176,7 +176,7 @@ Every member must be able to explain **at least 2 architectural patterns** they 
 | **Hoàng** | Adapter Pattern, Modular Monolith boundaries, System decomposition | "I designed the system as a modular monolith. Each NestJS module has clean boundaries. I implemented the Binance Adapter — if you want to add OKX, you create one class implementing `IMarketDataAdapter`. The adapter pattern means the frontend and strategy engine never know which data source is active. I also defined the shared type system that all modules depend on." |
 | **Member B** | Plugin Architecture (Strategy Registry), Composite Pattern | "I built the Strategy Plugin System. Adding a new strategy requires only one file and one `register()` call — zero changes to the backtester, evaluator, or leaderboard. The Registry implements the Open-Closed Principle. I also designed the Composite Strategy pattern — you can combine any N strategies using different combiners (Majority Vote, Weighted Score), and the system treats a composite the same as a single strategy." |
 | **Member C** | Adapter Pattern (News Providers), Process Isolation & Fault Tolerance | "I designed the News Adapter Pattern — adding a new news source is one class implementing `INewsProvider`. I also isolated the Sentiment service as a separate Python process. If it crashes, the main NestJS server stays up. The `SentimentStrategy` returns HOLD when the service is unavailable — graceful degradation. The frontend never talks to Python directly; communication goes through NestJS, enforcing process boundaries." |
-| **Member D** | Event-Driven Architecture, Job Queue/Worker Pattern, Observer Pattern (Leaderboard) | "I designed the Event-Driven communication between modules. The Backtester publishes `BacktestCompleted`, and the Leaderboard subscribes — they're completely decoupled through the event bus. I built the Job Queue for parallel backtesting with retry logic and dead-letter handling. The Leaderboard is an Observer — it reacts to events, never calls the backtester directly. The Strategy Loop Controller orchestrates the search cycle through events, not direct method calls." |
+| **Phương** | Event-Driven Architecture, Job Queue/Worker Pattern, Observer Pattern (Leaderboard) | "I designed the Event-Driven communication between modules. The Backtester publishes `BacktestCompleted`, and the Leaderboard subscribes — they're completely decoupled through the event bus. I built the Job Queue for parallel backtesting with retry logic and dead-letter handling. The Leaderboard is an Observer — it reacts to events, never calls the backtester directly. The Strategy Loop Controller orchestrates the search cycle through events, not direct method calls." |
 
 ### 4.3 Detailed Module Assignment
 
@@ -267,11 +267,11 @@ Member B owns **the domain logic** of strategy analysis, composition, and search
 
 ---
 
-#### Member D — Event Architecture + Backtest Infrastructure + Dashboard
+#### Phương — Event Architecture + Backtest Infrastructure + Dashboard
 
 **Architectural contribution**: Event-Driven Architecture (Event Bus). Job Queue/Worker Pattern. Observer Pattern (Leaderboard). Front-End Architecture.
 
-Member D owns the **"nervous system"** of the application — the event bus, the job queue, the leaderboard (as an observer), and the strategy loop controller (as an orchestrator). These are not CRUD — they are core architectural infrastructure that every module depends on. Member D also owns the Dashboard frontend (the "display") that composes data from all modules.
+Phương owns the **"nervous system"** of the application — the event bus, the job queue, the leaderboard (as an observer), and the strategy loop controller (as an orchestrator). These are not CRUD — they are core architectural infrastructure that every module depends on. Phương also owns the Dashboard frontend (the "display") that composes data from all modules.
 
 **Backend (NestJS)**:
 | Component | Description | Architecture Pattern |
@@ -301,9 +301,9 @@ Member D owns the **"nervous system"** of the application — the event bus, the
 
 ---
 
-### 4.4 How Modules Communicate (Member D's Architecture)
+### 4.4 How Modules Communicate (Phương's Architecture)
 
-This section explains the **event-driven communication** that Member D designs. Understanding this is essential for the interview.
+This section explains the **event-driven communication** that Phương designs. Understanding this is essential for the interview.
 
 ```
 ┌─────────────┐    MarketDataUpdated    ┌──────────────┐
@@ -316,25 +316,25 @@ This section explains the **event-driven communication** that Member D designs. 
                                                ▼
                                         ┌──────────────┐
                                         │    Job Queue  │
-                                        │  (Member D)   │
+                                        │  (Phương)   │
                                         └──────┬───────┘
                                                │
                             worker completes    │  BacktestCompleted
                                                ▼
 ┌─────────────┐    BacktestCompleted    ┌──────────────┐
 │   News       │                        │  Leaderboard │
-│  (Member C)  │                        │  (Member D)  │──→ LeaderboardUpdated
+│  (Member C)  │                        │  (Phương)  │──→ LeaderboardUpdated
 └─────────────┘                        └──────┬───────┘    (WebSocket push)
                                                │
                             loop checks stop   │
                             conditions         ▼
                                         ┌──────────────┐
                                         │  Loop Control │
-                                        │  (Member D)   │──→ BacktestRequested
+                                        │  (Phương)   │──→ BacktestRequested
                                         └──────────────┘    (next candidate)
 ```
 
-**Key point**: Module B (Strategy) and Module D (Infrastructure) never call each other's methods directly. They communicate through events and the job queue. This is the **Event-Driven Architecture** that Member D owns.
+**Key point**: Module B (Strategy) and Module D (Infrastructure) never call each other's methods directly. They communicate through events and the job queue. This is the **Event-Driven Architecture** that Phương owns.
 
 ---
 
@@ -346,12 +346,12 @@ This section explains the **event-driven communication** that Member D designs. 
 | **Market Data** (Hoàng) | NestJS module + WS Gateway | Chart pages, hooks | Shared types only | ✅ with mock data |
 | **Strategy Engine** (Member B) | NestJS module (domain logic) | Strategy Builder page | Shared types + `IMarketDataService` interface + `IEventBus` interface + `IJobQueue` interface | ✅ with mock data and mock queue |
 | **News & Sentiment** (Member C) | NestJS module + Python service | News + Sentiment pages | Shared types + `IEventBus` interface | ✅ fully independent |
-| **Event Arch + Dashboard** (Member D) | Event Bus, Queue, Leaderboard, Loop, Dashboard API | Dashboard, Leaderboard, Layout, Common | Shared types + `IBacktester` interface (for queue worker) + `IStrategyGenerator` interface (for loop) | ✅ with mock backtester |
+| **Event Arch + Dashboard** (Phương) | Event Bus, Queue, Leaderboard, Loop, Dashboard API | Dashboard, Leaderboard, Layout, Common | Shared types + `IBacktester` interface (for queue worker) + `IStrategyGenerator` interface (for loop) | ✅ with mock backtester |
 
 **Key independence points**:
 - **Member B** never touches `news/`, `events/`, `queue/`, or `leaderboard/` code. They just `publish('BacktestRequested', payload)` and the queue picks it up.
 - **Member C** never touches `strategy/`, `events/`, `queue/`, or `leaderboard/` code. `SentimentStrategy` implements `IStrategy` from shared types only.
-- **Member D** never touches `strategy/strategies/` or `news/providers/` code. They consume interfaces (`IStrategy`, `IBacktester`) through shared types.
+- **Phương** never touches `strategy/strategies/` or `news/providers/` code. They consume interfaces (`IStrategy`, `IBacktester`) through shared types.
 - **Hoàng** builds the data spine (market data + shared infra) that others plug into through interfaces.
 
 ---
@@ -362,7 +362,7 @@ This section explains the **event-driven communication** that Member D designs. 
 
 **Goal**: Shared understanding, project skeleton, contracts defined, each module has a running skeleton with correct boundaries.
 
-| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Member D (Event + Dashboard) |
+| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Phương (Event + Dashboard) |
 |---|---|---|---|---|
 | **Mon** | Initialize KB (`/hoang-kb-init`). Set up monorepo: NestJS + Next.js + shared lib. Define all shared types and interfaces. | Read KB, study spec. Understand `IStrategy`, `IBacktester`, `IEvaluator`, `ISearchEngine` contracts. | Read KB, study spec. Understand `INewsProvider`, `ISentimentClient` contracts. | Read KB, study spec. Understand Event-Driven Architecture, Observer Pattern, Job Queue Pattern. Study NestJS EventEmitter2 docs. |
 | **Tue** | Write ARCHITECTURE.md, MODULES.md, CONSTITUTION.md, CONTRIBUTING.md. Set up Prisma schema + DB. Initialize NestJS module structure. | Scaffold Strategy Engine NestJS module. Create `strategy.registry.ts`, empty `IStrategy` implementations. Prove `register(MAStrategy)` works. | Scaffold News NestJS module. Create `INewsProvider` interface, empty `NewsService`. Scaffold Python FastAPI service with `/analyze` stub. | Scaffold Next.js App Router. Create layout, navigation, WebSocket provider. Set up chart grid with empty panels. Scaffold `events/` NestJS module with EventEmitter2 config. |
@@ -389,7 +389,7 @@ This section explains the **event-driven communication** that Member D designs. 
 
 **Goal**: Each module implements core logic. Real Binance data flows. Strategies can be backtested. News can be collected. Job queue processes backtests. Leaderboard reacts to events.
 
-| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Member D (Event + Dashboard) |
+| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Phương (Event + Dashboard) |
 |---|---|---|---|---|
 | **Mon–Tue** | Implement **Binance WebSocket** (realtime). **WebSocket Gateway** (backend → frontend relay). Auto-reconnect + error handling. | Implement **Backtester**: replay historical candles → simulate trades → produce `BacktestResult`. Implement **Evaluator**: compute metrics (Return, WinRate, MDD, Sharpe, Trades). | Implement **CryptoPanic adapter** (second news source). Implement **news cron job** (scheduled collection). Wire end-to-end: cron → collect → normalize → store → analyze → store sentiment. | Implement **Job Queue**: BullMQ or in-memory queue with worker pool. Worker receives `BacktestRequested` → calls `IBacktester.execute()` → publishes `BacktestCompleted`. Retry logic (3 attempts, exponential backoff) + dead-letter queue. Implement **real-time candle updates** on frontend. |
 | **Wed–Thu** | Integration: verify market data flows from Binance → Backend → WebSocket → Frontend chart renders live candles. Write ADR-006 (Auto-Reconnect). | Implement **CompositeStrategy**: combine N strategies. **MajorityVoteCombiner** + **WeightedScoreCombiner**. Implement **Search Engine**: `RandomGenerator`, `DomainGuidedGenerator`. | Implement **SentimentStrategy** as a plugin: `register(SentimentStrategy)`. Verify `MA + RSI + Sentiment` composite works. Polish error handling (news service down = strategy returns HOLD). | Implement **Leaderboard**: subscribe to `BacktestCompleted` → compute ranking → store → publish `LeaderboardUpdated`. Top-K ranking, configurable scoring formula. Implement **Strategy Builder UI**: select strategies, configure parameters, compose composites. |
@@ -412,7 +412,7 @@ This section explains the **event-driven communication** that Member D designs. 
 
 **Goal**: Strategy loop, full event flow, visualization, end-to-end integration.
 
-| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Member D (Event + Dashboard) |
+| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Phương (Event + Dashboard) |
 |---|---|---|---|---|
 | **Mon–Tue** | Integration: wire Market Data → Strategy Engine. Verify backtest runs with real historical data. | Implement **Strategy Versioning**: strategies have version numbers. Experiments linked to strategy versions. Reproducibility. Domain-guided search: group strategies (Trend, Momentum, Volatility, Structure, Sentiment), enforce diverse composites. | Integration: test `SentimentStrategy` in real composites with live market data. Add **news deduplication**. Add **sentiment aggregation** (average sentiment per time window). Polish Python service error handling. | Implement **Strategy Loop Controller**: generate candidate → submit `BacktestRequested` → queue processes → `BacktestCompleted` → evaluate → rank → check stop conditions → repeat. All through events, not direct calls. Implement **Leaderboard UI**: sortable table (by Return, WinRate, MDD, Sharpe). Click strategy → see detail. |
 | **Wed–Thu** | Integration: verify full event flow: MarketDataUpdated → Strategy → BacktestRequested → [queue] → BacktestCompleted → LeaderboardUpdated → WebSocket → Frontend. Implement **loop status API**. Integration test: full flow from data → strategy → backtest → leaderboard → UI. | Polish strategy implementations. Ensure all strategies produce consistent signal format. Verify domain-guided search generates diverse composites. | Integration: verify news module failure doesn't crash charts or strategy engine. Test `SentimentStrategy` with `HOLD` fallback when news service is down. Polish news display. | Implement **Loop Status Panel**: candidates tested, current candidate, progress bar, start/stop/pause buttons. Implement **Trade Visualization**: buy/sell markers on chart, entry/exit annotation. Implement **Trade Detail Table**: entry/exit prices, P&L per trade. Click trade → highlight on chart. Dashboard API composition layer. |
@@ -436,7 +436,7 @@ This section explains the **event-driven communication** that Member D designs. 
 
 **Goal**: Stability, documentation, architecture report, demo preparation.
 
-| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Member D (Event + Dashboard) |
+| Day | Hoàng (Leader) | Member B (Strategy) | Member C (News) | Phương (Event + Dashboard) |
 |---|---|---|---|---|
 | **Mon** | Run `/hoang-sdd-analyze` on all artifacts. Run `/hoang-sdd-converge` on all features. Fix architecture inconsistencies. Review all module contracts for drift. | Fix bugs from integration testing. Add edge case handling: strategy timeout, invalid params, empty signal. | Fix bugs. Add reliability: News service failure doesn't crash the system. Multiple news providers fallback. Polish sentiment pipeline. | Fix bugs. Add queue error handling: dead-letter inspection, worker health monitoring. Polish event flow reliability: missed events, out-of-order events. Polish UI: loading states, error boundaries, responsive layout. |
 | **Tue** | **Extensibility verification**: Add `MACDStrategy` — must require only 1 new file + 1 `register()` call. Swap `RandomSearch` → `DomainGuidedSearch` — zero changes to backtester/evaluator/leaderboard. Add `OKXAdapter` — 1 new class, frontend unchanged. Verify all 8 architecture questions from spec Section 40. | Verify `MACDStrategy` extensibility test. Clean up strategy engine code. Ensure all contracts match implementations. | Verify new `INewsProvider` extensibility test. Ensure `SentimentStrategy` returns HOLD gracefully when service is down. | Verify Job Queue extensibility: swap in-memory → BullMQ with config change only. Verify event bus extensibility: add new event type without modifying existing subscribers. Verify Leaderboard extensibility: change scoring formula without touching backtester. |
@@ -531,27 +531,27 @@ crypto-strategy-lab/
 │   │   │   │   │   └── news-collector.cron.ts
 │   │   │   │   └── news.module.ts
 │   │   │   │
-│   │   │   ├── events/                  # Member D — Event Architecture
+│   │   │   ├── events/                  # Phương — Event Architecture
 │   │   │   │   ├── event-bus.ts         # EventEmitter2 wrapper + typed events
 │   │   │   │   ├── event-types.ts       # All event type definitions
 │   │   │   │   └── events.module.ts
 │   │   │   │
-│   │   │   ├── queue/                   # Member D — Job Queue Infrastructure
+│   │   │   ├── queue/                   # Phương — Job Queue Infrastructure
 │   │   │   │   ├── backtest.queue.ts    # Queue + worker pool
 │   │   │   │   ├── dead-letter.ts       # Failed job handling
 │   │   │   │   └── queue.module.ts
 │   │   │   │
-│   │   │   ├── leaderboard/             # Member D — Leaderboard (Observer)
+│   │   │   ├── leaderboard/             # Phương — Leaderboard (Observer)
 │   │   │   │   ├── leaderboard.service.ts
 │   │   │   │   ├── leaderboard-entry.ts
 │   │   │   │   └── leaderboard.module.ts
 │   │   │   │
-│   │   │   ├── loop/                    # Member D — Strategy Loop Controller
+│   │   │   ├── loop/                    # Phương — Strategy Loop Controller
 │   │   │   │   ├── strategy-loop.ts
 │   │   │   │   ├── loop-status.ts
 │   │   │   │   └── loop.module.ts
 │   │   │   │
-│   │   │   ├── dashboard/              # Member D — Dashboard API Composition
+│   │   │   ├── dashboard/              # Phương — Dashboard API Composition
 │   │   │   │   ├── controllers/
 │   │   │   │   │   └── dashboard.controller.ts
 │   │   │   │   └── dashboard.module.ts
@@ -567,7 +567,7 @@ crypto-strategy-lab/
 │   │   │   │       ├── news.repository.ts
 │   │   │   │       └── leaderboard.repository.ts
 │   │   │   │
-│   │   │   └── websocket/              # Member D — WebSocket push to frontend
+│   │   │   └── websocket/              # Phương — WebSocket push to frontend
 │   │   │       ├── push.gateway.ts     # Push events (LeaderboardUpdated, BacktestProgress) to frontend
 │   │   │       └── websocket.module.ts
 │   │   │
@@ -576,12 +576,12 @@ crypto-strategy-lab/
 │   ├── frontend/                        # Next.js application
 │   │   ├── src/
 │   │   │   ├── app/
-│   │   │   │   ├── layout.tsx           # App shell, navigation (Member D)
+│   │   │   │   ├── layout.tsx           # App shell, navigation (Phương)
 │   │   │   │   ├── page.tsx             # Dashboard (4-chart grid) (Hoàng)
 │   │   │   │   ├── strategy/
 │   │   │   │   │   └── page.tsx         # Strategy builder (Member B)
 │   │   │   │   ├── leaderboard/
-│   │   │   │   │   └── page.tsx         # Leaderboard (Member D)
+│   │   │   │   │   └── page.tsx         # Leaderboard (Phương)
 │   │   │   │   └── news/
 │   │   │   │       └── page.tsx         # News feed (Member C)
 │   │   │   │
@@ -596,20 +596,20 @@ crypto-strategy-lab/
 │   │   │   │   │   ├── ParameterEditor.tsx
 │   │   │   │   │   ├── CompositeBuilder.tsx
 │   │   │   │   │   └── TradeTable.tsx
-│   │   │   │   ├── leaderboard/        # Member D — Leaderboard UI
+│   │   │   │   ├── leaderboard/        # Phương — Leaderboard UI
 │   │   │   │   │   ├── LeaderboardTable.tsx
 │   │   │   │   │   └── StrategyDetail.tsx
 │   │   │   │   ├── news/               # Member C — News UI
 │   │   │   │   │   ├── NewsFeed.tsx
 │   │   │   │   │   ├── SentimentChart.tsx
 │   │   │   │   │   └── SentimentGauge.tsx
-│   │   │   │   ├── dashboard/          # Member D — Dashboard components
+│   │   │   │   ├── dashboard/          # Phương — Dashboard components
 │   │   │   │   │   ├── DashboardGrid.tsx
 │   │   │   │   │   ├── PairSelector.tsx
 │   │   │   │   │   ├── TimeframeSelector.tsx
 │   │   │   │   │   ├── LoopStatusPanel.tsx
 │   │   │   │   │   └── StatusIndicator.tsx
-│   │   │   │   └── common/             # Member D — Shared UI
+│   │   │   │   └── common/             # Phương — Shared UI
 │   │   │   │       ├── WebSocketProvider.tsx
 │   │   │   │       ├── LoadingState.tsx
 │   │   │   │       └── ErrorBoundary.tsx
@@ -617,12 +617,12 @@ crypto-strategy-lab/
 │   │   │   ├── hooks/
 │   │   │   │   ├── useWebSocket.ts     # Hoàng
 │   │   │   │   ├── useMarketData.ts    # Hoàng
-│   │   │   │   ├── useLeaderboard.ts   # Member D
+│   │   │   │   ├── useLeaderboard.ts   # Phương
 │   │   │   │   └── useNews.ts          # Member C
 │   │   │   │
 │   │   │   └── services/
-│   │   │       ├── api.ts              # REST API client (Member D)
-│   │   │       └── websocket.ts        # WebSocket client (Member D)
+│   │   │       ├── api.ts              # REST API client (Phương)
+│   │   │       └── websocket.ts        # WebSocket client (Phương)
 │   │   │
 │   │   └── test/
 │   │
@@ -644,7 +644,7 @@ crypto-strategy-lab/
 │   ├── INDEX.md                         # Hoàng
 │   ├── CONSTITUTION.md                  # Hoàng
 │   ├── ARCHITECTURE.md                  # Hoàng
-│   ├── DESIGN.md                        # Member D
+│   ├── DESIGN.md                        # Phương
 │   ├── MODULES.md                       # Hoàng
 │   ├── GLOSSARY.md                      # Hoàng (seed) → all contribute
 │   ├── CONTRIBUTING.md                  # Hoàng
@@ -655,15 +655,15 @@ crypto-strategy-lab/
 │   │   ├── market-data.md              # Hoàng
 │   │   ├── strategy-engine.md          # Member B
 │   │   ├── news-sentiment.md            # Member C
-│   │   └── event-infrastructure.md      # Member D
+│   │   └── event-infrastructure.md      # Phương
 │   ├── flows/                           # E2E business use case flows (flow owners)
 │   │   ├── README.md                    # Hoàng (index)
 │   │   ├── realtime-market-data.md     # Hoàng
 │   │   ├── strategy-backtest.md         # Member B
-│   │   ├── strategy-search-loop.md     # Member D
+│   │   ├── strategy-search-loop.md     # Phương
 │   │   ├── news-sentiment-pipeline.md  # Member C
 │   │   ├── composite-with-sentiment.md  # Member B
-│   │   └── leaderboard-update.md        # Member D
+│   │   └── leaderboard-update.md        # Phương
 │   └── patterns/                        # Hoàng (seed) → all contribute
 │
 ├── sdd_artifacts/                       # Per-feature SDD artifacts
@@ -688,14 +688,14 @@ crypto-strategy-lab/
 | 0002 | Modular Monolith over Microservices | Hoàng | W1 |
 | 0003 | Plugin Architecture for Strategies | Hoàng + Member B | W1 |
 | 0004 | Adapter Pattern for Data Sources | Hoàng | W1 |
-| 0005 | Event-Driven Communication Between Modules | Hoàng + Member D | W1 |
-| 0006 | Job Queue + Worker for Backtesting | Member D | W2 |
+| 0005 | Event-Driven Communication Between Modules | Hoàng + Phương | W1 |
+| 0006 | Job Queue + Worker for Backtesting | Phương | W2 |
 | 0007 | Auto-Reconnect for External APIs | Hoàng | W2 |
 | 0008 | Strategy Versioning for Reproducibility | Member B | W3 |
 | 0009 | Sentiment Service as Separate Process | Member C | W2 |
 | 0010 | News Provider Adapter Pattern | Member C | W2 |
-| 0011 | Leaderboard as Observer of Events | Member D | W3 |
-| 0012 | In-Memory Queue with BullMQ Migration Path | Member D | W3 |
+| 0011 | Leaderboard as Observer of Events | Phương | W3 |
+| 0012 | In-Memory Queue with BullMQ Migration Path | Phương | W3 |
 
 ---
 
@@ -727,7 +727,7 @@ crypto-strategy-lab/
 | WebSocket disconnect | Stale frontend data | Auto-reconnect + connection status indicator |
 | Scope creep | Miss deadline | MVP-first: 4 strategies + random search + basic leaderboard. Advanced features are stretch. |
 | Integration bugs at E2E | Demo fails | W3 integration days. `main` branch always deployable. |
-| Member D overwhelmed (event bus + queue + dashboard) | Critical infrastructure delayed | Event bus and queue are small but critical. Dashboard can be simplified if needed. Hoàng can take queue as fallback. |
+| Phương overwhelmed (event bus + queue + dashboard) | Critical infrastructure delayed | Event bus and queue are small but critical. Dashboard can be simplified if needed. Hoàng can take queue as fallback. |
 
 ---
 

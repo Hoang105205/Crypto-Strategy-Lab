@@ -11,7 +11,7 @@ The system requires support for multiple trading strategies (MA, RSI, Bollinger 
 - **Open-Closed Principle (OCP)**: The system must be open for extension (new strategies) but closed for modification (existing code).
 - **Uniform treatment**: Single strategies and composite strategies must be treated identically by the backtester and evaluator.
 - **Runtime flexibility**: Strategies can be registered and composed at runtime, not just at compile time.
-- **Team independence**: Huy (Strategy Engine), Member C (NewsSentimentStrategy), and Member D (Loop Controller) must work independently.
+- **Team independence**: Huy (Strategy Engine), Member C (NewsSentimentStrategy), and Phương (Loop Controller) must work independently.
 
 ## Considered Options
 1. **Hard-coded switch/case** — Each strategy handled in a switch. Violates OCP.
