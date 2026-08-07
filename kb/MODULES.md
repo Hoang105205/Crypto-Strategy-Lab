@@ -27,8 +27,8 @@
 - **Contracts**: `kb/contracts/strategy.yaml`
 
 ### News & Sentiment (Thuận)
-- **Scope**: `INewsProvider` adapters (RSS, CryptoPanic), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER), SentimentStrategy plugged into Registry (returns HOLD when service is down)
-- **Exposes**: News + sentiment REST API, `SentimentStrategy`
+- **Scope**: `INewsProvider` adapters (RSS, CryptoPanic), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER), NewsSentimentStrategy plugged into Registry (returns HOLD when service is down)
+- **Exposes**: News + sentiment REST API, `NewsSentimentStrategy`
 - **Dependencies**: Shared types + `IEventBus`
 - **Module doc**: `kb/modules/news-sentiment.md`
 - **Contracts**: `kb/contracts/news.yaml`
@@ -44,7 +44,7 @@
 - Market Data → Event Infrastructure: publishes `MarketDataUpdated`
 - Strategy Engine → Event Infrastructure: publishes `BacktestRequested`
 - Event Infrastructure → Strategy Engine: publishes `BacktestCompleted`
-- News & Sentiment → Strategy Engine: `SentimentStrategy` registered in StrategyRegistry
+- News & Sentiment → Strategy Engine: `NewsSentimentStrategy` registered in StrategyRegistry
 - All modules → Frontend: REST + WebSocket only
 
 ## Module Boundary Rules

@@ -73,7 +73,7 @@ RSS Provider      News API Provider   Web Crawler
 - **Where**: `apps/backend/src/news/providers/`
 - **Why**: Prevents hardcoding the trading system to a single web crawler or news site (`Trading System ❌ Website A Crawler`).
 - **How**: `INewsProvider` defines a standardized method `fetchLatest(limit?, coin?): Promise<RawArticle[]>`. Whether news comes from RSS, CryptoPanic API, or a Web Crawler, every provider converts raw payloads into the unified `RawArticle` format.
-- **Extensibility**: Adding a new news portal requires creating 1 new adapter class implementing `INewsProvider`. Downstream modules (`NewsService`, `SentimentStrategy`, UI) require ZERO changes.
+- **Extensibility**: Adding a new news portal requires creating 1 new adapter class implementing `INewsProvider`. Downstream modules (`NewsService`, `NewsSentimentStrategy`, UI) require ZERO changes.
 
 ### 2. Standardized News Data Schema
 - **Where**: `NewsArticle` entity in PostgreSQL & Prisma schema.
