@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-05
-> **Status**: Draft — initialized template, to be filled during Week 1
+> **Last Updated**: 2026-08-06
+> **Status**: Active — Huy (Strategy Engine) files fully detailed
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

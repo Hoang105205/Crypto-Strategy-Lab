@@ -14,7 +14,7 @@
 graph TD
   FE["Next.js Frontend<br/>Dashboard · Builder · Leaderboard · News"]
   MD["Market Data<br/>(Hoàng)<br/>Binance Adapter"]
-  SE["Strategy Engine<br/>(Member B)<br/>Plugin Registry"]
+  SE["Strategy Engine<br/>(Huy)<br/>Plugin Registry"]
   NW["News & Sentiment<br/>(Member C)<br/>Python FastAPI"]
   INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Member D)"]
   DB[("PostgreSQL + Prisma")]
@@ -47,7 +47,7 @@ Modules depend on shared interfaces only — never on each other's implementatio
 apps/
 ├── backend/              # NestJS modular monolith
 │   ├── market-data/      # Hoàng
-│   ├── strategy/         # Member B
+│   ├── strategy/         # Huy
 │   ├── news/             # Member C
 │   ├── events/           # Member D — event bus
 │   ├── queue/            # Member D — job queue + workers

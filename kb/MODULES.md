@@ -5,7 +5,7 @@
 | Module | Owner | Responsibility | Layer | Depends On |
 |--------|-------|---------------|-------|------------|
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
-| Strategy Engine | Member B | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
+| Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
 | News & Sentiment | Member C | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
 | Event Infrastructure | Member D | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`) |
 | Frontend | All (shell: Member D) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
@@ -19,7 +19,7 @@
 - **Module doc**: `kb/modules/market-data.md`
 - **Contracts**: `kb/contracts/market-data.yaml`
 
-### Strategy Engine (Member B)
+### Strategy Engine (Huy)
 - **Scope**: StrategyRegistry (register + analyze pipeline), 4 strategies (MA, RSI, Bollinger, Support/Resistance), Composite combiners (MajorityVote, WeightedScore), Backtester + Evaluator, Search generators (Random, Domain-Guided)
 - **Exposes**: `IBacktester`, `IStrategyGenerator`, strategy CRUD + backtest REST API
 - **Dependencies**: `IMarketDataService`, `IEventBus`, `IJobQueue` interfaces

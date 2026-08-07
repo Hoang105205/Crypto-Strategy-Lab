@@ -1,28 +1,158 @@
 # Contract: Strategy Engine
-# Owner: Member B | Status: Draft — fill field names/types during W1
+# Owner: Huy | Status: Active
 # This file is the Single Source of Truth for the Strategy Engine module's API.
+# See also: kb/modules/strategy-engine.md, ADR-0003, ADR-0008
 
 entities:
-  Strategy:
-    fields: {}   # TODO: e.g. id, type, params (JSONB), version
+  StrategyVersion:
+    fields:
+      id: UUID                        # Primary key
+      strategyType: string            # e.g. "MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite"
+      name: string                    # Human-readable name (e.g. "MA-20/50 Crossover")
+      version: number                 # Monotonic per strategyType
+      parameters: JSONB               # Strategy-specific params (e.g. { periods: [20, 50] })
+      parentVersionId: UUID?          # Previous version of this strategy (nullable)
+      isComposite: boolean            # True if this is a composite strategy
+      childVersionIds: UUID[]?        # Child strategy version IDs (if composite)
+      combinerType: string?           # "MajorityVote" | "WeightedScore" (if composite)
+      combinerWeights: JSONB?         # Per-child weights (if WeightedScore combiner)
+      createdAt: DateTime
+
   BacktestResult:
-    fields: {}   # TODO: e.g. strategyId, return, winRate, maxDrawdown, sharpe, trades
+    fields:
+      id: UUID                        # Primary key
+      strategyVersionId: UUID         # FK → StrategyVersion.id
+      pair: string                    # e.g. "BTCUSDT"
+      timeframe: string              # e.g. "1h", "4h", "1d"
+      startDate: DateTime
+      endDate: DateTime
+      totalReturn: float              # Percentage return
+      winRate: float                  # 0.0 – 1.0
+      maxDrawdown: float              # Maximum drawdown (negative %)
+      sharpeRatio: float              # Risk-adjusted return
+      profitFactor: float             # Gross profit / gross loss
+      totalTrades: number
+      trades: JSONB                   # Array of { entryDate, exitDate, entryPrice, exitPrice, side, pnl }
+      executedAt: DateTime
+      executionTimeMs: number
+
+  Trade:
+    fields:
+      entryDate: DateTime
+      exitDate: DateTime
+      entryPrice: float
+      exitPrice: float
+      side: string                    # "LONG" | "SHORT"
+      pnl: float                     # Profit/loss percentage
+      quantity: float
 
 interfaces:
   IStrategy:
-    methods: []  # TODO: e.g. analyze(candles) => Signal
+    description: "Core strategy interface — all strategies (single + composite) implement this"
+    methods:
+      - name: analyze
+        args: "(candles: ICandle[])"
+        returns: "ISignal"
+        description: "Analyze candle data and produce a BUY/SELL/HOLD signal"
+      - name: getName
+        args: "()"
+        returns: "string"
+      - name: getType
+        args: "()"
+        returns: "StrategyType"
+      - name: getParameters
+        args: "()"
+        returns: "Record<string, any>"
+
   IBacktester:
-    methods: []  # TODO: e.g. run(strategy, candles) => BacktestResult
+    description: "Backtesting execution — simulates a strategy over historical candles"
+    methods:
+      - name: run
+        args: "(strategy: IStrategy, candles: ICandle[], config: BacktestConfig)"
+        returns: "BacktestResult"
+        description: "Replay candles, simulate trades based on strategy signals, compute metrics"
+
+  IEvaluator:
+    description: "Computes evaluation metrics from raw backtest trades"
+    methods:
+      - name: evaluate
+        args: "(trades: Trade[], initialCapital: number)"
+        returns: "EvaluationMetrics"
+        description: "Compute Return, WinRate, MaxDrawdown, SharpeRatio, ProfitFactor"
+
   IStrategyGenerator:
-    methods: []  # TODO: e.g. generate(count) => Strategy[]
+    description: "Generates candidate strategies for the search loop"
+    methods:
+      - name: generate
+        args: "(count: number)"
+        returns: "IStrategy[]"
+        description: "Generate N candidate strategies (Random or Domain-Guided)"
+
+  ICombiner:
+    description: "Combines multiple strategy signals into a single signal"
+    methods:
+      - name: combine
+        args: "(signals: ISignal[])"
+        returns: "ISignal"
+        description: "Aggregate signals from child strategies"
 
 endpoints:
-  - method: POST
-    path: /api/strategy/backtest     # TODO: confirm request/response shape
-    response: TODO
   - method: GET
-    path: /api/strategy              # TODO: list strategies
-    response: TODO
+    path: /api/strategies
+    description: "List all registered strategies with their parameters"
+    response:
+      type: "StrategyVersion[]"
+      example: '[{ id, strategyType, name, version, parameters, isComposite }]'
+
+  - method: GET
+    path: /api/strategies/:id
+    description: "Get a specific strategy version by ID"
+    response:
+      type: "StrategyVersion"
+
+  - method: POST
+    path: /api/strategies/composite
+    description: "Create a composite strategy from child strategies + combiner"
+    request:
+      childStrategyIds: "UUID[]"
+      combinerType: '"MajorityVote" | "WeightedScore"'
+      combinerWeights: "number[]?    # Required for WeightedScore"
+      name: "string"
+    response:
+      type: "StrategyVersion"
+
+  - method: POST
+    path: /api/strategies/backtest
+    description: "Submit a backtest request (enqueued via job queue)"
+    request:
+      strategyVersionId: "UUID"
+      pair: "string                  # e.g. 'BTCUSDT'"
+      timeframe: "string             # e.g. '1h'"
+      startDate: "DateTime"
+      endDate: "DateTime"
+    response:
+      type: "{ jobId: string, status: 'queued' }"
+
+  - method: GET
+    path: /api/strategies/backtest/:id
+    description: "Get backtest result by ID"
+    response:
+      type: "BacktestResult"
+
+  - method: GET
+    path: /api/strategies/:id/versions
+    description: "List all versions of a strategy type"
+    response:
+      type: "StrategyVersion[]"
 
 events_published:
-  - BacktestRequested                # TODO: payload — see contracts/events.yaml
+  - name: BacktestRequested
+    payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string }"
+    description: "Published when a backtest is submitted — consumed by Job Queue (Member D)"
+    see_also: "contracts/events.yaml"
+
+events_consumed:
+  - name: BacktestCompleted
+    payload: "{ jobId: string, backtestResultId: UUID, strategyVersionId: UUID }"
+    description: "Consumed to link result back to the strategy version"
+    published_by: "Event Infrastructure (Member D)"
