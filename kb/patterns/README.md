@@ -13,4 +13,6 @@ Patterns used across the project, with where they appear and why.
 | Job Queue / Worker | Backtest execution | Event Infrastructure | Async scale for long-running work |
 | BFF | DashboardService | Event Infrastructure | Frontend-specific composition |
 | Graceful Degradation | NewsSentimentStrategy returns HOLD | News & Sentiment | Fault tolerance |
-| [TODO] | [TODO] | [TODO] | [TODO] |
+| Event Envelope | Every event wrapped with eventId/correlationId/occurredAt before publish | Event Infrastructure | Idempotency + tracing across async event chains |
+| BFF (Backend-for-Frontend) | DashboardService composes Leaderboard + Loop Status + Queue Stats | Event Infrastructure | One REST call for the frontend instead of three |
+| State Machine | SearchLoopRun status transitions (RUNNING/PAUSED/COMPLETED/STOPPED_BY_USER/FAILED) | Event Infrastructure | Explicit, controlled loop lifecycle — no unbounded `while(true)` |

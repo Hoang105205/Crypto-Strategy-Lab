@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-06
-> **Status**: Active — Huy (Strategy Engine) files fully detailed
+> **Last Updated**: 2026-08-07
+> **Status**: Active — Huy (Strategy Engine) and Member D (Event Infrastructure, Design) files fully detailed
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

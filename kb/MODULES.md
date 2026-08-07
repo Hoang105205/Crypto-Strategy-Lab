@@ -7,7 +7,7 @@
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
 | News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
-| Event Infrastructure | Member D | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`) |
+| Event Infrastructure | Member D | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) |
 | Frontend | All (shell: Member D) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
 
 ## Module Details
@@ -36,15 +36,16 @@
 ### Event Infrastructure (Member D)
 - **Scope**: events/ (EventEmitter2, typed events), queue/ (worker pool, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
 - **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs
-- **Dependencies**: `IBacktester`, `IStrategyGenerator` interfaces
+- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces (the Job Queue worker calls `IMarketDataService.getHistorical()` directly to fetch candles for backtesting)
 - **Module doc**: `kb/modules/event-infrastructure.md`
 - **Contracts**: `kb/contracts/events.yaml`
 
 ## Cross-Module Communication
-- Market Data → Event Infrastructure: publishes `MarketDataUpdated`
+- Market Data → Event Infrastructure: publishes `MarketDataUpdated` (reserved; not yet consumed — see `kb/contracts/events.yaml`)
 - Strategy Engine → Event Infrastructure: publishes `BacktestRequested`
-- Event Infrastructure → Strategy Engine: publishes `BacktestCompleted`
-- News & Sentiment → Strategy Engine: `NewsSentimentStrategy` registered in StrategyRegistry
+- Event Infrastructure → Strategy Engine: publishes `BacktestCompleted` / `BacktestFailed`
+- Event Infrastructure → Market Data: calls `IMarketDataService.getHistorical()` (interface only) from the Job Queue worker to fetch candles for backtesting
+- News & Sentiment → Strategy Engine: `SentimentStrategy` registered in StrategyRegistry
 - All modules → Frontend: REST + WebSocket only
 
 ## Module Boundary Rules

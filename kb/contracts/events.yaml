@@ -1,35 +1,326 @@
 # Contract: Events
-# Owner: Member D | Status: Draft — fill payloads during W1
+# Owner: Member D | Status: Active — SSoT for the event bus, job queue, and all typed events
 # This file is the Single Source of Truth for all typed events on the bus.
+# See also: kb/modules/event-infrastructure.md, ADR-0005, ADR-0006, ADR-0011, ADR-0012
+
+# ---------------------------------------------------------------------------
+# Shared envelope — every event published on IEventBus is wrapped in this
+# envelope. `payload` holds the event-specific data documented in `events:`.
+# Wrapping is done automatically by IEventBus.publish() — callers only pass
+# eventType + payload (+ optional correlationId).
+# ---------------------------------------------------------------------------
+entities:
+  EventEnvelope:
+    fields:
+      eventId: UUID            # Unique ID for this event occurrence — used as an idempotency key by subscribers
+      eventType: string        # e.g. "BacktestCompleted" — must be one of the names in `events:` below
+      eventVersion: number     # Schema version of the payload, starts at 1. Bump on breaking payload changes.
+      occurredAt: DateTime     # When the event was created (ISO8601, UTC)
+      correlationId: UUID      # Ties together all events for one logical request (one backtest, one loop run)
+      payload: object          # Event-specific payload — see `events:` section
+
+  JobRequest:
+    fields:
+      jobId: UUID              # Primary key, generated at enqueue time
+      jobType: string          # "BACKTEST" is the only job type in the MVP; field exists for future job types
+      payload: object          # e.g. the BacktestRequested payload
+      attempt: number          # Current attempt count, starts at 1
+      maxAttempts: number      # Default 3 — see retry_policy below
+      correlationId: UUID
+      createdAt: DateTime
+      availableAt: DateTime    # Job is not picked up before this time — used to implement backoff delay
+
+  JobStatus:
+    fields:
+      jobId: UUID
+      status: string           # "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "DEAD_LETTER"
+      attempt: number
+      lastError: string        # nullable — set when status is FAILED or DEAD_LETTER
+      updatedAt: DateTime
+
+  QueueStats:
+    fields:
+      queued: number
+      processing: number
+      completedLast24h: number
+      deadLettered: number
+
+  LeaderboardEntryPayload:
+    fields:
+      rank: number
+      strategyVersionId: UUID
+      strategyName: string
+      strategyType: string      # "MA" | "RSI" | "Bollinger" | "SR" | "Sentiment" | "Composite"
+      isComposite: boolean
+      backtestResultId: UUID
+      score: number              # Computed leaderboard score — see kb/modules/event-infrastructure.md Section 3 (Observer)
+      totalReturn: float
+      winRate: float
+      maxDrawdown: float
+      sharpeRatio: float
+      totalTrades: number
+
+enums:
+  JobStatusValue: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED", "DEAD_LETTER"]
+  BacktestSource: ["USER", "SEARCH_LOOP"]
+  LoopStatus: ["RUNNING", "PAUSED", "COMPLETED", "STOPPED_BY_USER", "FAILED"]
 
 interfaces:
   IEventBus:
-    methods: []  # TODO: e.g. publish(event, payload), subscribe(event, handler)
-  IJobQueue:
-    methods: []  # TODO: e.g. enqueue(job), retry(jobId), deadLetter(jobId)
+    description: >
+      Typed pub/sub abstraction wrapping EventEmitter2 (ADR-0005). All cross-module communication
+      goes through this interface — a module never calls another module's service methods directly.
+    methods:
+      - name: publish
+        args: "<T>(eventType: string, payload: T, correlationId?: UUID)"
+        returns: "void"
+        description: >
+          Wraps payload in an EventEnvelope (auto-generates eventId + occurredAt; generates a new
+          correlationId if none is supplied) and emits it synchronously to EventEmitter2. Fire-and-forget:
+          the publisher does not wait for subscriber handlers to complete and does not receive their
+          return values or errors.
+      - name: subscribe
+        args: "<T>(eventType: string, handler: (envelope: EventEnvelope<T>) => void | Promise<void>)"
+        returns: "Subscription"
+        description: >
+          Registers a handler for an event type. Handlers may be async. A handler that throws or
+          rejects is caught and logged by the bus wrapper — it never crashes the publisher or other
+          subscribers (isolation between subscribers is mandatory, see Section 8 of the module file).
+      - name: unsubscribe
+        args: "(subscription: Subscription)"
+        returns: "void"
+        description: "Removes a previously registered handler. Used mainly in tests and module teardown."
 
+  IJobQueue:
+    description: >
+      Queue + worker abstraction for long-running backtest jobs (ADR-0006). In-memory implementation
+      for W1–W2, swappable for BullMQ/Redis without changing any consumer of this interface (ADR-0012).
+    methods:
+      - name: enqueue
+        args: "(jobType: string, payload: object, correlationId?: UUID)"
+        returns: "Promise<{ jobId: UUID }>"
+        description: "Adds a job to the queue and returns immediately. Does not execute the job synchronously."
+      - name: getStatus
+        args: "(jobId: UUID)"
+        returns: "Promise<JobStatus>"
+      - name: retry
+        args: "(jobId: UUID)"
+        returns: "Promise<void>"
+        description: >
+          Manually re-enqueues a dead-lettered job with the attempt counter reset to 1. This is an
+          operator-triggered recovery action — automatic retries on transient failure are handled
+          internally by the worker and do not call this method.
+      - name: deadLetter
+        args: "(jobId: UUID, reason: string)"
+        returns: "Promise<void>"
+        description: >
+          Moves a job to the dead-letter queue after it exhausts maxAttempts. Called internally by
+          the worker; not intended to be called by other modules.
+      - name: getStats
+        args: "()"
+        returns: "Promise<QueueStats>"
+        description: "Used by DashboardService and the observability endpoint (Section 7 of the module file)."
+
+# ---------------------------------------------------------------------------
+# Retry policy — applies to every job on the queue (BACKTEST is the only job
+# type in the MVP). See ADR-0006.
+# ---------------------------------------------------------------------------
+retry_policy:
+  maxAttempts: 3
+  backoff: exponential
+  delaysMs: [1000, 4000, 16000]   # attempt 1 fails -> wait 1s; attempt 2 fails -> wait 4s; attempt 3 fails -> wait 16s
+  onExhausted: "IJobQueue.deadLetter() is called, then BacktestDeadLettered is published"
+  nonRetriableErrors:
+    - "Zero historical candles returned for the requested pair/timeframe/date range"
+    - "Strategy version not found in registry"
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
 events:
   MarketDataUpdated:
-    publisher: Market Data
-    subscribers: [Event Infrastructure]   # TODO: confirm + payload
-    payload: TODO
+    publisher: "Market Data"
+    subscribersOnBus: []
+    description: >
+      Published whenever a new or updated candle is available for a subscribed symbol/timeframe.
+      NOTE: per kb/flows/realtime-market-data.md, the live relay to the frontend is a direct
+      WebSocket push from Market Data's own gateway — Event Infrastructure does not currently
+      subscribe to this event for any MVP feature. It is kept in this contract so future
+      event-driven consumers (e.g. an indicator cache, or a price-reactive strategy) can subscribe
+      without introducing a new event type.
+    payload:
+      symbol: string             # e.g. "BTCUSDT"
+      timeframe: string           # e.g. "5m", "1h"
+      candle:
+        openTime: DateTime
+        closeTime: DateTime
+        open: float
+        high: float
+        low: float
+        close: float
+        volume: float
+        isClosed: boolean        # false = still-forming candle (live tick); true = finalized candle
+    openQuestions:
+      - "Confirm final Candle field names against kb/contracts/market-data.yaml (currently TODO, owned by Hoàng)"
+
   BacktestRequested:
-    publisher: Strategy Engine
-    subscribers: [Queue Worker]
-    payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string }"
+    publisher: "Strategy Engine"
+    subscribersOnBus: ["Event Infrastructure (Job Queue)"]
+    description: >
+      Published when a user or the Search Loop submits a strategy for backtesting. Consumed by the
+      Job Queue, which enqueues a BACKTEST job for a worker to process.
+    payload:
+      jobId: UUID                      # Generated by the publisher; correlates request to result
+      strategyVersionId: UUID
+      pair: string                     # e.g. "BTCUSDT"
+      timeframe: string                # e.g. "1h"
+      startDate: DateTime
+      endDate: DateTime
+      backtestConfig:                  # Mirrors BacktestConfig in kb/contracts/strategy.yaml
+        initialCapital: float
+        positionSizePercent: float
+        commission: float              # nullable
+        slippage: float                # nullable
+      source: BacktestSource           # "USER" | "SEARCH_LOOP"
+      loopRunId: UUID                  # nullable — present only when source = "SEARCH_LOOP"
+    contractNote: >
+      Core fields (jobId, strategyVersionId, pair, timeframe, startDate, endDate) mirror
+      kb/contracts/strategy.yaml's BacktestRequested payload exactly (owned by Huy).
+      backtestConfig, source, and loopRunId are additive fields the Job Queue and Loop Controller
+      need — confirm with Huy before implementation so both contracts stay in sync.
+
   BacktestCompleted:
-    publisher: Queue Worker
-    subscribers: [Strategy Engine, Leaderboard, Loop Controller]
-    payload: "{ jobId: string, backtestResultId: UUID, strategyVersionId: UUID }"
+    publisher: "Event Infrastructure (Job Queue Worker)"
+    subscribersOnBus: ["Strategy Engine", "Leaderboard", "Loop Controller"]
+    description: >
+      Published by the worker after a backtest finishes successfully. Carries an evaluation metrics
+      summary so the Leaderboard and Loop Controller can rank/decide without an extra DB round-trip.
+      The full trade list stays in BacktestResult, fetched on demand via
+      GET /api/strategies/backtest/:id.
+    payload:
+      jobId: UUID
+      correlationId: UUID
+      loopRunId: UUID                  # nullable — present only if this backtest originated from the search loop
+      backtestResultId: UUID
+      strategyVersionId: UUID
+      strategyName: string
+      strategyType: string             # "MA" | "RSI" | "Bollinger" | "SR" | "Sentiment" | "Composite"
+      isComposite: boolean
+      pair: string
+      timeframe: string
+      status: string                   # always "SUCCESS" for this event — see BacktestFailed for failures
+      metrics:                         # Mirrors EvaluationMetrics in kb/contracts/strategy.yaml
+        totalReturn: float
+        winRate: float
+        maxDrawdown: float
+        sharpeRatio: float
+        profitFactor: float
+        totalTrades: number
+      executedAt: DateTime
+      executionTimeMs: number
+
   BacktestFailed:
-    publisher: Queue Worker
-    subscribers: [Strategy Engine]
-    payload: "{ jobId: string, error: string }"
+    publisher: "Event Infrastructure (Job Queue Worker)"
+    subscribersOnBus: ["Strategy Engine", "Loop Controller"]
+    description: >
+      Published when a backtest job exhausts all retry attempts or fails with a non-retriable error
+      (see retry_policy.nonRetriableErrors above).
+    payload:
+      jobId: UUID
+      correlationId: UUID
+      loopRunId: UUID                  # nullable
+      strategyVersionId: UUID
+      error: string
+      attempt: number
+      willRetry: boolean               # false once retry_policy.maxAttempts is reached
+    openQuestions:
+      - "kb/contracts/strategy.yaml currently lists BacktestFailed under Strategy Engine's events_published, but per kb/flows/strategy-backtest.md the Job Queue worker (Event Infrastructure) is the actual publisher. This file treats Event Infrastructure as the publisher of record — reconcile with Huy and update strategy.yaml's ownership note."
+
+  BacktestDeadLettered:
+    publisher: "Event Infrastructure (Job Queue)"
+    subscribersOnBus: ["Loop Controller"]
+    description: >
+      Published when a job is moved to the dead-letter queue after exhausting retry_policy.maxAttempts.
+      Kept distinct from BacktestFailed so the Dashboard can surface a "needs operator attention"
+      indicator (via DashboardService.getQueueStats) even for future job types that don't otherwise
+      notify Strategy Engine.
+    payload:
+      jobId: UUID
+      correlationId: UUID
+      jobType: string
+      lastError: string
+      attempts: number
+      deadLetteredAt: DateTime
+
   LeaderboardUpdated:
-    publisher: Leaderboard
-    subscribers: [WebSocket Gateway]
-    payload: TODO
+    publisher: "Event Infrastructure (Leaderboard)"
+    subscribersOnBus: ["WebSocket Gateway"]
+    description: >
+      Published after the Leaderboard recomputes Top-K ranking in reaction to BacktestCompleted.
+      The WebSocket Gateway relays this to all connected frontend clients on the
+      `leaderboard:update` channel (see kb/modules/event-infrastructure.md Section 7).
+    payload:
+      updatedAt: DateTime
+      triggeredByBacktestResultId: UUID
+      rankingCriterion: string          # "score" | "totalReturn" | "winRate" | "sharpeRatio"
+      topK: LeaderboardEntryPayload[]
+
+  SearchLoopStarted:
+    publisher: "Event Infrastructure (Loop Controller)"
+    subscribersOnBus: ["WebSocket Gateway"]
+    description: "Published when a user starts a new search loop run."
+    payload:
+      loopRunId: UUID
+      config:
+        generatorType: string           # "RANDOM" | "DOMAIN_GUIDED"
+        maxCandidates: number           # nullable — one of maxCandidates / maxDurationMs must be set
+        maxDurationMs: number           # nullable
+        stopOnNoImprovementIterations: number   # default 50
+      startedAt: DateTime
+
+  SearchLoopProgress:
+    publisher: "Event Infrastructure (Loop Controller)"
+    subscribersOnBus: ["WebSocket Gateway"]
+    description: >
+      Published after each candidate finishes evaluation, so the Loop Status Panel updates without
+      the frontend polling.
+    payload:
+      loopRunId: UUID
+      iteration: number
+      testedCandidates: number
+      currentCandidate:
+        strategyVersionId: UUID         # nullable while generating
+        strategyName: string            # nullable while generating
+        status: string                  # "GENERATING" | "BACKTESTING" | "EVALUATING"
+      bestScoreSoFar: float             # nullable until first candidate completes
+      bestStrategyVersionId: UUID       # nullable until first candidate completes
+
+  SearchLoopStopped:
+    publisher: "Event Infrastructure (Loop Controller)"
+    subscribersOnBus: ["WebSocket Gateway"]
+    description: "Published when a loop run finishes, is stopped by the user, or fails."
+    payload:
+      loopRunId: UUID
+      status: LoopStatus                # "COMPLETED" | "STOPPED_BY_USER" | "FAILED"
+      stopReason: string                # e.g. "max_candidates_reached" | "no_improvement_50_iterations" | "user_requested" | "error"
+      testedCandidates: number
+      bestStrategyVersionId: UUID       # nullable
+      bestScore: float                  # nullable
+      startedAt: DateTime
+      stoppedAt: DateTime
+
   NewsCollected:
-    publisher: News & Sentiment
-    subscribers: [TODO]
-    payload: TODO
+    publisher: "News & Sentiment"
+    subscribersOnBus: []
+    description: >
+      Reserved for future use. As of W1, News & Sentiment does not publish this event: the frontend
+      reads news via REST (GET /api/news) and NewsSentimentStrategy reads aggregate sentiment
+      directly (see kb/flows/news-sentiment-pipeline.md). Kept in this contract so a future
+      push-based sentiment gauge (WebSocket) can subscribe without introducing a new event type.
+      Confirm with Thuận before relying on this event actually being published.
+    payload:
+      articleId: UUID
+      relatedCoins: string[]
+      sentimentScore: float
+      sentimentLabel: string             # "POSITIVE" | "NEGATIVE" | "NEUTRAL"
+      publishedAt: DateTime
