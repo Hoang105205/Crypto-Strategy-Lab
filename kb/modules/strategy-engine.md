@@ -8,7 +8,7 @@
 - **Responsibility**: Register, analyze, compose, backtest, evaluate, and search trading strategies using a plugin architecture
 - **Layer**: Backend (NestJS module) + Frontend (Next.js pages)
 - **Depends on**: `IMarketDataService`, `IEventBus`, `IJobQueue` (shared interfaces only)
-- **Depended by**: Event Infrastructure (via `IBacktester`, `IStrategyGenerator` interfaces), News & Sentiment (`SentimentStrategy` registered in StrategyRegistry)
+- **Depended by**: Event Infrastructure (via `IBacktester`, `IStrategyGenerator` interfaces), News & Sentiment (`NewsSentimentStrategy` registered in StrategyRegistry)
 - **Contracts**: `kb/contracts/strategy.yaml`
 - **Source files**:
   - Backend: `apps/backend/src/strategy/`
@@ -78,7 +78,7 @@
 │  │     → raw trade list      │  │     → Sharpe, ProfitFactor   │    │
 │  └───────────────────────────┘  └──────────────────────────────┘    │
 │                                                                       │
-│  * SentimentStrategy is registered by News module (Member C)         │
+│  * NewsSentimentStrategy is registered by News module (Member C)         │
 └──────────────────────────────────────────────────────────────────────┘
           │                        │                    │
           ▼                        ▼                    ▼
@@ -177,6 +177,7 @@ StrategyController (REST)
 sequenceDiagram
     participant FE as Frontend
     participant SC as StrategyController
+    participant VS as StrategyVersionService
     participant SR as StrategyRegistry
     participant MA as MAStrategy
     participant RSI as RSIStrategy
@@ -187,7 +188,7 @@ sequenceDiagram
     SC-->>FE: 200 OK (strategy list)
 
     FE->>SC: POST /api/strategies/backtest {versionId, pair, timeframe}
-    SC->>SR: get(versionId) → IStrategy
+    SC->>VS: get(versionId) → verify immutable snapshot exists
     SC->>SC: publish BacktestRequested event
     SC-->>FE: 202 Accepted {jobId, status: 'queued'}
 ```
@@ -294,8 +295,8 @@ Events:
 
 ## 10. Open Questions / TODOs
 
-- [ ] Confirm exact parameter ranges for each strategy (MA periods, RSI thresholds, Bollinger stdDev)
-- [ ] Decide maximum number of child strategies in a composite (currently unbounded)
-- [ ] Confirm DomainGuidedGenerator strategy group categories with Hoàng (Trend, Momentum, Volatility, Structure, Sentiment)
-- [ ] Coordinate with Member D on exact `BacktestRequested` event payload format (see `contracts/events.yaml`)
-- [ ] Determine if Search Engine should deduplicate candidates by parameter hash before submitting to queue
+- [x] Confirm exact parameter ranges for each strategy (MA periods: 1-200, RSI thresholds: 10-90, Bollinger stdDev: 1.0-5.0)
+- [x] Decide maximum number of child strategies in a composite (limit to 10 for performance reasons)
+- [x] Confirm DomainGuidedGenerator strategy group categories with Hoàng (Trend, Momentum, Volatility, Structure, Sentiment)
+- [x] Coordinate with Member D on exact `BacktestRequested` event payload format (see `contracts/events.yaml` - Synced)
+- [x] Determine if Search Engine should deduplicate candidates by parameter hash before submitting to queue (Yes, deduplicate using SHA-256 hash of parameters)

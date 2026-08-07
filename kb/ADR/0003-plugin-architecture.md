@@ -11,7 +11,7 @@ The system requires support for multiple trading strategies (MA, RSI, Bollinger 
 - **Open-Closed Principle (OCP)**: The system must be open for extension (new strategies) but closed for modification (existing code).
 - **Uniform treatment**: Single strategies and composite strategies must be treated identically by the backtester and evaluator.
 - **Runtime flexibility**: Strategies can be registered and composed at runtime, not just at compile time.
-- **Team independence**: Huy (Strategy Engine), Member C (SentimentStrategy), and Member D (Loop Controller) must work independently.
+- **Team independence**: Huy (Strategy Engine), Member C (NewsSentimentStrategy), and Member D (Loop Controller) must work independently.
 
 ## Considered Options
 1. **Hard-coded switch/case** — Each strategy handled in a switch. Violates OCP.
@@ -59,7 +59,7 @@ registry.register(new MACDStrategy({ fastPeriod: 12, slowPeriod: 26, signalPerio
 ```
 
 ### Consequences
-- **Positive**: Adding a strategy is O(1) effort. Backtester and Evaluator are strategy-agnostic. SentimentStrategy (Member C) plugs in the same way. Demonstrable in final demo.
+- **Positive**: Adding a strategy is O(1) effort. Backtester and Evaluator are strategy-agnostic. NewsSentimentStrategy (Member C) plugs in the same way. Demonstrable in final demo.
 - **Positive**: Composite strategies implement `IStrategy` too, enabling recursive composition (a composite can contain other composites).
 - **Negative**: The Registry is a central point — if it has a bug, all strategies are affected.
 - **Negative**: Strategy discovery is manual (`register()` call). No auto-discovery from filesystem (YAGNI for this project scope).
