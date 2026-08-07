@@ -4,6 +4,29 @@
 # See also: kb/modules/strategy-engine.md, ADR-0003, ADR-0008
 
 entities:
+  BacktestConfig:
+    fields:
+      initialCapital: float       # Starting capital (e.g., 10000)
+      positionSizePercent: float  # % of capital per trade
+      commission: float?          # Trading fee percentage
+      slippage: float?            # Slippage simulation
+
+  EvaluationMetrics:
+    fields:
+      totalReturn: float
+      winRate: float
+      maxDrawdown: float
+      sharpeRatio: float
+      profitFactor: float
+      totalTrades: number
+
+  ISignal:
+    fields:
+      action: string           # "BUY" | "SELL" | "HOLD"
+      confidence: float?       # Optional confidence score 0-1
+      metadata: JSONB?         # Optional strategy-specific data
+
+
   StrategyVersion:
     fields:
       id: UUID                        # Primary key
@@ -32,7 +55,7 @@ entities:
       sharpeRatio: float              # Risk-adjusted return
       profitFactor: float             # Gross profit / gross loss
       totalTrades: number
-      trades: JSONB                   # Array of { entryDate, exitDate, entryPrice, exitPrice, side, pnl }
+      trades: JSONB                   # Array of { entryDate, exitDate, entryPrice, exitPrice, side, pnl, quantity }
       executedAt: DateTime
       executionTimeMs: number
 
@@ -45,6 +68,11 @@ entities:
       side: string                    # "LONG" | "SHORT"
       pnl: float                     # Profit/loss percentage
       quantity: float
+
+enums:
+  StrategyType: ["MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite"]
+  SignalAction: ["BUY", "SELL", "HOLD"]
+  CombinerType: ["MajorityVote", "WeightedScore"]
 
 interfaces:
   IStrategy:
@@ -69,8 +97,8 @@ interfaces:
     methods:
       - name: run
         args: "(strategy: IStrategy, candles: ICandle[], config: BacktestConfig)"
-        returns: "BacktestResult"
-        description: "Replay candles, simulate trades based on strategy signals, compute metrics"
+        returns: "Trade[]"
+        description: "Replay candles, simulate trades based on strategy signals"
 
   IEvaluator:
     description: "Computes evaluation metrics from raw backtest trades"
@@ -150,6 +178,9 @@ events_published:
     payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string }"
     description: "Published when a backtest is submitted — consumed by Job Queue (Member D)"
     see_also: "contracts/events.yaml"
+  - name: BacktestFailed
+    payload: "{ jobId: string, error: string }"
+    description: "Published when a backtest job fails"
 
 events_consumed:
   - name: BacktestCompleted
