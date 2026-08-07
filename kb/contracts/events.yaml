@@ -16,11 +16,15 @@ events:
   BacktestRequested:
     publisher: Strategy Engine
     subscribers: [Queue Worker]
-    payload: TODO
+    payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string }"
   BacktestCompleted:
     publisher: Queue Worker
     subscribers: [Strategy Engine, Leaderboard, Loop Controller]
-    payload: TODO
+    payload: "{ jobId: string, backtestResultId: UUID, strategyVersionId: UUID }"
+  BacktestFailed:
+    publisher: Queue Worker
+    subscribers: [Strategy Engine]
+    payload: "{ jobId: string, error: string }"
   LeaderboardUpdated:
     publisher: Leaderboard
     subscribers: [WebSocket Gateway]
