@@ -6,7 +6,7 @@
 |--------|-------|---------------|-------|------------|
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
-| News & Sentiment | Member C | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
+| News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
 | Event Infrastructure | Member D | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`) |
 | Frontend | All (shell: Member D) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
 
@@ -26,7 +26,7 @@
 - **Module doc**: `kb/modules/strategy-engine.md`
 - **Contracts**: `kb/contracts/strategy.yaml`
 
-### News & Sentiment (Member C)
+### News & Sentiment (Thuận)
 - **Scope**: `INewsProvider` adapters (RSS, CryptoPanic), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER), SentimentStrategy plugged into Registry (returns HOLD when service is down)
 - **Exposes**: News + sentiment REST API, `SentimentStrategy`
 - **Dependencies**: Shared types + `IEventBus`
