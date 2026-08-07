@@ -15,7 +15,7 @@ graph TD
   FE["Next.js Frontend<br/>Dashboard · Builder · Leaderboard · News"]
   MD["Market Data<br/>(Hoàng)<br/>Binance Adapter"]
   SE["Strategy Engine<br/>(Huy)<br/>Plugin Registry"]
-  NW["News & Sentiment<br/>(Member C)<br/>Python FastAPI"]
+  NW["News & Sentiment<br/>(Thuận)<br/>Python FastAPI"]
   INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Member D)"]
   DB[("PostgreSQL + Prisma")]
   FE <-->|REST + WebSocket| MD
@@ -48,14 +48,14 @@ apps/
 ├── backend/              # NestJS modular monolith
 │   ├── market-data/      # Hoàng
 │   ├── strategy/         # Huy
-│   ├── news/             # Member C
+│   ├── news/             # Thuận
 │   ├── events/           # Member D — event bus
 │   ├── queue/            # Member D — job queue + workers
 │   ├── leaderboard/      # Member D
 │   ├── loop/             # Member D
 │   └── dashboard/        # Member D — BFF composition layer
 ├── frontend/             # Next.js
-└── sentiment-service/    # Python FastAPI — Member C
+└── sentiment-service/    # Python FastAPI — Thuận
 shared/                   # All shared interfaces + Prisma schema
 ```
 

@@ -131,7 +131,7 @@ Cron/User        INewsProvider        NewsService        SentimentClient       F
     │                 │                    │<──8. Sentiment─────│                    │                      │
     │                 │                    │                                         │                      │
     │                 │                    │──9. Register NewsSentimentStrategy ───────────────────────────>│
-    │                 │                    │     (Enables MA + RSI + News Sentiment Composite strategies)    │
+    │                 │                    │     (Enables MA + RSI + News Sentiment Composite strategies)   │
 ```
 
 ---
@@ -161,7 +161,7 @@ See `kb/contracts/news.yaml`.
 ---
 
 ## 9. Testing Strategy
-- **Unit tests**: Test provider normalization to `RawArticle`; test `NewsSentimentStrategy` signal thresholds (>0.7 BUY, <-0.7 SELL).
+- **Unit tests**: Test provider normalization to `RawArticle`; test `NewsSentimentStrategy` signal thresholds (>0.X BUY, <-0.X SELL).
 - **Integration tests**: Test composite strategies combining `MA + RSI + NewsSentimentStrategy`.
 
 ---
