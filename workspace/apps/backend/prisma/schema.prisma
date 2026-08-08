@@ -1,0 +1,162 @@
+// Crypto Strategy Lab — Prisma Schema
+// Sourced from kb/contracts/*.yaml
+// Run: npx prisma generate && npx prisma migrate dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// Market Data — kb/contracts/market-data.yaml
+// ──────────────────────────────────────────────
+
+model Candle {
+  id        Int      @id @default(autoincrement())
+  symbol    String
+  timeframe String
+  openTime  DateTime
+  closeTime DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float
+  isClosed  Boolean
+
+  @@unique([symbol, timeframe, openTime])
+  @@index([symbol, timeframe, openTime])
+}
+
+model TradingPair {
+  id         Int     @id @default(autoincrement())
+  symbol     String  @unique
+  baseAsset  String
+  quoteAsset String
+  isActive   Boolean @default(true)
+}
+
+// ──────────────────────────────────────────────
+// Strategy Engine — kb/contracts/strategy.yaml
+// ──────────────────────────────────────────────
+
+model StrategyVersion {
+  id              String   @id @default(uuid())
+  strategyType    String
+  name            String
+  version         Int
+  parameters      Json
+  parentVersionId String?
+  isComposite     Boolean  @default(false)
+  childVersionIds String[]
+  combinerType    String?
+  combinerWeights Json?
+  createdAt       DateTime @default(now())
+
+  backtestResults BacktestResult[]
+
+  @@index([strategyType])
+}
+
+model BacktestResult {
+  id                String   @id @default(uuid())
+  strategyVersionId String
+  pair              String
+  timeframe         String
+  startDate         DateTime
+  endDate           DateTime
+  totalReturn       Float
+  winRate           Float
+  maxDrawdown       Float
+  sharpeRatio       Float
+  profitFactor      Float
+  totalTrades       Int
+  trades            Json
+  executedAt        DateTime @default(now())
+  executionTimeMs   Int
+
+  strategyVersion   StrategyVersion @relation(fields: [strategyVersionId], references: [id])
+
+  @@index([strategyVersionId])
+  @@index([pair, timeframe])
+}
+
+// ──────────────────────────────────────────────
+// News & Sentiment — kb/contracts/news.yaml
+// ──────────────────────────────────────────────
+
+model NewsArticle {
+  id             String   @id @default(uuid())
+  source         String
+  title          String
+  content        String
+  url            String   @unique
+  publishedAt    DateTime
+  crawledAt      DateTime
+  relatedCoins   String[]
+  sentimentScore Float
+  sentimentLabel String
+  createdAt      DateTime @default(now())
+
+  sentimentScores SentimentScore[]
+
+  @@index([publishedAt])
+  @@index([source])
+}
+
+model SentimentScore {
+  id        String   @id @default(uuid())
+  articleId String
+  score     Float
+  label     String
+  model     String
+  scoredAt  DateTime @default(now())
+
+  article NewsArticle @relation(fields: [articleId], references: [id])
+
+  @@index([articleId])
+}
+
+// ──────────────────────────────────────────────
+// Event Infrastructure — kb/contracts/events.yaml
+// ──────────────────────────────────────────────
+
+model LeaderboardEntry {
+  id                  String   @id @default(uuid())
+  rank                Int
+  strategyVersionId   String
+  strategyName        String
+  strategyType        String
+  isComposite         Boolean
+  backtestResultId    String
+  score               Float
+  totalReturn         Float
+  winRate             Float
+  maxDrawdown         Float
+  sharpeRatio         Float
+  totalTrades         Int
+  updatedAt           DateTime @default(now())
+
+  @@index([rank])
+  @@index([strategyVersionId])
+}
+
+model SearchLoopRun {
+  id                    String    @id @default(uuid())
+  status                String
+  generatorType         String
+  maxCandidates         Int?
+  maxDurationMs         Int?
+  stopOnNoImprovement   Int?
+  startedAt             DateTime  @default(now())
+  stoppedAt             DateTime?
+  bestStrategyVersionId String?
+  bestScore             Float?
+  testedCandidates      Int       @default(0)
+
+  @@index([status])
+}

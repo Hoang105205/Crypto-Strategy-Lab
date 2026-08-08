@@ -1,0 +1,19 @@
+{
+  "name": "crypto-strategy-lab",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "turbo test",
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint"
+  },
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "devDependencies": {
+    "turbo": "^2.10.9"
+  },
+  "packageManager": "npm@10.9.3"
+}
