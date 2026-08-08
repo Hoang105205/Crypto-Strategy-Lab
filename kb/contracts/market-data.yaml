@@ -1,25 +1,169 @@
 # Contract: Market Data
-# Owner: Hoàng | Status: Draft — fill field names/types during W1
+# Owner: Hoàng | Status: Active
 # This file is the Single Source of Truth for the Market Data module's API.
+# See also: kb/modules/market-data.md, ADR-0004, ADR-0007
 
 entities:
   Candle:
-    fields: {}   # TODO: e.g. symbol, timeframe, open, high, low, close, volume, timestamp
+    description: "Normalized OHLCV price bar — the universal data unit across the system"
+    fields:
+      symbol: string               # Trading pair, e.g. "BTCUSDT"
+      timeframe: string            # Candle interval, e.g. "1m", "5m", "15m", "1h", "4h", "1d"
+      openTime: DateTime           # Candle open timestamp (ISO8601, UTC)
+      closeTime: DateTime          # Candle close timestamp (ISO8601, UTC)
+      open: float                  # Opening price
+      high: float                  # Highest price during the interval
+      low: float                   # Lowest price during the interval
+      close: float                 # Closing price
+      volume: float                # Trading volume in base asset
+      isClosed: boolean            # false = still-forming (live tick update); true = finalized candle
+
+  TradingPair:
+    description: "A tradable crypto pair the system can subscribe to"
+    fields:
+      symbol: string               # e.g. "BTCUSDT"
+      baseAsset: string            # e.g. "BTC"
+      quoteAsset: string           # e.g. "USDT"
+      isActive: boolean            # Whether this pair is currently available
+
+  Subscription:
+    description: "Active real-time subscription for a symbol/timeframe combination"
+    fields:
+      symbol: string
+      timeframe: string
+      subscribedAt: DateTime
+      subscriberCount: number      # How many frontend clients are watching this feed
+
+enums:
+  Timeframe: ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"]
+  CandleStatus: ["FORMING", "CLOSED"]
 
 interfaces:
   IMarketDataAdapter:
-    methods: []  # TODO: e.g. fetchKlines(symbol, timeframe, range), connectStream(symbol)
+    description: "Abstraction for external market data sources (Binance, OKX, etc.). Implementations are swappable — see ADR-0004."
+    methods:
+      - name: fetchKlines
+        args: "(symbol: string, timeframe: string, options: { startTime?: DateTime; endTime?: DateTime; limit?: number })"
+        returns: "Promise<Candle[]>"
+        description: "Fetch historical candles from the exchange REST API"
+      - name: connectStream
+        args: "(symbol: string, timeframe: string)"
+        returns: "void"
+        description: "Open a WebSocket stream for real-time candle updates"
+      - name: disconnectStream
+        args: "(symbol: string, timeframe: string)"
+        returns: "void"
+        description: "Close a WebSocket stream for a specific symbol/timeframe"
+      - name: onCandle
+        args: "(callback: (candle: Candle) => void)"
+        returns: "void"
+        description: "Register a handler invoked when a new or updated candle arrives from the stream"
+      - name: onDisconnect
+        args: "(callback: () => void)"
+        returns: "void"
+        description: "Register a handler invoked when the WebSocket connection drops"
+      - name: onReconnect
+        args: "(callback: () => void)"
+        returns: "void"
+        description: "Register a handler invoked when the WebSocket reconnects after a drop"
+
   IMarketDataService:
-    methods: []  # TODO: e.g. getCandles(symbol, timeframe, limit)
+    description: "Service interface for cached market data access. Other modules depend on this, never on IMarketDataAdapter directly."
+    methods:
+      - name: getCandles
+        args: "(symbol: string, timeframe: string, limit?: number)"
+        returns: "Promise<Candle[]>"
+        description: "Get historical candles (serves from cache when possible, falls back to adapter)"
+      - name: getCandlesRange
+        args: "(symbol: string, timeframe: string, startTime: DateTime, endTime: DateTime)"
+        returns: "Promise<Candle[]>"
+        description: "Get historical candles for a specific date range — used by the Backtest Worker"
+      - name: subscribe
+        args: "(symbol: string, timeframe: string)"
+        returns: "void"
+        description: "Start a real-time stream for a symbol/timeframe (deduplicates — multiple callers share one stream)"
+      - name: unsubscribe
+        args: "(symbol: string, timeframe: string)"
+        returns: "void"
+        description: "Stop a real-time stream when no frontend clients remain"
 
 endpoints:
   - method: GET
-    path: /api/market-data/candles   # TODO: confirm params + response shape
-    response: TODO
+    path: /api/market-data/candles
+    description: "Fetch historical candles for a symbol and timeframe"
+    params:
+      symbol: "string (query) — e.g. 'BTCUSDT'"
+      timeframe: "string (query) — e.g. '5m', '1h', '4h'"
+      limit: "number (query, optional, default 500, max 1000) — number of candles to return"
+    response:
+      type: "Candle[]"
+      example: '[{ symbol: "BTCUSDT", timeframe: "5m", openTime: "2026-08-07T09:00:00Z", closeTime: "2026-08-07T09:05:00Z", open: 118000, high: 118200, low: 117900, close: 118150, volume: 125.5, isClosed: true }]'
+
+  - method: GET
+    path: /api/market-data/pairs
+    description: "List all available trading pairs"
+    response:
+      type: "TradingPair[]"
+      example: '[{ symbol: "BTCUSDT", baseAsset: "BTC", quoteAsset: "USDT", isActive: true }]'
+
+  - method: GET
+    path: /api/market-data/subscriptions
+    description: "List all active real-time subscriptions (for the dashboard status panel)"
+    response:
+      type: "Subscription[]"
+
+  - method: POST
+    path: /api/market-data/subscribe
+    description: "Start a real-time WebSocket stream for a symbol/timeframe"
+    request:
+      symbol: "string — e.g. 'BTCUSDT'"
+      timeframe: "string — e.g. '5m'"
+    response:
+      type: "{ status: 'subscribed', symbol: string, timeframe: string }"
+
+  - method: POST
+    path: /api/market-data/unsubscribe
+    description: "Stop a real-time stream (only when no clients remain)"
+    request:
+      symbol: "string"
+      timeframe: "string"
+    response:
+      type: "{ status: 'unsubscribed' }"
 
 websocket:
-  - channel: market-data:candles     # TODO: payload shape
-    payload: TODO
+  - channel: market-data:candles
+    description: "Live candle updates pushed to connected frontend clients"
+    direction: "server → client"
+    payload:
+      symbol: string
+      timeframe: string
+      candle:
+        openTime: DateTime
+        closeTime: DateTime
+        open: float
+        high: float
+        low: float
+        close: float
+        volume: float
+        isClosed: boolean
+    events:
+      - "candle:update — emitted on each tick (isClosed: false)"
+      - "candle:close — emitted when a candle finalizes (isClosed: true)"
+
+  - channel: market-data:status
+    description: "Connection status updates for the frontend status indicator"
+    direction: "server → client"
+    payload:
+      connected: boolean
+      exchange: string            # e.g. "binance"
+      lastReconnectAt: DateTime?  # Present if the adapter reconnected
+    events:
+      - "status:connected — WebSocket to Binance is live"
+      - "status:disconnected — WebSocket dropped, auto-reconnect in progress"
+      - "status:reconnected — Auto-reconnect succeeded"
 
 events_published:
-  - MarketDataUpdated                # TODO: payload — see contracts/events.yaml
+  - name: MarketDataUpdated
+    payload: "{ symbol: string, timeframe: string, candle: Candle }"
+    description: "Published whenever a new or updated candle is available. Currently has no bus subscribers (the frontend receives data via direct WebSocket push), but is kept in the contract so future event-driven consumers can subscribe without a new event type."
+    see_also: "contracts/events.yaml"

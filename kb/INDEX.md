@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
 > **Last Updated**: 2026-08-07
-> **Status**: Active — ADR-0009 and ADR-0010 written
+> **Status**: Active — All 12 ADRs complete, all W1 KB files filled
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
@@ -36,5 +36,5 @@ read from here before generating any artifacts or code.
 ## Scope Coverage
 - **Domain**: Crypto trading strategy analysis, composition, and evaluation
 - **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, SearchLoopRun
-- **Modules**: Market Data, Strategy Engine, News & Sentiment, Event Infrastructure (Event Bus + Job Queue + Leaderboard + Loop + Dashboard)
+- **Modules**: Market Data (Hoàng), Strategy Engine (Huy), News & Sentiment (Thuận), Event Infrastructure (Phương — Event Bus + Job Queue + Leaderboard + Loop + Dashboard)
 - **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop, News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update

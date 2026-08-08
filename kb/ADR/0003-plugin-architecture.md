@@ -30,7 +30,7 @@ Chosen option: **Strategy Registry (Plugin Pattern)**, because it satisfies OCP,
 │  register(strategy: IStrategy): void                │
 │  get(name: string): IStrategy                       │
 │  getAll(): IStrategy[]                              │
-│  analyze(name: string, candles: ICandle[]): ISignal │
+│  analyze(name: string, candles: Candle[]): Signal │
 │                                                     │
 │  Internal: Map<string, IStrategy>                   │
 └─────────┬───────────────────────────────────────────┘
@@ -40,7 +40,7 @@ Chosen option: **Strategy Registry (Plugin Pattern)**, because it satisfies OCP,
     │               IStrategy                        │
     │  name: string                                  │
     │  type: StrategyType                            │
-    │  analyze(candles: ICandle[]): ISignal           │
+    │  analyze(candles: Candle[]): Signal           │
     │  getParameters(): Record<string, any>           │
     └──┬──────┬──────┬──────┬──────┬────────────────┘
        │      │      │      │      │

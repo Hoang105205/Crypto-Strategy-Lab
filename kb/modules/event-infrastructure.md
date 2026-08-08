@@ -185,7 +185,7 @@ sequenceDiagram
     EB->>JQ: enqueue(payload)
     JQ->>W: dequeue job
     W->>MD: getHistorical(pair, timeframe, range)
-    MD-->>W: ICandle[]
+    MD-->>W: Candle[]
     W->>W: IBacktester.run() + IEvaluator.evaluate()
     W->>W: save BacktestResult (PostgreSQL)
     W->>EB: publish(BacktestCompleted, metrics)

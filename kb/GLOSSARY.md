@@ -42,6 +42,13 @@ in code, documentation, and communication.
 | Search Loop Run | One execution of the continuous strategy search loop, from start to a terminal state (`COMPLETED`, `STOPPED_BY_USER`, or `FAILED`); tracked as a `SearchLoopRun` record | Event Infrastructure |
 | WebSocket Gateway | Server-side component (`PushGateway`) that relays bus events (`LeaderboardUpdated`, `SearchLoopProgress`, etc.) to connected frontend clients over WebSocket | Event Infrastructure |
 | Leaderboard Score | Weighted combination of normalized return, win rate, and a risk score, used to rank strategies (see `kb/flows/leaderboard-update.md` BR-2) | Event Infrastructure |
+| IMarketDataAdapter | Abstraction interface for external market data sources (Binance, OKX, etc.). Implementations: `BinanceAdapter` (ADR-0004). All exchange-specific parsing stays inside the adapter | Market Data |
+| IMarketDataService | Service interface for cached market data access. Other modules depend on this — never on `IMarketDataAdapter` directly. Methods: `getCandles`, `getCandlesRange`, `subscribe`, `unsubscribe` | Market Data, Strategy Engine, Event Infrastructure |
+| BinanceAdapter | Concrete adapter implementing `IMarketDataAdapter` for Binance exchange. Calls Binance REST API for historical klines and Binance WebSocket for real-time streams. Parses Binance-specific JSON into normalized `Candle` entities (ADR-0004) | Market Data |
+| MarketDataGateway | NestJS WebSocket Gateway that relays live candle data and connection status to connected frontend clients. Emits `candle:update`, `candle:close`, and `status:*` events on `market-data:candles` and `market-data:status` channels | Market Data, Frontend |
+| TradingPair | A tradable crypto pair (e.g., `BTCUSDT`) with `baseAsset`, `quoteAsset`, and `isActive` fields. Defined in `kb/contracts/market-data.yaml` | Market Data |
+| Subscription Deduplication | Pattern where multiple frontend clients watching the same `symbol:timeframe` share a single Binance WebSocket stream. `subscriberCount` tracks active viewers; the stream closes only when count reaches 0 | Market Data |
+| Auto-Reconnect | Automatic reconnection strategy for external WebSocket connections using exponential backoff (1s, 4s, 16s, max 3 attempts). On reconnect, missed candles are fetched via REST API (ADR-0007) | Market Data |
 
 ## Naming Conventions
 - **API paths**: kebab-case (e.g., `/api/market-data`, `/api/strategy-backtest`)

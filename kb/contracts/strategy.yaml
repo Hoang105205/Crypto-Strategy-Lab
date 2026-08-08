@@ -20,7 +20,7 @@ entities:
       profitFactor: float
       totalTrades: number
 
-  ISignal:
+  Signal:
     fields:
       action: string           # "BUY" | "SELL" | "HOLD"
       confidence: float?       # Optional confidence score 0-1
@@ -79,8 +79,8 @@ interfaces:
     description: "Core strategy interface — all strategies (single + composite) implement this"
     methods:
       - name: analyze
-        args: "(candles: ICandle[])"
-        returns: "ISignal"
+        args: "(candles: Candle[])"
+        returns: "Signal"
         description: "Analyze candle data and produce a BUY/SELL/HOLD signal"
       - name: getName
         args: "()"
@@ -96,7 +96,7 @@ interfaces:
     description: "Backtesting execution — simulates a strategy over historical candles"
     methods:
       - name: run
-        args: "(strategy: IStrategy, candles: ICandle[], config: BacktestConfig)"
+        args: "(strategy: IStrategy, candles: Candle[], config: BacktestConfig)"
         returns: "Trade[]"
         description: "Replay candles, simulate trades based on strategy signals"
 
@@ -120,8 +120,8 @@ interfaces:
     description: "Combines multiple strategy signals into a single signal"
     methods:
       - name: combine
-        args: "(signals: ISignal[])"
-        returns: "ISignal"
+        args: "(signals: Signal[])"
+        returns: "Signal"
         description: "Aggregate signals from child strategies"
 
 endpoints:

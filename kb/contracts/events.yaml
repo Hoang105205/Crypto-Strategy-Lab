@@ -160,8 +160,8 @@ events:
         close: float
         volume: float
         isClosed: boolean        # false = still-forming candle (live tick); true = finalized candle
-    openQuestions:
-      - "Confirm final Candle field names against kb/contracts/market-data.yaml (currently TODO, owned by Hoàng)"
+    resolvedQuestions:
+      - "Candle field names confirmed in kb/contracts/market-data.yaml (Status: Active, owned by Hoàng). Fields: symbol, timeframe, openTime, closeTime, open, high, low, close, volume, isClosed — matches this payload exactly."
 
   BacktestRequested:
     publisher: "Strategy Engine"

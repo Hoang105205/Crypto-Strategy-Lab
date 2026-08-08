@@ -5,7 +5,7 @@ how multiple modules cooperate to fulfill a business scenario.
 
 | Flow | File | Owner | Status | Modules |
 |------|------|-------|--------|---------|
-| Realtime Market Data | `flows/realtime-market-data.md` | Hoàng | Draft | Market Data, Frontend |
+| Realtime Market Data | `flows/realtime-market-data.md` | Hoàng | Active | Market Data, Frontend |
 | Strategy Backtest | `flows/strategy-backtest.md` | Huy | Active | Strategy Engine, Event Infrastructure, Market Data |
 | Strategy Search Loop | `flows/strategy-search-loop.md` | Phương | Active | Event Infrastructure, Strategy Engine |
 | News & Sentiment Pipeline | `flows/news-sentiment-pipeline.md` | Member C | Draft | News & Sentiment |

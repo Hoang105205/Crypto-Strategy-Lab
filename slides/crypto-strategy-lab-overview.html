@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Strategy Lab — Project Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #21262d;
+  --ink: #e6edf3;
+  --ink-2: #8b949e;
+  --ink-3: #484f58;
+  --line: #30363d;
+  --accent: #58a6ff;
+  --accent-light: #1a2332;
+  --green: #3fb950;
+  --green-light: #0d2818;
+  --red: #f85149;
+  --red-light: #2d1215;
+  --amber: #d29922;
+  --amber-light: #2a1f0e;
+  --purple: #bc8cff;
+  --purple-light: #1e1533;
+  --cyan: #39d2c0;
+  --pink: #f778ba;
+  --font: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--ink); overflow: hidden; -webkit-font-smoothing: antialiased; }
+
+.slide {
+  width: 100vw; height: 100vh; height: 100dvh; display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  padding: clamp(28px, 5vh, 56px) clamp(36px, 6vw, 80px);
+  position: absolute; top: 0; left: 0;
+  visibility: hidden;
+  overflow: hidden;
+}
+.slide.active { visibility: visible; }
+
+.sn {
+  position: absolute; top: clamp(16px, 2.5vh, 24px); right: clamp(24px, 3vw, 40px);
+  font: 500 clamp(11px, 1.1vw, 13px) var(--mono); color: var(--ink-3); letter-spacing: .06em;
+}
+
+h1 {
+  font-size: clamp(2.6rem, 5.5vw, 4.5rem); font-weight: 800; line-height: 1.08;
+  letter-spacing: -.035em;
+}
+h2 {
+  font-size: clamp(1.7rem, 3.5vw, 2.8rem); font-weight: 700; line-height: 1.15;
+  letter-spacing: -.025em; margin-bottom: clamp(8px, 1.2vh, 16px);
+}
+h3 {
+  font-size: clamp(1.05rem, 1.6vw, 1.35rem); font-weight: 600; line-height: 1.3;
+}
+p, li {
+  font-size: clamp(.95rem, 1.3vw, 1.15rem); line-height: 1.6; color: var(--ink-2);
+}
+code {
+  font-family: var(--mono); font-size: .88em; background: var(--surface-2);
+  padding: 2px 8px; border-radius: 4px; color: var(--cyan);
+}
+.subtitle {
+  font-size: clamp(1.05rem, 1.8vw, 1.4rem); color: var(--ink-2); font-weight: 400;
+  margin-top: clamp(6px, 1vh, 12px); max-width: 680px;
+}
+
+.tag {
+  display: inline-block; padding: 3px 12px; border-radius: 100px;
+  font: 600 clamp(11px, 1vw, 13px) var(--mono); letter-spacing: .03em;
+}
+.tag-blue { background: var(--accent-light); color: var(--accent); border: 1px solid rgba(88,166,255,.25); }
+.tag-green { background: var(--green-light); color: var(--green); border: 1px solid rgba(63,185,80,.25); }
+.tag-purple { background: var(--purple-light); color: var(--purple); border: 1px solid rgba(188,140,255,.25); }
+.tag-amber { background: var(--amber-light); color: var(--amber); border: 1px solid rgba(210,153,34,.25); }
+.tag-cyan { background: rgba(57,210,192,.12); color: var(--cyan); border: 1px solid rgba(57,210,192,.25); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: clamp(8px, 1vw, 12px); padding: clamp(14px, 1.8vw, 22px);
+}
+.card-accent { border-left: 3px solid var(--accent); }
+.card-green { border-left: 3px solid var(--green); }
+.card-purple { border-left: 3px solid var(--purple); }
+.card-amber { border-left: 3px solid var(--amber); }
+.card-cyan { border-left: 3px solid var(--cyan); }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(10px, 1.2vw, 16px); width: 100%; max-width: 900px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: clamp(10px, 1.2vw, 16px); width: 100%; max-width: 900px; }
+
+.callout {
+  padding: clamp(12px, 1.5vh, 18px) clamp(14px, 1.8vw, 20px);
+  border-radius: clamp(8px, 1vw, 12px); background: var(--surface);
+  font-size: clamp(.9rem, 1.2vw, 1.1rem); line-height: 1.55;
+}
+.callout-blue { border-left: 3px solid var(--accent); }
+.callout-green { border-left: 3px solid var(--green); }
+.callout-amber { border-left: 3px solid var(--amber); }
+
+.bullet { list-style: none; padding: 0; }
+.bullet li {
+  padding: clamp(3px, .4vh, 5px) 0 clamp(3px, .4vh, 5px) 18px; position: relative;
+  font-size: clamp(.9rem, 1.2vw, 1.1rem);
+}
+.bullet li::before {
+  content: ''; position: absolute; left: 0; top: clamp(11px, 1.3vh, 15px);
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.bullet li.green::before { background: var(--green); }
+.bullet li.purple::before { background: var(--purple); }
+.bullet li.amber::before { background: var(--amber); }
+.bullet li.cyan::before { background: var(--cyan); }
+
+.tbl {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: clamp(.85rem, 1.15vw, 1.05rem);
+  border: 1px solid var(--line); border-radius: clamp(8px, 1vw, 12px); overflow: hidden;
+  max-width: 920px;
+}
+.tbl th {
+  background: var(--surface-2); color: var(--ink);
+  padding: clamp(8px, 1vh, 14px) clamp(10px, 1.2vw, 16px);
+  font-weight: 600; text-align: left; border-bottom: 1px solid var(--line);
+}
+.tbl td {
+  padding: clamp(7px, .9vh, 12px) clamp(10px, 1.2vw, 16px);
+  border-bottom: 1px solid var(--line); color: var(--ink-2);
+}
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:nth-child(even) td { background: var(--surface); }
+
+.mermaid-wrap { width: 100%; max-width: 920px; display: flex; justify-content: center; padding: clamp(12px, 1.8vh, 20px) 0; }
+.mermaid-wrap pre.mermaid { background: transparent; text-align: center; }
+
+.content-wrap { width: 100%; max-width: 900px; }
+.center-text { text-align: center; }
+
+.nav {
+  position: fixed; bottom: 0; left: 0; right: 0; height: 40px;
+  background: var(--surface); border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center; gap: 16px; z-index: 99;
+}
+.nav button {
+  background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+  padding: 5px 18px; border-radius: 6px; font: 500 13px var(--font); cursor: pointer;
+}
+.nav button:hover { border-color: var(--accent); color: var(--accent); }
+.nav button:disabled { opacity: .25; cursor: default; border-color: var(--line); color: var(--ink-3); }
+.nav span { color: var(--ink-3); font: 500 12px var(--mono); }
+
+@media print { .slide { display:flex !important; page-break-after:always; height:auto; min-height:100vh; } .nav { display:none; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- Slide 1: Title -->
+<section class="slide active" id="s1">
+  <span class="sn">01 / 08</span>
+  <div class="content-wrap center-text">
+    <h1>Crypto Strategy <span style="color:var(--accent)">Lab</span></h1>
+    <p class="subtitle">Platform for Analyzing, Combining &amp; Evaluating Crypto Trading Strategies</p>
+    <div style="margin-top: clamp(16px, 2.5vh, 28px);">
+      <span class="tag tag-green">Architecture Quality Over Trading Profitability</span>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 2: What Is This Project For? -->
+<section class="slide" id="s2">
+  <span class="sn">02 / 08</span>
+  <div class="content-wrap">
+    <h2>What Is This Project?</h2>
+    <ul class="bullet">
+      <li>Ingests real-time market data from <strong style="color:var(--ink)">Binance</strong>, displays multi-timeframe candlestick charts</li>
+      <li class="green">Composes individual strategies into <strong style="color:var(--ink)">composite strategies</strong>, backtests them on historical data</li>
+      <li class="amber">Ranks them on a <strong style="color:var(--ink)">leaderboard</strong>, runs a continuous search loop to discover better combinations</li>
+      <li class="purple">Collects news &amp; runs ML sentiment analysis as an extensible strategy plugin</li>
+    </ul>
+    <div class="callout callout-blue" style="margin-top: clamp(12px, 2vh, 20px);">
+      <strong style="color:var(--accent)">Core thesis:</strong> The grading criterion is <em>not</em> whether MA+RSI makes money. It's whether new strategies, new search algorithms, new data providers, and new sentiment models can be added with <strong style="color:var(--ink)">minimal code changes</strong>.
+    </div>
+    <div class="callout callout-green" style="margin-top: clamp(8px, 1.2vh, 14px); font-style: italic;">
+      "Today the system has MA+RSI. Tomorrow someone adds SMC, Wyckoff, Sentiment, or a completely new strategy — and the old architecture still works. <strong style="color:var(--green)">THAT is Software Architecture.</strong>"
+    </div>
+  </div>
+</section>
+
+<!-- Slide 3: Business Use Cases — Core -->
+<section class="slide" id="s3">
+  <span class="sn">03 / 08</span>
+  <div class="content-wrap">
+    <h2>Business Use Cases <span style="color:var(--ink-3)">— Core System</span></h2>
+    <div class="grid-2" style="margin-top: clamp(8px, 1.5vh, 16px);">
+      <div class="card card-accent">
+        <h3 style="color:var(--accent)">1. Realtime Market Data</h3>
+        <p style="margin-top:6px;">Binance <code>→</code> Adapter <code>→</code> Event Bus <code>→</code> WebSocket <code>→</code> Frontend. Historical + real-time candles. Max 4 simultaneous timeframes.</p>
+      </div>
+      <div class="card card-green">
+        <h3 style="color:var(--green)">2. Strategy Plugin System</h3>
+        <p style="margin-top:6px;">MA, RSI, Bollinger, Support/Resistance. Add new strategy = <strong style="color:var(--ink)">1 file + 1 <code>register()</code> call</strong>. Zero changes to backtester/evaluator/leaderboard.</p>
+      </div>
+      <div class="card card-purple">
+        <h3 style="color:var(--purple)">3. Composite Strategy</h3>
+        <p style="margin-top:6px;">Combine N strategies. Majority Vote or Weighted Score. <code>MA→BUY, RSI→SELL, SR→BUY</code> = score-based decision.</p>
+      </div>
+      <div class="card card-amber">
+        <h3 style="color:var(--amber)">4. Backtesting Engine</h3>
+        <p style="margin-top:6px;">Replay historical candles <code>→</code> simulate trades <code>→</code> compute Return, Win Rate, Max Drawdown, Sharpe Ratio.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 4: Business Use Cases — Platform -->
+<section class="slide" id="s4">
+  <span class="sn">04 / 08</span>
+  <div class="content-wrap">
+    <h2>Business Use Cases <span style="color:var(--ink-3)">— Platform Features</span></h2>
+    <div style="display:flex; flex-direction:column; gap:clamp(10px,1.5vh,16px); margin-top: clamp(8px, 1.5vh, 16px);">
+      <div class="card card-cyan">
+        <h3 style="color:var(--cyan)">5. Strategy Search Loop</h3>
+        <p style="margin-top:6px;">Generate <code>→</code> Backtest <code>→</code> Evaluate <code>→</code> Rank <code>→</code> Leaderboard <code>→</code> Generate next. Bounded stop condition — no unbounded <code>while(true)</code>.</p>
+      </div>
+      <div class="card card-accent">
+        <h3 style="color:var(--accent)">6. Leaderboard</h3>
+        <p style="margin-top:6px;">Top-K ranking, sortable by Return, Win Rate, MDD. Updates in real-time via WebSocket events — no page refresh needed.</p>
+      </div>
+      <div class="card card-green">
+        <h3 style="color:var(--green)">7. News &amp; Sentiment</h3>
+        <p style="margin-top:6px;">Crawl news <code>→</code> store <code>→</code> ML sentiment analysis (Python FastAPI) <code>→</code> <code>SentimentStrategy</code> plugs into registry. If news service down <code>→</code> returns <strong style="color:var(--ink)">HOLD</strong> (graceful degradation).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 5: Technical Architecture (Mermaid) — UNMISSABLE -->
+<section class="slide" id="s5">
+  <span class="sn">05 / 08</span>
+  <div class="content-wrap">
+    <h2>Technical Architecture</h2>
+    <p style="text-align:center; margin-bottom: clamp(4px, .8vh, 8px); color:var(--ink-3); font-family: var(--mono); font-size: clamp(.8rem, 1vw, .95rem);">Modular Monolith — NestJS 11 + Next.js 15 + PostgreSQL 16/Prisma 6 + EventEmitter2 + Python FastAPI</p>
+    <p style="text-align:center; margin-bottom: clamp(4px, .6vh, 8px); font-size: clamp(.75rem, .95vw, .9rem); color:var(--ink-3);">
+      <span style="color:var(--accent)">■</span> Hoàng &nbsp;
+      <span style="color:var(--green)">■</span> Huy &nbsp;
+      <span style="color:var(--amber)">■</span> Thuận &nbsp;
+      <span style="color:var(--purple)">■</span> Phương
+    </p>
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+graph TD
+  BN["Binance API"] --> BA["BinanceAdapter"]
+  BA --> MDS["MarketDataService"]
+  MDS --> MG["WebSocket Gateway"]
+  MDS -->|MarketDataUpdated| EB(("Event Bus"))
+  SR["Strategy Registry"] -->|BacktestRequested| JQ["Job Queue + Workers"]
+  JQ -->|BacktestCompleted| LB["Leaderboard"]
+  LB -->|LeaderboardUpdated| MG
+  NP["News Providers"] --> SS["Python FastAPI Sentiment"]
+  SS -->|SentimentStrategy| SR
+  EB --> SR
+
+  classDef hoang fill:#161b22,stroke:#58a6ff,color:#e6edf3,stroke-width:2px
+  classDef huy fill:#161b22,stroke:#3fb950,color:#e6edf3,stroke-width:2px
+  classDef thuan fill:#161b22,stroke:#d29922,color:#e6edf3,stroke-width:2px
+  classDef phuong fill:#161b22,stroke:#bc8cff,color:#e6edf3,stroke-width:2px
+
+  class BN,BA,MDS,MG hoang
+  class SR huy
+  class NP,SS thuan
+  class EB,JQ,LB phuong
+      </pre>
+    </div>
+    <div class="callout callout-amber" style="margin-top: clamp(4px, .6vh, 10px);">
+      <strong style="color:var(--amber)">Event Flow:</strong> <code>MarketDataUpdated</code> → Strategy → <code>BacktestRequested</code> → [Job Queue] → <code>BacktestCompleted</code> → Leaderboard → <code>LeaderboardUpdated</code> → WebSocket → Frontend
+    </div>
+  </div>
+</section>
+
+<!-- Slide 6: Team Responsibilities -->
+<section class="slide" id="s6">
+  <span class="sn">06 / 08</span>
+  <div class="content-wrap">
+    <h2>Team Responsibilities</h2>
+    <table class="tbl" style="margin-top: clamp(8px, 1.5vh, 16px);">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Role</th>
+          <th>Module</th>
+          <th>Interview Patterns</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong style="color:var(--accent)">Hoàng</strong></td>
+          <td>Leader / Architect</td>
+          <td>Market Data + Shared Infrastructure</td>
+          <td>Adapter Pattern, Modular Monolith, System decomposition</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--green)">Huy</strong></td>
+          <td>Fullstack Engineer</td>
+          <td>Strategy Engine</td>
+          <td>Plugin Architecture (Registry), Composite Pattern</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--amber)">Thuận</strong></td>
+          <td>Fullstack Engineer</td>
+          <td>News &amp; Sentiment</td>
+          <td>Adapter Pattern (News), Process Isolation, Fault Tolerance</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--purple)">Phương</strong></td>
+          <td>Fullstack Engineer</td>
+          <td>Event Infrastructure + Dashboard</td>
+          <td>Event-Driven, Job Queue/Worker, Observer (Leaderboard)</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin-top: clamp(10px, 1.5vh, 16px); text-align:center; color:var(--ink-3); font-size: clamp(.85rem, 1.1vw, 1rem);">
+      Each member owns NestJS module + Next.js pages end-to-end. Modules depend on <strong style="color:var(--ink-2)">shared interfaces only</strong>, never on each other's implementations.
+    </p>
+  </div>
+</section>
+
+<!-- Slide 7: Your Tasks — What You Build -->
+<section class="slide" id="s7">
+  <span class="sn">07 / 08</span>
+  <div class="content-wrap">
+    <h2>What You Build <span style="color:var(--accent)">— Hoàng</span></h2>
+    <ul class="bullet" style="margin-top: clamp(4px, .8vh, 8px);">
+      <li><strong style="color:var(--ink)">BinanceAdapter</strong> — implements <code>IMarketDataAdapter</code>. REST historical klines + WebSocket real-time streams. All Binance JSON parsing stays <em>inside</em> the adapter.</li>
+      <li class="green"><strong style="color:var(--ink)">MarketDataService</strong> — caching (LRU + TTL), subscription deduplication (multiple clients share one Binance stream), serves normalized <code>Candle</code> entity.</li>
+      <li class="amber"><strong style="color:var(--ink)">MarketDataGateway</strong> — NestJS WebSocket Gateway relaying live candles + connection status to frontend clients.</li>
+      <li class="purple"><strong style="color:var(--ink)">Shared types &amp; interfaces</strong> in <code>libs/shared</code> — <code>ICandle</code>, <code>ISignal</code>, <code>IStrategy</code>, <code>IMarketDataAdapter</code>. <em>All other modules depend on these.</em></li>
+      <li><strong style="color:var(--ink)">Prisma schema + migrations</strong> — Candle, TradingPair, Strategy, Backtest, NewsArticle, LeaderboardEntry, SearchLoopRun tables.</li>
+      <li class="cyan"><strong style="color:var(--ink)">Frontend charts</strong> — <code>CandlestickChart</code> (lightweight-charts), <code>MultiTimeframeGrid</code> (4 charts), <code>ChartOverlay</code> (MA/Bollinger/SR + buy/sell markers).</li>
+      <li><strong style="color:var(--ink)">Auto-Reconnect</strong> — bounded exponential backoff (1s, 4s, 16s, max 3 attempts), gap recovery via REST, frontend status notifications.</li>
+      <li class="green"><strong style="color:var(--ink)">Knowledge Base</strong> — INDEX, CONSTITUTION, ARCHITECTURE, ADRs 0001–0007, market-data.yaml contract, market-data.md, patterns catalog.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- Slide 8: Your Tasks — Why It Matters -->
+<section class="slide" id="s8">
+  <span class="sn">08 / 08</span>
+  <div class="content-wrap">
+    <h2>Why It Matters <span style="color:var(--accent)">— Your Purpose</span></h2>
+    <ul class="bullet" style="margin-top: clamp(4px, .8vh, 8px);">
+      <li><strong style="color:var(--accent)">Data Spine</strong> — every module consumes your <code>Candle</code> entity and shared interfaces. Without your adapter pattern, the frontend would be coupled to Binance's JSON format forever.</li>
+      <li class="green"><strong style="color:var(--green)">Architect</strong> — you set the module boundaries, constitution principles, and coding standards. The team works within <em>your</em> boundaries.</li>
+      <li><strong style="color:var(--ink)">Adapter Pattern (ADR-0004)</strong> — answers spec §40.3: "Add OKX data source = 1 new class, frontend unchanged." This is your extensibility proof for the interview.</li>
+      <li class="amber"><strong style="color:var(--ink)">Modular Monolith (ADR-0002)</strong> — answers §32.2 (Scalability): one process, clean boundaries, extraction path to microservices preserved.</li>
+      <li class="purple"><strong style="color:var(--ink)">Auto-Reconnect (ADR-0007)</strong> — answers §32.4 (Reliability): no lost candles, bounded retry, user always knows connection state.</li>
+    </ul>
+    <div class="callout callout-blue" style="margin-top: clamp(10px, 1.5vh, 18px);">
+      <strong style="color:var(--accent)">In the interview:</strong> "I designed the system as a modular monolith. Each NestJS module has clean boundaries. I implemented the Binance Adapter — if you want to add OKX, you create one class implementing <code>IMarketDataAdapter</code>. The frontend and strategy engine never know which data source is active. I also defined the shared type system that all modules depend on."
+    </div>
+  </div>
+</section>
+
+<!-- Navigation -->
+<div class="nav">
+  <button id="prev" onclick="go(-1)">&#8592; Prev</button>
+  <span id="counter">1 / 8</span>
+  <button id="next" onclick="go(1)">Next &#8594;</button>
+</div>
+
+<script>
+let idx = 0;
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+const counter = document.getElementById('counter');
+const prevBtn = document.getElementById('prev');
+const nextBtn = document.getElementById('next');
+
+function show(n) {
+  slides[idx].classList.remove('active');
+  idx = (n + total) % total;
+  slides[idx].classList.add('active');
+  counter.textContent = (idx + 1) + ' / ' + total;
+  prevBtn.disabled = (idx === 0);
+  nextBtn.disabled = (idx === total - 1);
+}
+
+function go(dir) {
+  const n = idx + dir;
+  if (n >= 0 && n < total) show(n);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') go(1);
+  if (e.key === 'ArrowLeft') go(-1);
+});
+
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    securityLevel: 'loose',
+    themeVariables: {
+      background: '#0d1117',
+      primaryColor: '#21262d',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      secondaryColor: '#161b22',
+      tertiaryColor: '#21262d',
+      fontFamily: 'Inter, sans-serif',
+      fontSize: '14px',
+      nodeBkg: '#21262d',
+      nodeBorder: '#30363d',
+      clusterBkg: '#161b22',
+      clusterBorder: '#30363d'
+    }
+  });
+</script>
+</body>
+</html>

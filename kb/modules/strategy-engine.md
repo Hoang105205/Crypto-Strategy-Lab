@@ -228,7 +228,7 @@ sequenceDiagram
     SC->>EB: publish('BacktestRequested', payload)
     EB->>JQ: event delivered
     JQ->>MD: getHistorical(pair, timeframe, dateRange)
-    MD-->>JQ: ICandle[]
+    MD-->>JQ: Candle[]
     JQ->>BT: run(strategy, candles, config)
     BT->>BT: replay candles → generate trades
     BT-->>JQ: raw Trade[]
