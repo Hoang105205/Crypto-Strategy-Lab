@@ -108,12 +108,12 @@ crypto-strategy-lab/
 > See `kb/flows/realtime-market-data.md` for full step-by-step flow with error handling.
 
 ### Strategy Backtest Flow (secondary use case)
-1. User/Loop submits backtest → Strategy Engine publishes `BacktestRequested` event
-2. Job Queue subscribes → enqueues BACKTEST job → Worker picks it up
+1. User request → Strategy Engine; search candidate → Loop Controller. The applicable producer generates `jobId` and publishes the complete `BacktestRequested` event (`source=USER` or `source=SEARCH_LOOP`).
+2. Job Queue subscribes → preserves the producer-supplied `jobId` → enqueues BACKTEST job → Worker picks it up
 3. Worker calls `IMarketDataService.getCandlesRange()` to fetch historical candles
 4. Worker calls `IBacktester.run(strategy, candles, config)` → produces `Trade[]`
 5. Worker calls `IEvaluator.evaluate(trades, capital)` → produces `EvaluationMetrics`
-6. Worker persists `BacktestResult` and publishes `BacktestCompleted` event
+6. Worker persists `BacktestResult` and publishes `BacktestCompleted` with metrics; on terminal failure it publishes `BacktestFailed` exactly once
 7. Leaderboard subscribes → updates Top-K ranking → publishes `LeaderboardUpdated`
 8. WebSocket Gateway relays `LeaderboardUpdated` to frontend
 

@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-07
+> **Last Updated**: 2026-08-09
 
 ## 1. Overview
 - **Description**: Continuous automated search — generate candidate strategies, backtest them via the queue, evaluate, and feed the best back into generation
@@ -23,7 +23,7 @@
 2. **LoopController validates and creates the run** — LoopController checks no other loop is active, creates a `SearchLoopRun` row (`status: RUNNING`, `iteration: 0`), and returns `{ loopRunId, status: "RUNNING" }` to the frontend
 3. **LoopController announces start** — LoopController → `EventBus.publish('SearchLoopStarted', { loopRunId, config, startedAt })`
 4. **LoopController requests a candidate** — LoopController → `IStrategyGenerator.generate(1)` → Strategy Engine (via shared interface, not a direct module import)
-5. **Candidate is submitted for backtesting** — LoopController → `EventBus.publish('BacktestRequested', { ...payload, source: "SEARCH_LOOP", loopRunId })` → Job Queue enqueues it exactly like a user-submitted backtest (see `kb/flows/strategy-backtest.md`)
+5. **Candidate is submitted for backtesting** — LoopController generates `jobId`, then calls `EventBus.publish('BacktestRequested', { jobId, strategyVersionId, pair, timeframe, startDate, endDate, backtestConfig, source: "SEARCH_LOOP", loopRunId })` → Job Queue preserves that ID and enqueues the request exactly like a user-submitted backtest (see `kb/flows/strategy-backtest.md`)
 6. **Worker executes the backtest** — Job Queue Worker runs the standard backtest pipeline (`IMarketDataService` → `IBacktester` → `IEvaluator`) and publishes `BacktestCompleted` or `BacktestFailed`
 7. **LoopController consumes the result** — LoopController (also an Observer of `BacktestCompleted`/`BacktestFailed`, alongside `LeaderboardService`) matches the event's `loopRunId` to its own active run, records a `SearchLoopCandidate` row, and updates `testedCandidates`, `bestScoreSoFar`, and `bestStrategyVersionId` if the new candidate scores higher
 8. **LoopController broadcasts progress** — LoopController → `EventBus.publish('SearchLoopProgress', { loopRunId, iteration, testedCandidates, currentCandidate, bestScoreSoFar, bestStrategyVersionId })` → relayed to the frontend over WebSocket (`loop:progress`)
@@ -65,7 +65,7 @@
 - LoopController logs the error, increments a `generationFailures` counter (not persisted as a `SearchLoopCandidate`, since no strategy was ever produced), and retries generation up to 3 times before treating it as a fatal loop error → `status: FAILED`, `stopReason: "generator_error"`
 
 ### A candidate's backtest fails
-- Step 6 results in `BacktestFailed` instead of `BacktestCompleted` (after the Job Queue's own retry/dead-letter handling — see `kb/contracts/events.yaml` `retry_policy`)
+- Step 6 results in one terminal `BacktestFailed` instead of `BacktestCompleted` after the Job Queue exhausts retries or detects a non-retriable error; intermediate attempt failures do not emit the event (see `kb/contracts/events.yaml` `retry_policy`)
 - LoopController records the `SearchLoopCandidate` with `status: FAILED`, does **not** count it toward `bestScoreSoFar`, and continues to the next iteration — one bad candidate never stops the loop
 - If failures exceed a threshold (e.g., 50% of the last 10 candidates fail), the loop logs a warning but continues; a future enhancement could auto-pause on a failure-rate threshold (not MVP)
 
@@ -87,7 +87,7 @@
 - **BR-1**: Loop orchestration communicates via events/interfaces only — `LoopController` never imports Strategy Engine internals, only `IStrategyGenerator`, and never imports Backtester/Evaluator directly (it goes through the same `BacktestRequested`/`BacktestCompleted` events as a manual user backtest)
 - **BR-2**: Stop conditions are evaluated in this priority order after each candidate: (1) user-requested stop/pause, (2) `maxCandidates` reached, (3) `maxDurationMs` elapsed, (4) `stopOnNoImprovementIterations` consecutive iterations without a `bestScoreSoFar` improvement (default 50). At least one numeric bound (`maxCandidates` or `maxDurationMs`) SHOULD be set by the user; if neither is set, `stopOnNoImprovementIterations` is the only safety net and MUST always be active — an unbounded `while(true)` loop is never permitted (spec Section 23)
 - **BR-3**: "Improvement" means the new candidate's `score` (same formula as the Leaderboard, `kb/flows/leaderboard-update.md` BR-2) exceeds `bestScoreSoFar` by more than a negligible epsilon (0.01) — this avoids resetting the no-improvement counter on floating-point noise
-- **BR-4**: A candidate is only counted toward `testedCandidates` once its backtest reaches a terminal state (`BacktestCompleted` or `BacktestFailed` after retries are exhausted) — a candidate still queued or backtesting is not yet "tested"
+- **BR-4**: A candidate is only counted toward `testedCandidates` once its backtest reaches a terminal state (`BacktestCompleted` or the exactly-once terminal `BacktestFailed`) — a candidate still queued, retrying, or backtesting is not yet "tested"
 - **BR-5**: Reproducibility applies to loop-generated candidates the same as manual ones — every `SearchLoopCandidate` links to an immutable `StrategyVersion`, so any Top-K entry's exact strategy + parameters can be traced back to the loop run and iteration that produced it (spec Section 36, extensibility scenario #8)
 - **BR-6**: Only one `SearchLoopRun` may be `RUNNING` or `PAUSED` at a time in the MVP — this is a deliberate scope limitation to avoid worker pool contention between multiple simultaneous loops, not an architectural ceiling (a future version could scope loops per-user or per-pair)
 - **BR-7**: Pausing a loop stops new candidate generation but never cancels in-flight backtest jobs — work already dispatched to a worker is always allowed to finish and be recorded

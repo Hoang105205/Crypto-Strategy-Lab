@@ -42,7 +42,8 @@
 
 ## Cross-Module Communication
 - Market Data → Event Infrastructure: publishes `MarketDataUpdated` (reserved; not yet consumed — see `kb/contracts/events.yaml`)
-- Strategy Engine → Event Infrastructure: publishes `BacktestRequested`
+- Strategy Engine → Event Infrastructure: publishes `BacktestRequested` when `source=USER`
+- Event Infrastructure Loop Controller → Job Queue: publishes `BacktestRequested` when `source=SEARCH_LOOP`
 - Event Infrastructure → Strategy Engine: publishes `BacktestCompleted` / `BacktestFailed`
 - Event Infrastructure → Market Data: calls `IMarketDataService.getHistorical()` (interface only) from the Job Queue worker to fetch candles for backtesting
 - News & Sentiment → Strategy Engine: `SentimentStrategy` registered in StrategyRegistry
