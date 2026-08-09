@@ -262,7 +262,7 @@ sequenceDiagram
 | SearchLoopCandidate | `id (UUID, PK)`, `loopRunId (FK)`, `strategyVersionId (FK)`, `backtestResultId (UUID, nullable)`, `iteration (int)`, `score (float, nullable)`, `status (enum: GENERATING\|BACKTESTING\|EVALUATED\|FAILED)`, `createdAt` | Many-to-one → `SearchLoopRun`; many-to-one → `StrategyVersion` |
 | DeadLetterJob | `id (UUID, PK)`, `jobId (UUID)`, `jobType (string)`, `payload (JSONB)`, `attempts (int)`, `lastError (string)`, `deadLetteredAt`, `resolvedAt (nullable)` | Standalone — inspected via `GET /api/queue/dead-letter` |
 
-> `LeaderboardEntry` and `SearchLoopRun`/`SearchLoopCandidate` live in tables owned by Event Infrastructure. They reference `StrategyVersion`/`BacktestResult` (owned by Strategy Engine) by ID only — never via a foreign-key join across module-owned schemas in application code, per `kb/MODULES.md` Rule 2 ("No direct database access across module boundaries"). Final Prisma schema ownership to be confirmed with Hoàng.
+> `LeaderboardEntry` and `SearchLoopRun`/`SearchLoopCandidate` live in tables owned by Event Infrastructure. They reference `StrategyVersion`/`BacktestResult` (owned by Strategy Engine) by ID only — never via a foreign-key join across module-owned schemas in application code, per `kb/MODULES.md` Rule 2 ("No direct database access across module boundaries"). Prisma model definitions written by Hoàng (who owns `shared/` + the Prisma schema), using the entity shapes defined here as the spec.
 
 ## 7. API Surface
 See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owned by this module:
@@ -316,7 +316,7 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 ## 10. Open Questions / TODOs
 - [x] ~~Confirm `BacktestRequested`/`BacktestCompleted` field ownership split with Huy.~~ **Resolved 2026-08-09** — `kb/contracts/events.yaml` is the sole event-payload SSoT; Strategy Engine owns `BacktestConfig` and `EvaluationMetrics`, while Event Infrastructure owns envelope/routing metadata. — Owner: Phương + Huy
 - [x] ~~Resolve `BacktestFailed` publisher mismatch.~~ **Resolved 2026-08-09** — Event Infrastructure's Job Queue Worker is the sole publisher of the exactly-once terminal event; Strategy Engine and Loop Controller consume it. — Owner: Phương + Huy
-- [ ] Confirm Prisma schema/table ownership for `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, `DeadLetterJob` with Hoàng (who owns `shared/` + the Prisma schema). — Owner: Hoàng
+- [x] ~~Confirm Prisma schema/table ownership for `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, `DeadLetterJob`.~~ **Resolved 2026-08-09** — Hoàng handles all Prisma model definitions (owns `shared/` + Prisma schema). Phương defines entity shapes in this file; Hoàng translates them into `schema.prisma`. — Owner: Hoàng
 - [ ] Decide whether `JobQueue` should give `source: "USER"` jobs FIFO priority over `source: "SEARCH_LOOP"` jobs, or process strictly FIFO for MVP simplicity. — Owner: Phương
 - [ ] Confirm final leaderboard scoring formula and default Top-K value with the team (see `kb/flows/leaderboard-update.md` Business Rules). — Owner: Phương
 - [ ] Confirm whether `NewsCollected` will actually be published in W2+ (currently reserved/unused) — see `kb/contracts/events.yaml`. — Owner: Thuận

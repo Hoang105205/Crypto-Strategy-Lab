@@ -7,7 +7,7 @@ owned by the team member responsible for that module.
 |--------|------|-------|--------|
 | Market Data | `modules/market-data.md` | Hoàng | Active |
 | Strategy Engine | `modules/strategy-engine.md` | Huy | Active |
-| News & Sentiment | `modules/news-sentiment.md` | Member C | Draft |
+| News & Sentiment | `modules/news-sentiment.md` | Thuận | Active |
 | Event Infrastructure | `modules/event-infrastructure.md` | Phương | Active |
 
 > ADRs (`kb/ADR/`) capture **why** decisions were made.
