@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-07
+> **Last Updated**: 2026-08-09
 
 ## 1. Overview
 - **Responsibility**: The system's nervous system — event bus, job queue, leaderboard, search loop orchestration, and dashboard BFF
@@ -98,7 +98,7 @@ flowchart TD
 ### Job Queue / Worker — ADR-0006
 - **Where**: `JobQueue` + `BacktestWorker`, triggered by `BacktestRequested`
 - **Why**: A single backtest can take seconds; the Strategy Engine's REST endpoint (`POST /api/strategies/backtest`) must return immediately (`202 Accepted`) instead of blocking the HTTP request thread. This is what lets the system scale from a handful of manual backtests to a search loop running thousands of candidates (extensibility scenario #4).
-- **How**: `StrategyController.publish('BacktestRequested', ...)` → `JobQueue.enqueue()` wraps the payload in a `JobRequest` (adds `jobId`, `attempt: 1`, `maxAttempts: 3`) and appends it to an in-memory FIFO array. A fixed-size pool of worker "loops" (configurable concurrency, default 3) pulls jobs off the queue. `BacktestWorker` calls `IMarketDataService.getHistorical()`, `IBacktester.run()`, `IEvaluator.evaluate()`, persists the `BacktestResult`, and publishes `BacktestCompleted`. On an unhandled exception, the worker increments `attempt`, re-queues with an exponential backoff delay (`retry_policy` in `kb/contracts/events.yaml`: 1s, 4s, 16s), and after 3 failed attempts calls `IJobQueue.deadLetter()` + publishes `BacktestFailed` and `BacktestDeadLettered`.
+- **How**: Strategy Engine publishes `BacktestRequested` for `source: "USER"`; Loop Controller publishes it for `source: "SEARCH_LOOP"`. In both cases the producer generates `jobId` before publishing. `JobQueue.enqueue()` preserves that ID, rejects duplicates, wraps the payload in a `JobRequest` (adds `attempt: 1`, `maxAttempts: 3`, timestamps), and appends it to an in-memory FIFO array. A fixed-size pool of worker "loops" (configurable concurrency, default 3) pulls jobs off the queue. `BacktestWorker` calls `IMarketDataService.getHistorical()`, `IBacktester.run()`, `IEvaluator.evaluate()`, persists the `BacktestResult`, and publishes `BacktestCompleted`. On a retryable exception, the worker updates queue state and re-queues with exponential backoff without publishing `BacktestFailed`. After 3 failed attempts, or immediately for a non-retriable error, the worker moves the job to the dead-letter queue and publishes terminal `BacktestFailed` plus `BacktestDeadLettered`, each exactly once.
 - **Trade-offs**:
   - Positive: horizontal scale is a config change (increase worker pool size), not an architecture change.
   - Positive: retry + dead-letter queue means one bad candidate (e.g., a strategy that throws on malformed candle data) can't stall the whole search loop.
@@ -123,13 +123,13 @@ flowchart TD
 ## 4. Internal Data Flow
 
 ```
-Strategy Engine / Loop Controller
-        │  publish('BacktestRequested', payload)
+Strategy Engine (source=USER) / Loop Controller (source=SEARCH_LOOP)
+        │  generate jobId, then publish('BacktestRequested', complete payload)
         ▼
      EventBus ──────────────────────────────────────────────┐
         │                                                     │
         ▼                                                     │
-     JobQueue.enqueue(payload) → JobRequest{jobId, attempt=1}  │
+     JobQueue.enqueue(payload) → preserve jobId; add attempt=1  │
         │                                                     │
         ▼                                                     │
    BacktestWorker (pulled from pool)                          │
@@ -147,7 +147,9 @@ Strategy Engine / Loop Controller
         │
         no
         ▼
-   JobQueue.deadLetter(jobId) → publish('BacktestFailed') + publish('BacktestDeadLettered')
+   terminal failure → publish('BacktestFailed') exactly once
+        │
+        └── if moved to DLQ → publish('BacktestDeadLettered') exactly once
 
    ───────────────────────────────────────────────────────────
 
@@ -181,8 +183,9 @@ sequenceDiagram
     participant WS as PushGateway
     participant FE as Frontend
 
-    SE->>EB: publish(BacktestRequested)
-    EB->>JQ: enqueue(payload)
+    SE->>SE: generate jobId (source=USER)
+    SE->>EB: publish(BacktestRequested, complete payload)
+    EB->>JQ: enqueue(payload), preserve jobId
     JQ->>W: dequeue job
     W->>MD: getHistorical(pair, timeframe, range)
     MD-->>W: Candle[]
@@ -215,8 +218,8 @@ sequenceDiagram
     W--xW: unhandled exception
     W->>JQ: maxAttempts reached
     JQ->>DLQ: deadLetter(jobId, reason)
-    JQ->>EB: publish(BacktestFailed)
-    JQ->>EB: publish(BacktestDeadLettered)
+    JQ->>EB: publish terminal BacktestFailed exactly once
+    JQ->>EB: publish BacktestDeadLettered exactly once
 ```
 
 ### Search Loop Iteration
@@ -236,8 +239,9 @@ sequenceDiagram
     loop until stop condition met
         LC->>SG: generate(1)
         SG-->>LC: candidate strategy
-        LC->>EB: publish(BacktestRequested, source=SEARCH_LOOP, loopRunId)
-        EB->>JQ: enqueue
+        LC->>LC: generate jobId
+        LC->>EB: publish(BacktestRequested, source=SEARCH_LOOP, loopRunId, jobId)
+        EB->>JQ: enqueue and preserve jobId
         JQ-->>LC: (async) BacktestCompleted / BacktestFailed
         LC->>LC: record result, evaluate stop conditions
         LC->>EB: publish(SearchLoopProgress)
@@ -299,7 +303,7 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 ## 9. Testing Strategy
 - **Unit tests**:
   - `EventBus`: publish wraps payload in a valid `EventEnvelope`; a throwing subscriber does not affect other subscribers or the publisher.
-  - `JobQueue`/`BacktestWorker`: retry increments `attempt` and applies the correct backoff delay; job moves to dead-letter after `maxAttempts`; `getStats()` counts match queue state.
+  - `JobQueue`/`BacktestWorker`: enqueue preserves the producer-supplied `jobId` and rejects duplicates; retry increments `attempt` and applies the correct backoff delay; job moves to dead-letter after `maxAttempts`; `getStats()` counts match queue state.
   - `LeaderboardService`: score computation is correct for known inputs; duplicate `BacktestCompleted` (same `backtestResultId`) does not create a duplicate entry; Top-K trimming keeps exactly K entries sorted correctly.
   - `LoopController`: stop conditions trigger correctly (`maxCandidates` reached, `maxDurationMs` elapsed, `stopOnNoImprovementIterations` reached, user-requested stop); pause prevents new candidates from being generated; resume continues from the same `loopRunId`.
 - **Integration tests**:
@@ -310,8 +314,8 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 - **Manual/demo verification**: kill and restart the mock backtester mid-loop to show retry/backoff in logs; disconnect the WebSocket client to show the frontend's `connection:status` indicator switch to "reconnecting".
 
 ## 10. Open Questions / TODOs
-- [ ] Confirm `BacktestRequested`/`BacktestCompleted` field ownership split with Huy — see `openQuestions` in `kb/contracts/events.yaml` (extra fields `backtestConfig`, `source`, `loopRunId`, `metrics` are additive on top of `kb/contracts/strategy.yaml`). — Owner: Phương + Huy
-- [ ] Resolve `BacktestFailed` publisher mismatch: `kb/contracts/strategy.yaml` lists it under Strategy Engine's `events_published`, this module treats the Job Queue worker as the actual publisher. — Owner: Phương + Huy
+- [x] ~~Confirm `BacktestRequested`/`BacktestCompleted` field ownership split with Huy.~~ **Resolved 2026-08-09** — `kb/contracts/events.yaml` is the sole event-payload SSoT; Strategy Engine owns `BacktestConfig` and `EvaluationMetrics`, while Event Infrastructure owns envelope/routing metadata. — Owner: Phương + Huy
+- [x] ~~Resolve `BacktestFailed` publisher mismatch.~~ **Resolved 2026-08-09** — Event Infrastructure's Job Queue Worker is the sole publisher of the exactly-once terminal event; Strategy Engine and Loop Controller consume it. — Owner: Phương + Huy
 - [ ] Confirm Prisma schema/table ownership for `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, `DeadLetterJob` with Hoàng (who owns `shared/` + the Prisma schema). — Owner: Hoàng
 - [ ] Decide whether `JobQueue` should give `source: "USER"` jobs FIFO priority over `source: "SEARCH_LOOP"` jobs, or process strictly FIFO for MVP simplicity. — Owner: Phương
 - [ ] Confirm final leaderboard scoring formula and default Top-K value with the team (see `kb/flows/leaderboard-update.md` Business Rules). — Owner: Phương

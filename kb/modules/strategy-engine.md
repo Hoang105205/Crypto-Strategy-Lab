@@ -2,7 +2,7 @@
 
 > **Owner**: Huy
 > **Status**: Active
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-09
 
 ## 1. Overview
 - **Responsibility**: Register, analyze, compose, backtest, evaluate, and search trading strategies using a plugin architecture
@@ -151,8 +151,12 @@ StrategyController (REST)
          StrategyVersionService.get(versionId) → verify exists
               │
               ▼
+         generate jobId (UUID)
+              │
+              ▼
          IEventBus.publish('BacktestRequested', {
-           strategyVersionId, pair, timeframe, startDate, endDate, jobId
+           jobId, strategyVersionId, pair, timeframe, startDate, endDate,
+           backtestConfig, source: 'USER', loopRunId: null
          })
               │
               ▼
@@ -187,9 +191,10 @@ sequenceDiagram
     SR-->>SC: [MA, RSI, Bollinger, SR, Sentiment]
     SC-->>FE: 200 OK (strategy list)
 
-    FE->>SC: POST /api/strategies/backtest {versionId, pair, timeframe}
+    FE->>SC: POST /api/strategies/backtest {versionId, pair, timeframe, dateRange, backtestConfig}
     SC->>VS: get(versionId) → verify immutable snapshot exists
-    SC->>SC: publish BacktestRequested event
+    SC->>SC: generate jobId
+    SC->>SC: publish BacktestRequested (source=USER, loopRunId=null)
     SC-->>FE: 202 Accepted {jobId, status: 'queued'}
 ```
 
@@ -225,8 +230,9 @@ sequenceDiagram
     participant MD as IMarketDataService
     participant DB as PostgreSQL
 
-    SC->>EB: publish('BacktestRequested', payload)
-    EB->>JQ: event delivered
+    SC->>SC: generate jobId
+    SC->>EB: publish('BacktestRequested', complete payload, source=USER)
+    EB->>JQ: event delivered; preserve producer jobId
     JQ->>MD: getHistorical(pair, timeframe, dateRange)
     MD-->>JQ: Candle[]
     JQ->>BT: run(strategy, candles, config)
@@ -235,7 +241,7 @@ sequenceDiagram
     JQ->>EV: evaluate(trades, initialCapital)
     EV-->>JQ: {return, winRate, mdd, sharpe, profitFactor}
     JQ->>DB: save BacktestResult
-    JQ->>EB: publish('BacktestCompleted', {resultId, versionId})
+    JQ->>EB: publish('BacktestCompleted', {jobId, resultId, versionId, metrics, ...})
 ```
 
 ## 6. Data Model
@@ -263,7 +269,8 @@ See `kb/contracts/strategy.yaml` for the full contract. Summary:
 
 Events:
 - **Publishes**: `BacktestRequested` (consumed by Phương's Job Queue)
-- **Consumes**: `BacktestCompleted` (published by Phương after worker finishes)
+- **Consumes**: `BacktestCompleted` and terminal `BacktestFailed` (published by Phương's Job Queue Worker)
+- **Payload SSoT**: `kb/contracts/events.yaml`; this module does not define reduced copies of event payloads
 
 ## 8. Quality Attributes
 
@@ -298,5 +305,6 @@ Events:
 - [x] Confirm exact parameter ranges for each strategy (MA periods: 1-200, RSI thresholds: 10-90, Bollinger stdDev: 1.0-5.0)
 - [x] Decide maximum number of child strategies in a composite (limit to 10 for performance reasons)
 - [x] Confirm DomainGuidedGenerator strategy group categories with Hoàng (Trend, Momentum, Volatility, Structure, Sentiment)
-- [x] Coordinate with Phương on exact `BacktestRequested` event payload format (see `contracts/events.yaml` - Synced)
+- [x] Coordinate with Phương on exact `BacktestRequested`/`BacktestCompleted` payload ownership — resolved: `kb/contracts/events.yaml` is the event-payload SSoT; Strategy Engine owns `BacktestConfig`/`EvaluationMetrics` domain types
+- [x] Confirm `BacktestFailed` ownership — resolved: Job Queue Worker is the sole publisher; Strategy Engine consumes the terminal event
 - [x] Determine if Search Engine should deduplicate candidates by parameter hash before submitting to queue (Yes, deduplicate using SHA-256 hash of parameters)

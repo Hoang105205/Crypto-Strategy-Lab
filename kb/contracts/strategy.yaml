@@ -158,6 +158,7 @@ endpoints:
       timeframe: "string             # e.g. '1h'"
       startDate: "DateTime"
       endDate: "DateTime"
+      backtestConfig: "BacktestConfig"
     response:
       type: "{ jobId: string, status: 'queued' }"
 
@@ -175,15 +176,21 @@ endpoints:
 
 events_published:
   - name: BacktestRequested
-    payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string, source: BacktestSource, loopRunId: UUID? }"
-    description: "Published when a backtest is submitted — consumed by Job Queue (Phương). source indicates origin ('USER' | 'SEARCH_LOOP'); loopRunId is present only when source = 'SEARCH_LOOP'."
-    see_also: "contracts/events.yaml"
-  - name: BacktestFailed
-    payload: "{ jobId: string, error: string }"
-    description: "Published when a backtest job fails"
+    description: >
+      Published by Strategy Engine for a user-submitted request after validation. Strategy Engine
+      generates jobId and sets source=USER and loopRunId=null. Loop-originated requests are published
+      independently by Event Infrastructure's Loop Controller.
+    payload_contract: "kb/contracts/events.yaml#/events/BacktestRequested/payload"
 
 events_consumed:
   - name: BacktestCompleted
-    payload: "{ jobId: string, backtestResultId: UUID, strategyVersionId: UUID }"
-    description: "Consumed to link result back to the strategy version"
-    published_by: "Event Infrastructure (Phương)"
+    description: "Consumed to link the result and its metrics back to the immutable strategy version"
+    published_by: "Event Infrastructure (Job Queue Worker)"
+    payload_contract: "kb/contracts/events.yaml#/events/BacktestCompleted/payload"
+  - name: BacktestFailed
+    description: "Consumed when a backtest reaches terminal failure; Strategy Engine never publishes this event"
+    published_by: "Event Infrastructure (Job Queue Worker)"
+    payload_contract: "kb/contracts/events.yaml#/events/BacktestFailed/payload"
+
+# Event payloads are defined only in kb/contracts/events.yaml. This module contract records
+# Strategy Engine's publish/consume responsibilities without duplicating reduced payload shapes.
