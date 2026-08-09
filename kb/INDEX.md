@@ -1,6 +1,6 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-07
+> **Last Updated**: 2026-08-09
 > **Status**: Active — All 12 ADRs complete, all W1 KB files filled
 
 ## Purpose

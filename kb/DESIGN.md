@@ -1,5 +1,6 @@
 ---
 version: alpha
+lastUpdated: 2026-08-09
 name: Binance-design-analysis
 description: A confident financial-platform interface anchored on a deep near-black canvas, where Binance's iconic yellow (#FCD535) carries every primary CTA, brand accent, and value-claim moment. Type runs Binance's custom BinanceNova / BinancePlex stack at modest weights — the system trusts size and yellow voltage over bold weight. Marketing and product surfaces default to the dark theme; transactional surfaces (buy crypto, deposit, exchange) flip to a light theme that shares the same yellow CTAs and gray-blue hairlines. Trading green (up) and red (down) accents thread through both modes for price-direction signals.
 
@@ -567,6 +568,86 @@ Binance's radius hierarchy is tighter than typical marketing systems — most su
 ### Footer
 
 **`footer-light`** — The light-gray footer that closes every page (including dark-canvas pages). Background `{colors.surface-soft-light}` (#fafafa), text `{colors.body-on-light}`. 6-column link list at desktop covering Community / About Us / Products / Business / Service / Learn columns. Vertical padding 64px. The deliberate light footer on a dark page is one of Binance's most distinctive layout choices — it visually closes the page with a "marketing reset" surface.
+
+## Project Pages & Routing
+
+Crypto Strategy Lab uses the Binance-derived tokens above as an application design system rather than reproducing Binance's marketing pages. The Next.js App Router paths below are the canonical MVP routes. The plural `/strategies` route matches the current frontend scaffold; references to `/strategy` in older planning material should be treated as the Strategy Builder page at `/strategies`.
+
+### Application Shell and Navigation
+
+`app/layout.tsx` owns the shared shell: a 64px `{component.top-nav-dark}`, the page container, WebSocket provider, and global loading/error boundaries. Navigation order is Dashboard → Strategy Builder → Leaderboard → News Feed. The active route uses `{colors.primary}` for its label or a 2px bottom indicator; inactive links use `{colors.body}`, and secondary/status text uses `{colors.muted}`. The shell stays on `{colors.canvas-dark}` across routes so navigation does not visually reset between modules.
+
+Every page uses a centered container capped at 1440px, `{spacing.lg}` horizontal padding on desktop, and `{spacing.md}` on mobile. Page titles use `{typography.title-lg}`, card titles use `{typography.title-md}` or `{typography.title-sm}`, body copy uses `{typography.body-md}`, and all prices, percentages, ranks, counters, and evaluation metrics use `{typography.number-md}` or `{typography.number-display}`.
+
+### Route Map
+
+| Route | Page | Primary purpose | Main components | Data connections |
+|---|---|---|---|---|
+| `/` | Dashboard | Monitor live market data, queue health, leaderboard summary, and the active strategy search loop | `DashboardGrid`, `PairSelector`, `TimeframeSelector`, `MultiTimeframeGrid`, `CandlestickChart`, `ChartOverlay`, `LoopStatusPanel`, `StatusIndicator` | `GET /api/dashboard/summary`, Market Data REST, `market-data:*`, `loop:*`, `leaderboard:update`, `connection:status` WebSocket channels |
+| `/strategies` | Strategy Builder | Select strategies, edit parameters, compose strategies, submit backtests, and inspect trades | `StrategyCard`, `ParameterEditor`, `CompositeBuilder`, `TradeTable` | Strategy REST endpoints and `POST /api/strategies/backtest`; completion is reflected through result polling or related realtime updates |
+| `/leaderboard` | Leaderboard | Compare the current Top-K strategies and inspect one strategy's metrics and trades | `LeaderboardTable`, `StrategyDetail` | `GET /api/leaderboard`, `GET /api/leaderboard/:strategyVersionId`, `leaderboard:update` |
+| `/news` | News Feed | Browse normalized crypto news and understand aggregate sentiment | `NewsFeed`, `SentimentChart`, `SentimentGauge` | `GET /api/news`, sentiment endpoints in `kb/contracts/news.yaml` |
+
+No separate route is required for `LoopStatusPanel`: it is a dashboard panel backed by `/api/loop/*`. For the MVP, leaderboard and backtest details open inline or in a side panel, so undeclared dynamic routes such as `/leaderboard/[id]` are not assumed by this design contract.
+
+### Dashboard — `/`
+
+The Dashboard is the default dark, data-dense workspace. `DashboardGrid` uses a desktop 8/4 split: the left column holds `MultiTimeframeGrid`; the right column stacks `LoopStatusPanel`, queue-health summary, and a compact leaderboard preview. The page header contains `PairSelector`, the global connection `StatusIndicator`, and the primary dashboard context rather than a marketing hero.
+
+- `CandlestickChart`: `{colors.surface-card-dark}` card, `{rounded.xl}`, `{spacing.md}` internal padding, and `{colors.hairline-on-dark}` dividers. Axis values and OHLCV data use `{typography.number-sm}`. Candle/price direction uses `{colors.trading-up}` and `{colors.trading-down}` only for market movement.
+- `MultiTimeframeGrid`: two-by-two charts on desktop with `{spacing.md}` gaps; each panel owns a `TimeframeSelector`. It becomes one column below 768px.
+- `ChartOverlay`: uses `{colors.primary}` for the selected/high-priority overlay, `{colors.info}` for secondary indicators, and `{colors.muted-strong}` for support/reference lines; overlays must not reduce candle contrast.
+- `LoopStatusPanel`: `{colors.surface-card-dark}` with `{rounded.xl}`. Candidate count, best score, and elapsed time use numerical typography. Start uses `{component.button-primary}`; Pause/Resume/Stop use neutral secondary or tertiary buttons because trading green/red are not generic action colors.
+- `StatusIndicator`: always combines text with an icon/dot. Connected uses normal body text, reconnecting uses `{colors.primary}`, and disconnected uses a labeled high-contrast state; color alone must never communicate connection status.
+
+### Strategy Builder — `/strategies`
+
+The Strategy Builder is a focused transactional workspace inside the dark application shell. The main workbench may use `{colors.canvas-light}` with `{colors.ink}` text so dense parameter forms remain readable, while the surrounding page stays `{colors.canvas-dark}`. On desktop, available strategies occupy a four-column or responsive card grid above a two-column composition area: builder canvas on the left and parameter/backtest controls on the right.
+
+- `StrategyCard`: `{colors.canvas-light}`, 1px `{colors.hairline-on-light}` border, `{rounded.lg}`, and `{spacing.md}` padding. Selected cards use a `{colors.primary}` border/accent without filling the whole card yellow.
+- `ParameterEditor`: groups labeled controls at `{spacing.md}` intervals and uses `{component.text-input-on-light}`. Validation messages sit directly below the relevant field and must not rely only on color.
+- `CompositeBuilder`: uses a dashed `{colors.border-strong}` empty-state boundary and `{colors.surface-strong-light}` for populated strategy slots. Combiner type and weights remain visible before submission.
+- Backtest action: the single dominant action is `{component.button-primary}`. While queued/running, disable duplicate submission and show the returned `jobId` plus explicit status text.
+- `TradeTable`: uses `{typography.number-sm}` for prices, quantity, and P&L; positive/negative P&L uses `{colors.trading-up}`/`{colors.trading-down}` plus a sign. On narrow screens it scrolls horizontally rather than dropping financial columns.
+
+### Leaderboard — `/leaderboard`
+
+The Leaderboard uses `{colors.canvas-dark}` with one full-width `{colors.surface-card-dark}` table card. The header contains the page title, last-updated timestamp, and ranking criterion control. A selected row reveals `StrategyDetail` in a right-side panel on desktop and below the table on mobile.
+
+- `LeaderboardTable`: extends `{component.markets-table-card}` and `{component.markets-row}`. Rank and all metrics use BinancePlex number roles; headers use `{typography.caption}` with `{colors.muted}`. Sorting must expose an arrow and `aria-sort`, not color alone.
+- Top-three ranks may use `{colors.primary}` for the rank numeral only. Yellow must not fill an entire row.
+- Return and P&L use trading direction colors; Max Drawdown remains a signed numerical value and label. The selected row uses `{colors.surface-elevated-dark}`.
+- `StrategyDetail`: `{colors.surface-elevated-dark}`, `{rounded.xl}`, and `{spacing.lg}` padding. It groups immutable strategy version, evaluation metrics, and `TradeTable` without duplicating leaderboard sorting controls.
+- `leaderboard:update` updates rows in place and refreshes the timestamp; it must not reset the user's current sort or selected strategy.
+
+### News Feed — `/news`
+
+The News Feed uses a desktop 8/4 split: `NewsFeed` in the main column and a sticky sentiment rail containing `SentimentGauge` and `SentimentChart`. Cards remain dark to match the application shell, with source and publication metadata visually quieter than headlines.
+
+- `NewsFeed`: article cards use `{colors.surface-card-dark}`, `{rounded.lg}`, and `{spacing.md}` padding with a `{colors.hairline-on-dark}` divider. Headlines use `{typography.title-sm}`, summaries use `{typography.body-md}`, and source/time use `{typography.caption}` with `{colors.muted}`.
+- Sentiment labels always include text (`POSITIVE`, `NEUTRAL`, `NEGATIVE`) and an icon. Raw article sentiment must not use trading green/red as decoration; reserve those tokens for a gauge state explicitly translated into an actionable BUY/SELL strategy signal.
+- `SentimentGauge`: `{colors.surface-card-dark}` with a large BinancePlex score. Neutral uses `{colors.muted-strong}`; the active pointer/accent uses `{colors.primary}`. Degraded sentiment-service state shows `NEUTRAL` plus an explicit “Sentiment service unavailable” message.
+- `SentimentChart`: uses `{colors.info}` as the primary timeline series, `{colors.hairline-on-dark}` grid lines, `{typography.number-sm}` axes, and labeled markers for positive/neutral/negative ranges.
+- On mobile, the sentiment rail moves above the article list so users see current aggregate context before individual stories.
+
+### Shared UI States
+
+- `LoadingState`: use skeleton blocks on the target card surface; preserve the final component dimensions to prevent layout shift.
+- Empty state: explain what is missing and provide the next valid action, such as “Start a search loop” or “Submit a backtest”; use a neutral card and at most one `{component.button-primary}`.
+- `ErrorBoundary`: render a concise user-facing message and a retry action. Stack traces and raw provider errors are never shown.
+- Realtime stale state: keep the last successful data visible, display its timestamp, and show reconnecting/disconnected status instead of blanking charts or tables.
+- Focus: interactive controls use the `{colors.info-ring}` focus ring. Every control must remain keyboard reachable and have a visible text or accessible label.
+
+### Project Responsive Rules
+
+| Surface | Desktop | Tablet | Mobile |
+|---|---|---|---|
+| Dashboard | 8/4 content split; chart grid is 2×2 | Single main column; loop/status panels form a two-column row | Single column; controls wrap above one chart at a time |
+| Strategy Builder | Strategy grid plus two-column builder/control workspace | Two-column strategy grid; stacked builder and controls | One-column cards and forms; tables scroll horizontally |
+| Leaderboard | Full table plus optional right-side detail panel | Full-width table; detail below | Horizontally scrollable table; sticky rank/strategy column where practical |
+| News Feed | 8/4 feed and sticky sentiment rail | 7/5 split | Sentiment summary above a one-column feed |
+
+Cross-references: frontend responsibilities and component ownership are listed in `plans/plan-overview.md` Section 4.3; data behavior is defined in `kb/modules/market-data.md`, `kb/modules/strategy-engine.md`, `kb/modules/news-sentiment.md`, and `kb/modules/event-infrastructure.md`; API and event shapes remain authoritative in `kb/contracts/`.
 
 ## Do's and Don'ts
 
