@@ -175,8 +175,8 @@ endpoints:
 
 events_published:
   - name: BacktestRequested
-    payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string }"
-    description: "Published when a backtest is submitted — consumed by Job Queue (Phương)"
+    payload: "{ strategyVersionId: UUID, pair: string, timeframe: string, startDate: DateTime, endDate: DateTime, jobId: string, source: BacktestSource, loopRunId: UUID? }"
+    description: "Published when a backtest is submitted — consumed by Job Queue (Phương). source indicates origin ('USER' | 'SEARCH_LOOP'); loopRunId is present only when source = 'SEARCH_LOOP'."
     see_also: "contracts/events.yaml"
   - name: BacktestFailed
     payload: "{ jobId: string, error: string }"
