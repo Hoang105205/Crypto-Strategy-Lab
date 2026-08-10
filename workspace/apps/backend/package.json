@@ -63,6 +63,9 @@
     "@types/ws": "^8.5.0",
     "prisma": "^6.0.0"
   },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "jest": {
     "moduleFileExtensions": [
       "js",
