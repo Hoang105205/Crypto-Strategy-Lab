@@ -1,0 +1,18 @@
+feature: news-sentiment-pipeline
+description: |
+  Triển khai luồng thu thập tin tức crypto (RSS/Crawler) và phân tích cảm xúc sentiment bằng Python FastAPI cho Thuận
+created: 2026-08-10T10:43:00Z
+status: in_progress
+phases:
+  - specify: completed
+  - plan: completed
+  - tasks: completed
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - News & Sentiment Module (apps/backend/src/news/, apps/sentiment/, apps/frontend/src/app/news/)
+    - Strategy Engine Module (NewsSentimentStrategy plugin in StrategyRegistry)

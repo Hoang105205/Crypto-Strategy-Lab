@@ -98,8 +98,8 @@ model NewsArticle {
   publishedAt    DateTime
   crawledAt      DateTime
   relatedCoins   String[]
-  sentimentScore Float
-  sentimentLabel String
+  sentimentScore Float?
+  sentimentLabel String?
   createdAt      DateTime @default(now())
 
   sentimentScores SentimentScore[]
