@@ -123,40 +123,75 @@ model SentimentScore {
 
 // ──────────────────────────────────────────────
 // Event Infrastructure — kb/contracts/events.yaml
+// + kb/modules/event-infrastructure.md Section 6
+// Entity shapes defined by Phương, Prisma models written by Hoàng
 // ──────────────────────────────────────────────
 
 model LeaderboardEntry {
   id                  String   @id @default(uuid())
   rank                Int
-  strategyVersionId   String
+  strategyVersionId   String   // ID-only reference to StrategyVersion (no FK join, per MODULES.md Rule 2)
   strategyName        String
   strategyType        String
   isComposite         Boolean
-  backtestResultId    String
+  backtestResultId    String   @unique // ID-only reference to BacktestResult; UNIQUE for idempotent upsert
   score               Float
   totalReturn         Float
   winRate             Float
   maxDrawdown         Float
   sharpeRatio         Float
   totalTrades         Int
-  updatedAt           DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([rank])
   @@index([strategyVersionId])
 }
 
 model SearchLoopRun {
-  id                    String    @id @default(uuid())
-  status                String
-  generatorType         String
-  maxCandidates         Int?
-  maxDurationMs         Int?
-  stopOnNoImprovement   Int?
-  startedAt             DateTime  @default(now())
-  stoppedAt             DateTime?
-  bestStrategyVersionId String?
-  bestScore             Float?
-  testedCandidates      Int       @default(0)
+  id                          String    @id @default(uuid())
+  status                      String    // RUNNING | PAUSED | COMPLETED | STOPPED_BY_USER | FAILED
+  generatorType               String    // RANDOM | DOMAIN_GUIDED
+  iteration                   Int       @default(0)
+  testedCandidates            Int       @default(0)
+  maxCandidates               Int?
+  maxDurationMs               Int?
+  stopOnNoImprovementIterations Int?    @default(50)
+  currentCandidateStrategyVersionId String?
+  bestStrategyVersionId       String?
+  bestScore                   Float?
+  stopReason                  String?
+  startedAt                   DateTime  @default(now())
+  pausedAt                    DateTime?
+  stoppedAt                   DateTime?
+
+  candidates                  SearchLoopCandidate[]
 
   @@index([status])
+}
+
+model SearchLoopCandidate {
+  id                  String   @id @default(uuid())
+  loopRunId           String
+  strategyVersionId   String   // ID-only reference to StrategyVersion (no FK join)
+  backtestResultId    String?  // ID-only reference to BacktestResult; nullable until backtest completes
+  iteration           Int
+  score               Float?
+  status              String   // GENERATING | BACKTESTING | EVALUATED | FAILED
+  createdAt           DateTime @default(now())
+
+  loopRun             SearchLoopRun @relation(fields: [loopRunId], references: [id])
+
+  @@index([loopRunId])
+}
+
+model DeadLetterJob {
+  id              String    @id @default(uuid())
+  jobId           String    @unique
+  jobType         String
+  payload         Json
+  attempts        Int
+  lastError       String
+  deadLetteredAt  DateTime  @default(now())
+  resolvedAt      DateTime?
 }
