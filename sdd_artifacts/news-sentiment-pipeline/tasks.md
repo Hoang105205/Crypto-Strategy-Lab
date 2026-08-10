@@ -40,11 +40,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Create `INewsProvider` interface and `RawArticle` interface in `workspace/apps/backend/src/news/providers/news.provider.interface.ts` per ADR-0010 and spec.md
-- [ ] T008 [P] [US1] Implement `RSSProvider` adapter in `workspace/apps/backend/src/news/providers/rss.provider.ts` to parse public RSS feeds (CoinDesk) and output `RawArticle[]`
-- [ ] T009 [P] [US1] Implement `WebCrawlerProvider` adapter in `workspace/apps/backend/src/news/providers/crawler.provider.ts` to scrape news portals and output `RawArticle[]`
-- [ ] T010 [US1] Implement `NewsService` in `workspace/apps/backend/src/news/services/news.service.ts` for normalization, deduplication by URL hash, and Prisma persistence (depends T007, T008, T009)
-- [ ] T011 [US1] Implement `NewsCollectorCron` in `workspace/apps/backend/src/news/cron/news-collector.cron.ts` using `@nestjs/schedule` to trigger periodic ingestion (depends T010)
+- [X] T007 [P] [US1] Create `INewsProvider` interface and `RawArticle` interface in `workspace/apps/backend/src/news/providers/news.provider.interface.ts` per ADR-0010 and spec.md
+- [X] T008 [P] [US1] Implement `RSSProvider` adapter in `workspace/apps/backend/src/news/providers/rss.provider.ts` to parse public RSS feeds (CoinDesk) and output `RawArticle[]`
+- [X] T009 [P] [US1] Implement `WebCrawlerProvider` adapter in `workspace/apps/backend/src/news/providers/crawler.provider.ts` to scrape news portals and output `RawArticle[]`
+- [X] T010 [US1] Implement `NewsService` in `workspace/apps/backend/src/news/services/news.service.ts` for normalization, deduplication by URL hash, and Prisma persistence (depends T007, T008, T009)
+- [X] T011 [US1] Implement `NewsCollectorCron` in `workspace/apps/backend/src/news/cron/news-collector.cron.ts` using `@nestjs/schedule` to trigger periodic ingestion (depends T010)
 
 **Checkpoint**: User Story 1 fully functional — news articles fetched, normalized, deduplicated, and persisted in database.
 
@@ -57,11 +57,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T012 [P] [US2] Implement Pydantic request/response models in `workspace/apps/sentiment/models.py` per contracts/news-api.md
-- [ ] T013 [P] [US2] Implement VADER sentiment intensity logic in `workspace/apps/sentiment/analyzer.py` returning compound score and classification label per research.md D1
-- [ ] T014 [US2] Implement FastAPI web server in `workspace/apps/sentiment/app.py` exposing `GET /health` and `POST /analyze` (depends T012, T013)
-- [ ] T015 [US2] Implement `SentimentClient` in `workspace/apps/backend/src/news/services/sentiment.client.ts` using `@nestjs/axios` / `fetch` with 500ms timeout & graceful degradation fallback (depends T014)
-- [ ] T016 [US2] Connect `NewsService` to `SentimentClient` to enrich ingested articles with `sentimentScore` and `sentimentLabel` upon storage (depends T010, T015)
+- [X] T012 [P] [US2] Implement Pydantic request/response models in `workspace/apps/sentiment/models.py` per contracts/news-api.md
+- [X] T013 [P] [US2] Implement VADER sentiment intensity logic in `workspace/apps/sentiment/analyzer.py` returning compound score and classification label per research.md D1
+- [X] T014 [US2] Implement FastAPI web server in `workspace/apps/sentiment/app.py` exposing `GET /health` and `POST /analyze` (depends T012, T013)
+- [X] T015 [US2] Implement `SentimentClient` in `workspace/apps/backend/src/news/services/sentiment.client.ts` using `@nestjs/axios` / `fetch` with 500ms timeout & graceful degradation fallback (depends T014)
+- [X] T016 [US2] Connect `NewsService` to `SentimentClient` to enrich ingested articles with `sentimentScore` and `sentimentLabel` upon storage (depends T010, T015)
 
 **Checkpoint**: User Story 2 complete — process isolation verified; sentiment scores stored; graceful degradation operational when Python process is stopped.
 
