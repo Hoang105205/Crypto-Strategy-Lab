@@ -15,7 +15,7 @@
 
 **Purpose**: Project verification and initial setup
 
-- [ ] T001 Verify existing file structure at `apps/backend/src/strategy/registry/strategy.registry.ts` and test runner configuration
+- [x] T001 Verify existing file structure at `apps/backend/src/strategy/registry/strategy.registry.ts` and test runner configuration
 
 ---
 
@@ -23,7 +23,7 @@
 
 **Purpose**: Shared contract and interface readiness
 
-- [ ] T002 [Foundation] Verify imports from `@crypto-strategy-lab/shared` (`IStrategy`, `ICandle`, `ISignal`, `StrategyType`) in `apps/backend/src/strategy/registry/strategy.registry.ts`
+- [x] T002 [Foundation] Verify imports from `@crypto-strategy-lab/shared` (`IStrategy`, `ICandle`, `ISignal`, `StrategyType`) in `apps/backend/src/strategy/registry/strategy.registry.ts`
 
 **Checkpoint**: Foundation ready — user story implementation can now begin
 
@@ -36,9 +36,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T003 [US1] Update `register(strategy: IStrategy): void` in `apps/backend/src/strategy/registry/strategy.registry.ts` to check if composite key `${strategy.getType()}:${strategy.getName()}` or short name `${strategy.getName()}` exists in `this.strategies`. Throw Error on collision per `research.md` D1.
-- [ ] T004 [US1] Ensure `get(nameOrType: string): IStrategy | undefined` and `has(nameOrType: string): boolean` correctly work with both composite keys and short names in `apps/backend/src/strategy/registry/strategy.registry.ts`.
-- [ ] T005 [US1] Ensure `getAll(): IStrategy[]` returns a deduplicated array of registered `IStrategy` instances in `apps/backend/src/strategy/registry/strategy.registry.ts`.
+- [x] T003 [US1] Update `register(strategy: IStrategy): void` in `apps/backend/src/strategy/registry/strategy.registry.ts` to check if composite key `${strategy.getType()}:${strategy.getName()}` or short name `${strategy.getName()}` exists in `this.strategies`. Throw Error on collision per `research.md` D1.
+- [x] T004 [US1] Ensure `get(nameOrType: string): IStrategy | undefined` and `has(nameOrType: string): boolean` correctly work with both composite keys and short names in `apps/backend/src/strategy/registry/strategy.registry.ts`.
+- [x] T005 [US1] Ensure `getAll(): IStrategy[]` returns a deduplicated array of registered `IStrategy` instances in `apps/backend/src/strategy/registry/strategy.registry.ts`.
 
 **Checkpoint**: User Story 1 fully functional for registration & collision handling
 
@@ -51,7 +51,7 @@
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Implement `analyze(nameOrType: string, candles: ICandle[]): ISignal` in `apps/backend/src/strategy/registry/strategy.registry.ts`. Retrieve strategy via `get(nameOrType)`. If missing, throw Error per `research.md` D2. Otherwise, delegate to `strategy.analyze(candles)`.
+- [x] T006 [US2] Implement `analyze(nameOrType: string, candles: ICandle[]): ISignal` in `apps/backend/src/strategy/registry/strategy.registry.ts`. Retrieve strategy via `get(nameOrType)`. If missing, throw Error per `research.md` D2. Otherwise, delegate to `strategy.analyze(candles)`.
 
 **Checkpoint**: User Story 2 fully functional for delegated candle analysis
 
@@ -61,7 +61,7 @@
 
 **Purpose**: Unit testing and quickstart scenario validation
 
-- [ ] T007 [P] Create unit test suite `apps/backend/src/strategy/registry/strategy.registry.spec.ts` covering:
+- [x] T007 [P] Create unit test suite `apps/backend/src/strategy/registry/strategy.registry.spec.ts` covering:
   - Successful registration and retrieval by short name and composite key (Quickstart Scenario 1)
   - Duplicate registration attempt throwing Error (Quickstart Scenario 2)
   - Delegated `analyze()` returning signal (Quickstart Scenario 1)
@@ -74,7 +74,7 @@
 
 **Purpose**: Module export and clean integration
 
-- [ ] T008 [P] Ensure `StrategyRegistry` is correctly exported in `apps/backend/src/strategy/strategy.module.ts` providers and exports array.
+- [x] T008 [P] Ensure `StrategyRegistry` is correctly exported in `apps/backend/src/strategy/strategy.module.ts` providers and exports array.
 
 ---
 
