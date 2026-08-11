@@ -1,0 +1,32 @@
+feature: event-infrastructure-dashboard
+description: |
+  Build Member D's brownfield Event Infrastructure and Dashboard scope: a typed
+  EventEmitter2-backed event bus, asynchronous in-memory backtest queue and worker
+  pool with retry/dead-letter handling, event-observer leaderboard, bounded strategy
+  search loop, Dashboard BFF, WebSocket push gateway, application shell, loop status
+  controls, and realtime leaderboard UI. Preserve existing Market Data, Strategy,
+  News, chart, and shared code; integrate only through active contracts and shared
+  interfaces. Resolve contract/code drift before implementation.
+created: 2026-08-11
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Event Infrastructure
+    - Frontend
+    - Strategy Engine
+    - Market Data
+subfeatures:
+  - typed-event-bus
+  - backtest-job-queue
+  - realtime-leaderboard
+  - strategy-search-loop
+  - dashboard-realtime-ui
