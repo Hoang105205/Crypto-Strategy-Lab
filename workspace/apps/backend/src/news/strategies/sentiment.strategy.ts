@@ -1,12 +1,12 @@
 // NewsSentimentStrategy — Strategy plugin implementing IStrategy interface
 // Owner: Thuan | See: spec.md, plan.md, kb/contracts/strategy.yaml
 
-import { Injectable, Logger } from '@nestjs/common';
-import { 
-  IStrategy, 
-  Candle, 
-  Signal, 
-  SignalAction, 
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import {
+  IStrategy,
+  Candle,
+  Signal,
+  SignalAction,
   StrategyType,
   DEFAULT_SENTIMENT_BUY_THRESHOLD,
   DEFAULT_SENTIMENT_SELL_THRESHOLD,
@@ -30,7 +30,7 @@ export class NewsSentimentStrategy implements IStrategy {
 
   constructor(
     private readonly newsService: NewsService,
-    params?: SentimentStrategyParams,
+    @Optional() @Inject('SENTIMENT_STRATEGY_PARAMS') params?: SentimentStrategyParams,
   ) {
     this.buyThreshold = params?.buyThreshold ?? DEFAULT_SENTIMENT_BUY_THRESHOLD;
     this.sellThreshold = params?.sellThreshold ?? DEFAULT_SENTIMENT_SELL_THRESHOLD;
@@ -66,8 +66,6 @@ export class NewsSentimentStrategy implements IStrategy {
     const coinSymbol = latestCandle.symbol ? latestCandle.symbol.replace('USDT', '') : 'BTC';
 
     try {
-      // Async query sync bridge or default fallback for synchronous analysis signature
-      // In real-time trading engine, NewsService maintains an in-memory cached sentiment score
       const score = this.getLatestSentimentScoreSync(coinSymbol);
 
       if (score >= this.buyThreshold) {
@@ -93,7 +91,6 @@ export class NewsSentimentStrategy implements IStrategy {
       };
     } catch (error) {
       this.logger.warn(`Error in NewsSentimentStrategy analysis: ${error.message}. Returning HOLD fallback.`);
-      // Graceful Degradation per ADR-0009: Return HOLD when Python ML service is down
       return { action: SignalAction.HOLD, confidence: 0 };
     }
   }
@@ -140,7 +137,6 @@ export class NewsSentimentStrategy implements IStrategy {
   }
 
   private getLatestSentimentScoreSync(coin: string): number {
-    // Default fallback neutral score
     return 0.0;
   }
 }
