@@ -1,0 +1,62 @@
+feature: market-data-frontend
+description: |
+  P2 — Frontend charts for the Crypto Strategy Lab dashboard (tasks #8–#13 from
+  Hoang_planning_implemention.md). Implements the React hooks and chart components
+  that consume the live Market Data backend (REST + WebSocket) to render real-time
+  candlestick charts, a multi-timeframe grid, technical overlays, and trade markers
+  on the dashboard route (/).
+
+  Backend is complete and live (verified 2026-08-10 against Supabase + real Binance):
+  - REST: GET /api/market-data/candles, /pairs, /subscriptions, POST /subscribe, /unsubscribe
+  - WebSocket: namespace /market-data, events candle:update / candle:close (per symbol:timeframe rooms),
+    status:connected / status:disconnected / status:reconnected
+  - 400 contract: { error: 'Invalid symbol or timeframe' }
+
+  Stack: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4,
+  lightweight-charts v5 (already installed), socket.io-client v4 (already installed).
+
+  Tasks:
+  #8  — useWebSocket.ts + useMarketData.ts hooks (foundation)
+  #9  — CandlestickChart.tsx (lightweight-charts v5)
+  #10 — MultiTimeframeGrid.tsx (4-chart grid, per-chart timeframe selector)
+  #11 — app/page.tsx dashboard wiring (hooks + grid + selectors)
+  #12 — ChartOverlay.tsx (MA, Bollinger, SR overlays)
+  #13 — TradeMarkers.tsx (buy/sell signal markers; depends on Phương's trade data — W3)
+
+  KB references:
+  - kb/contracts/market-data.yaml (SSoT for REST + WS shapes)
+  - kb/flows/realtime-market-data.md (steps 5–6c: frontend chart updates + client lifecycle)
+  - kb/modules/market-data.md (module architecture)
+  - kb/DESIGN.md (Dashboard route spec, component tokens, responsive rules)
+  - kb/MODULES.md (Frontend module — all own, shell by Phương)
+  - ADR-0003 (plugin architecture), ADR-0007 (auto-reconnect)
+
+created: 2026-08-10
+status: complete
+phases:
+  - specify: done
+  - plan: done
+  - tasks: done
+  - implement: done
+  - analyze: done
+  - converge: done
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  design_loaded: true
+  modules_affected:
+    - Frontend (primary — all chart components + hooks)
+    - Market Data (backend — consuming its REST + WS contracts, already implemented)
+  key_contracts:
+    - kb/contracts/market-data.yaml (REST endpoints, WebSocket channels, Candle/TradingPair entities)
+  key_flows:
+    - kb/flows/realtime-market-data.md (steps 9–10: candle:update/close → chart update; 6c: client disconnect)
+  key_adrs:
+    - ADR-0003 (plugin architecture for frontend components)
+    - ADR-0007 (auto-reconnect — frontend must handle status:disconnected/reconnected)
+  design_constraints:
+    - Dark theme canvas (#0b0e11), Binance Yellow primary (#FCD535), trading green/red
+    - Dashboard 8/4 split: MultiTimeframeGrid left, status/loop panels right
+    - 2x2 chart grid desktop, single column below 768px
+    - BinancePlex for all numbers (prices, volumes, metrics)
+    - StatusIndicator must combine text + icon (never color alone)
