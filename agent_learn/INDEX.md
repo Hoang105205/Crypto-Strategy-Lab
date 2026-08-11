@@ -8,3 +8,4 @@ It is for agent read-only reference — do not modify manually unless you are up
 | Date | Feature | File | Key takeaways |
 |------|---------|------|---------------|
 | 2026-08-10 | market-data-backend | [lessons/market-data-backend-2026-08-10.md](lessons/market-data-backend-2026-08-10.md) | `import type` for decorated interface params (TS1272); zero-arg constructors for `useClass` DI; poll-based async test assertions; optional `IEventBus` injection pattern; migration/smoke blocked on Docker |
+| 2026-08-11 | news-sentiment-pipeline | [lessons/news-sentiment-pipeline-2026-08-11.md](lessons/news-sentiment-pipeline-2026-08-11.md) | Process isolation (ADR-0009) via Python FastAPI; Provider Adapter pattern (ADR-0010); 500ms timeout Graceful Degradation in NestJS SentimentClient; centralized constants in libs/shared; CronExpression enum handling |

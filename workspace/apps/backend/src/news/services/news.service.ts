@@ -3,7 +3,15 @@
 
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { RawArticle, NewsArticle, DEFAULT_NEWS_FETCH_LIMIT } from '@crypto-strategy-lab/shared';
+import { 
+  RawArticle, 
+  NewsArticle, 
+  DEFAULT_NEWS_FETCH_LIMIT,
+  SENTIMENT_NEUTRAL_SCORE,
+  SentimentLabel,
+  VADER_POSITIVE_THRESHOLD,
+  VADER_NEGATIVE_THRESHOLD
+} from '@crypto-strategy-lab/shared';
 import { INewsProvider, INEWS_PROVIDER_TOKEN } from '../providers/news.provider.interface';
 import { SentimentClient } from './sentiment.client';
 
@@ -112,5 +120,53 @@ export class NewsService {
     });
 
     return articles as unknown as NewsArticle[];
+  }
+
+  /**
+   * Get aggregate sentiment score and label for a coin over a timeframe ('1h', '24h', '7d')
+   */
+  async getAggregateSentiment(coin?: string, timeframe: string = '1h'): Promise<{ score: number; label: SentimentLabel; articleCount: number; updatedAt: string }> {
+    let timeframeMs = 3600000; // 1h default
+    if (timeframe === '24h') timeframeMs = 86400000;
+    if (timeframe === '7d') timeframeMs = 604800000;
+
+    const sinceDate = new Date(Date.now() - timeframeMs);
+    const whereCondition: any = {
+      publishedAt: { gte: sinceDate },
+      sentimentScore: { not: null },
+    };
+
+    if (coin) {
+      whereCondition.relatedCoins = {
+        has: coin.toUpperCase(),
+      };
+    }
+
+    const articles = await this.prisma.newsArticle.findMany({
+      where: whereCondition,
+    });
+
+    if (articles.length === 0) {
+      return {
+        score: SENTIMENT_NEUTRAL_SCORE,
+        label: SentimentLabel.NEUTRAL,
+        articleCount: 0,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    const sumScore = articles.reduce((acc, a) => acc + (a.sentimentScore ?? 0), 0);
+    const avgScore = Number((sumScore / articles.length).toFixed(4));
+
+    let label = SentimentLabel.NEUTRAL;
+    if (avgScore >= VADER_POSITIVE_THRESHOLD) label = SentimentLabel.POSITIVE;
+    else if (avgScore <= VADER_NEGATIVE_THRESHOLD) label = SentimentLabel.NEGATIVE;
+
+    return {
+      score: avgScore,
+      label,
+      articleCount: articles.length,
+      updatedAt: new Date().toISOString(),
+    };
   }
 }

@@ -74,10 +74,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Implement `NewsController` in `workspace/apps/backend/src/news/news.controller.ts` exposing `GET /api/news` and `GET /api/sentiment/aggregate` per contracts/news-api.md (depends T010, T016)
-- [ ] T018 [US3] Wire `NewsController`, `NewsService`, `SentimentClient`, `RSSProvider`, `WebCrawlerProvider`, and `NewsCollectorCron` into `workspace/apps/backend/src/news/news.module.ts` (depends T017)
-- [ ] T019 [P] [US3] Create `NewsFeed.tsx` component in `workspace/apps/frontend/src/components/news/NewsFeed.tsx` rendering article list with sentiment badges (`POSITIVE`, `NEGATIVE`, `NEUTRAL`)
-- [ ] T020 [US3] Create Next.js News page in `workspace/apps/frontend/src/app/news/page.tsx` integrating `NewsFeed.tsx` with coin filtering tabs (depends T019)
+- [X] T017 [US3] Implement `NewsController` in `workspace/apps/backend/src/news/news.controller.ts` exposing `GET /api/news` and `GET /api/sentiment/aggregate` per contracts/news-api.md (depends T010, T016)
+- [X] T018 [US3] Wire `NewsController`, `NewsService`, `SentimentClient`, `RSSProvider`, `WebCrawlerProvider`, and `NewsCollectorCron` into `workspace/apps/backend/src/news/news.module.ts` (depends T017)
+- [X] T019 [P] [US3] Create `NewsFeed.tsx` component in `workspace/apps/frontend/src/components/news/NewsFeed.tsx` rendering article list with sentiment badges (`POSITIVE`, `NEGATIVE`, `NEUTRAL`)
+- [X] T020 [US3] Create Next.js News page in `workspace/apps/frontend/src/app/news/page.tsx` integrating `NewsFeed.tsx` with coin filtering tabs (depends T019)
 
 **Checkpoint**: User Story 3 complete — Next.js frontend renders live News Feed filtered by coin ticker.
 
@@ -90,8 +90,8 @@
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] Implement `NewsSentimentStrategy` in `workspace/apps/backend/src/news/strategies/sentiment.strategy.ts` implementing `IStrategy` interface per spec.md (depends T010, T016)
-- [ ] T022 [US4] Register `NewsSentimentStrategy` into `StrategyRegistry` during module initialization in `workspace/apps/backend/src/news/news.module.ts` per ADR-0003 and plan.md (depends T021)
+- [X] T021 [US4] Implement `NewsSentimentStrategy` in `workspace/apps/backend/src/news/strategies/sentiment.strategy.ts` implementing `IStrategy` interface per spec.md (depends T010, T016)
+- [X] T022 [US4] Register `NewsSentimentStrategy` into `StrategyRegistry` during module initialization in `workspace/apps/backend/src/news/news.module.ts` per ADR-0003 and plan.md (depends T021)
 
 **Checkpoint**: User Story 4 complete — `NewsSentimentStrategy` registered and ready for backtesting in composite strategies.
 
@@ -101,9 +101,9 @@
 
 **Purpose**: End-to-end integration verification, fault tolerance validation, and documentation updates.
 
-- [ ] T023 Run quickstart validation scenarios in `sdd_artifacts/news-sentiment-pipeline/quickstart.md` (Scenario 1, 2, 3, 4)
-- [ ] T024 Verify fault tolerance: stop Python FastAPI process, trigger news API and backtest, verify NestJS does NOT crash and strategy returns `HOLD`
-- [ ] T025 Update `sdd_artifacts/news-sentiment-pipeline/.intent` status to completed
+- [X] T023 Run quickstart validation scenarios in `sdd_artifacts/news-sentiment-pipeline/quickstart.md` (Scenario 1, 2, 3, 4)
+- [X] T024 Verify fault tolerance: stop Python FastAPI process, trigger news API and backtest, verify NestJS does NOT crash and strategy returns `HOLD`
+- [X] T025 Update `sdd_artifacts/news-sentiment-pipeline/.intent` status to completed
 
 ---
 
