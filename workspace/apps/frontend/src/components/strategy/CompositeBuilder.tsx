@@ -53,57 +53,79 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-[#1e2329] border border-[#2b3139] rounded-xl p-6 shadow-xl space-y-5">
-      <div className="border-b border-[#2b3139] pb-3">
-        <h3 className="text-base font-bold text-gray-100 flex items-center gap-2">
-          <span className="text-[#fcd535]">⚡</span> Composite Strategy Builder
+    <form 
+      onSubmit={handleSubmit} 
+      className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-xl flex flex-col gap-12"
+      style={{ padding: '2rem' }}
+    >
+      <div className="border-b border-[#2b3139] pb-8 mb-6">
+        <h3 className="text-2xl font-black text-gray-100 uppercase tracking-wider">
+          Composite Strategy Builder
         </h3>
-        <p className="text-xs text-gray-400 mt-1">Combine multiple strategies into a single ensemble signal</p>
+        <p className="text-sm text-gray-400 mt-2">Combine multiple base strategies into a single ensemble signal</p>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs font-semibold text-gray-300 mb-1">Composite Strategy Name</label>
+      <div className="flex flex-col gap-12">
+        <div className="flex flex-col gap-3">
+          <label className="block text-sm font-bold text-gray-200 uppercase tracking-wide">Composite Strategy Name</label>
           <input
             type="text"
             required
             placeholder="e.g. Trend_Momentum_Ensemble"
             value={compositeName}
             onChange={(e) => setCompositeName(e.target.value)}
-            className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-[#fcd535]"
+            className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 font-mono focus:outline-none focus:border-[#fcd535] placeholder:text-gray-600 placeholder:italic"
+            style={{ padding: '1rem 1.25rem' }}
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-gray-300 mb-2">Select Child Strategies</label>
-          <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+        <div className="flex flex-col gap-4">
+          <label className="flex items-center justify-between text-sm font-bold text-gray-200 uppercase tracking-wide">
+            <span>Select Child Strategies (min 2)</span>
+            <span className="text-xs text-gray-400 font-mono">{selectedChildren.length} selected</span>
+          </label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-72 overflow-y-auto pr-2">
             {availableStrategies.map((strat) => {
               const isChecked = selectedChildren.includes(strat.name);
               return (
                 <div
                   key={strat.name}
                   onClick={() => toggleChild(strat.name)}
-                  className={`p-2.5 rounded-lg border text-xs font-medium cursor-pointer transition-all flex items-center justify-between ${
+                  className={`rounded-xl border cursor-pointer transition-all flex items-center gap-4 ${
                     isChecked
-                      ? 'bg-[#0b0e11] border-[#fcd535] text-[#fcd535]'
-                      : 'bg-[#0b0e11]/60 border-[#2b3139] text-gray-400 hover:border-gray-600'
+                      ? 'bg-[#1e2329] border-[#fcd535] shadow-md shadow-[#fcd535]/10'
+                      : 'bg-[#0b0e11]/80 border-[#2b3139] hover:border-gray-500 hover:bg-[#1e2329]'
                   }`}
+                  style={{ padding: '1rem 1.25rem' }}
                 >
-                  <span>{strat.name}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">{strat.type}</span>
+                  <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+                    isChecked ? 'bg-[#fcd535] border-[#fcd535]' : 'border-gray-600 bg-[#1e2329]'
+                  }`}>
+                    {isChecked && <svg className="w-3.5 h-3.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path></svg>}
+                  </div>
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`truncate text-base font-bold ${isChecked ? 'text-[#fcd535]' : 'text-gray-300'}`}>{strat.name}</span>
+                    <span 
+                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700"
+                      style={{ padding: '0.25rem 0.625rem' }}
+                    >
+                      {strat.type}
+                    </span>
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-300 mb-1">Combiner Type</label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+          <div className="flex flex-col gap-3">
+            <label className="block text-sm font-bold text-gray-200 uppercase tracking-wide">Combiner Type</label>
             <select
               value={combinerType}
               onChange={(e) => setCombinerType(e.target.value)}
-              className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-[#fcd535]"
+              className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 focus:outline-none focus:border-[#fcd535]"
+              style={{ padding: '0.75rem 1.25rem' }}
             >
               <option value="MajorityVote">Majority Vote</option>
               <option value="WeightedScore">Weighted Score</option>
@@ -112,21 +134,28 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
         </div>
 
         {combinerType === 'WeightedScore' && selectedChildren.length > 0 && (
-          <div className="space-y-2 pt-2">
-            <label className="block text-xs font-semibold text-gray-300">Strategy Weights</label>
-            {selectedChildren.map((name) => (
-              <div key={name} className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-gray-400">{name}</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={weights[name] ?? 1.0}
-                  onChange={(e) => handleWeightChange(name, e.target.value)}
-                  className="w-24 bg-[#0b0e11] border border-[#2b3139] rounded px-2 py-1 text-right text-gray-100 font-mono"
-                />
-              </div>
-            ))}
+          <div className="flex flex-col gap-6 pt-8 border-t border-[#2b3139]">
+            <label className="block text-sm font-bold text-gray-200 uppercase tracking-wide">Strategy Weights</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {selectedChildren.map((name) => (
+                <div 
+                  key={name} 
+                  className="flex items-center justify-between gap-4 bg-[#0b0e11] border border-[#2b3139] rounded-xl text-sm"
+                  style={{ padding: '0.75rem 1.25rem' }}
+                >
+                  <span className="text-gray-300 font-mono truncate">{name}</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={weights[name] ?? 1.0}
+                    onChange={(e) => handleWeightChange(name, e.target.value)}
+                    className="w-32 bg-[#1e2329] border border-[#2b3139] rounded-lg text-center text-gray-100 font-mono focus:outline-none focus:border-[#fcd535] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    style={{ padding: '0.75rem 1.25rem' }}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -134,9 +163,10 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
       <button
         type="submit"
         disabled={!compositeName || selectedChildren.length === 0}
-        className="w-full py-2.5 rounded-lg bg-[#fcd535] hover:bg-[#f0b90b] text-[#0b0e11] font-bold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-5 rounded-xl bg-[#fcd535] hover:bg-[#f0b90b] text-[#0b0e11] font-black text-lg uppercase tracking-wider transition-all disabled:bg-[#1e2329] disabled:text-gray-500 disabled:border disabled:border-[#2b3139] disabled:cursor-not-allowed shadow-2xl disabled:shadow-none"
+        style={{ padding: '1.25rem 2rem' }}
       >
-        Build Composite Strategy
+        BUILD COMPOSITE STRATEGY
       </button>
     </form>
   );

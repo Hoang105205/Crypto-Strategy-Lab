@@ -130,26 +130,35 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
   const weights = (params.weights as Record<string, number>) || {};
 
   return (
-    <div className="bg-[#1e2329] border border-[#2b3139] rounded-xl p-5 shadow-lg space-y-4">
-      <div className="flex items-center justify-between border-b border-[#2b3139] pb-3">
-        <h4 className="text-sm font-semibold text-gray-200">Parameter Configuration</h4>
+    <div 
+      className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-xl flex flex-col gap-10"
+      style={{ padding: '1.5rem' }}
+    >
+      <div className="flex items-center justify-between border-b border-[#2b3139] pb-8 mb-6">
+        <h4 className="text-xl font-bold text-gray-200 uppercase tracking-wider">Parameter Configuration</h4>
         {isSaved ? (
-          <span className="text-xs text-[#0ecb81] font-bold font-mono">✓ Saved!</span>
+          <span className="text-xs font-bold text-[#0ecb81] bg-[#0ecb81]/10 border border-[#0ecb81]/20 rounded-md tracking-wide" style={{ padding: '0.25rem 0.75rem' }}>✓ SAVED</span>
         ) : isComposite ? (
-          <span className="text-xs text-gray-400 font-mono">Drafting...</span>
+          <span className="text-xs font-bold text-[#3b82f6] bg-[#3b82f6]/10 border border-[#3b82f6]/20 rounded-md tracking-wide" style={{ padding: '0.25rem 0.75rem' }}>✏️ DRAFTING</span>
         ) : (
-          <span className="text-xs text-gray-500 font-mono italic">Read-only</span>
+          <span className="text-xs font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-md tracking-wide uppercase flex items-center gap-1.5" style={{ padding: '0.25rem 0.75rem' }}>
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" fillRule="evenodd"></path></svg>
+            Read-only
+          </span>
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="flex flex-col gap-12">
         {/* Composite Strategy Interactive Selector */}
         {isComposite && availableBaseStrategies.length > 0 && (
-          <div className="space-y-3 p-3 bg-[#0b0e11] rounded-lg border border-[#2b3139]">
-            <label className="block text-xs font-semibold text-[#fcd535] uppercase tracking-wider">
+          <div 
+            className="flex flex-col gap-8 bg-[#0b0e11] rounded-xl border border-[#2b3139]"
+            style={{ padding: '1.25rem' }}
+          >
+            <label className="block text-sm font-bold text-[#fcd535] uppercase tracking-wider border-b border-[#2b3139] pb-4 mb-2">
               Child Strategies Selection
             </label>
-            <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto">
+            <div className="grid grid-cols-2 gap-5 max-h-48 overflow-y-auto">
               {availableBaseStrategies
                 .filter((s) => strategyName ? !checkCircular(s.name, strategyName, availableBaseStrategies) : true)
                 .map((strat) => {
@@ -158,14 +167,17 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
                     <div
                       key={strat.name}
                       onClick={() => handleToggleChild(strat.name)}
-                      className={`p-2 rounded border text-xs font-medium cursor-pointer transition-all flex items-center justify-between ${
+                      className={`p-3 rounded-lg border text-sm font-medium cursor-pointer transition-all flex items-center justify-between gap-2 ${
                         isSelected
                           ? 'bg-[#1e2329] border-[#fcd535] text-[#fcd535]'
                           : 'bg-[#1e2329]/60 border-[#2b3139] text-gray-400 hover:border-gray-600'
                       }`}
                     >
                       <span className="truncate">{strat.name}</span>
-                      <span className="text-[10px] px-1 rounded bg-gray-800 text-gray-300">
+                      <span 
+                        className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700"
+                        style={{ padding: '0.25rem 0.625rem' }}
+                      >
                         {strat.type}
                       </span>
                     </div>
@@ -173,12 +185,12 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
                 })}
             </div>
 
-            <div className="pt-2">
-              <label className="block text-xs font-semibold text-gray-300 mb-1">Combiner Type</label>
+            <div className="flex flex-col gap-3 pt-6 border-t border-[#2b3139]">
+              <label className="block text-sm font-semibold text-gray-300">Combiner Type</label>
               <select
                 value={combinerType}
                 onChange={(e) => handleCombinerTypeChange(e.target.value)}
-                className="w-full bg-[#1e2329] border border-[#2b3139] rounded px-3 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-[#fcd535]"
+                className="w-full bg-[#1e2329] border border-[#2b3139] rounded-lg px-4 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-[#fcd535]"
               >
                 <option value="MajorityVote">Majority Vote</option>
                 <option value="WeightedScore">Weighted Score</option>
@@ -186,12 +198,16 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
             </div>
 
             {combinerType === 'WeightedScore' && selectedChildren.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-[#2b3139]">
-                <label className="block text-xs font-semibold text-gray-300">
+              <div className="flex flex-col gap-5 pt-6 border-t border-[#2b3139]">
+                <label className="block text-sm font-semibold text-gray-300">
                   Strategy Weights
                 </label>
                 {selectedChildren.map((name) => (
-                  <div key={name} className="flex items-center justify-between text-xs">
+                  <div 
+                    key={name} 
+                    className="flex items-center justify-between gap-4 bg-[#1e2329] border border-[#2b3139] rounded-xl text-sm"
+                    style={{ padding: '0.75rem 1.25rem' }}
+                  >
                     <span className="text-gray-300 font-mono truncate">{name}</span>
                     <input
                       type="number"
@@ -199,7 +215,8 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
                       min="0"
                       value={weights[name] ?? 1.0}
                       onChange={(e) => handleWeightChange(name, e.target.value)}
-                      className="w-20 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-right text-gray-100 font-mono focus:border-[#fcd535]"
+                      className="w-32 bg-[#0b0e11] border border-[#2b3139] rounded-lg text-center text-gray-100 font-mono focus:outline-none focus:border-[#fcd535] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      style={{ padding: '0.75rem 1.25rem' }}
                     />
                   </div>
                 ))}
@@ -209,46 +226,63 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
         )}
 
         {/* Standard Parameter Inputs */}
-        {Object.entries(params).map(([key, val]) => {
-          if (key === 'weights' || key === 'childStrategies' || key === 'combinerType' || key === 'childCount') return null;
+        <div 
+          className="flex flex-col gap-8 bg-[#0b0e11] rounded-xl border border-[#2b3139]"
+          style={{ padding: '1.25rem' }}
+        >
+          <label className="block text-sm font-bold text-gray-400 uppercase tracking-wider border-b border-[#2b3139] pb-4 mb-2">
+            Standard Parameters
+          </label>
+          <div className="flex flex-col gap-8">
+            {Object.entries(params).map(([key, val]) => {
+              if (key === 'weights' || key === 'childStrategies' || key === 'combinerType' || key === 'childCount') return null;
 
-          return (
-            <div key={key} className="flex flex-col space-y-1">
-              <label className="text-xs font-medium text-gray-400 capitalize">{key}</label>
-              <input
-                type="text"
-                value={String(val ?? '')}
-                onChange={(e) => handleInputChange(key, e.target.value)}
-                disabled={!isComposite}
-                className={`border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition-colors ${
-                  !isComposite
-                    ? 'bg-[#1e2329] border-[#2b3139] text-gray-500 cursor-not-allowed'
-                    : 'bg-[#0b0e11] border-[#2b3139] text-gray-100 focus:border-[#fcd535]'
-                }`}
-              />
-            </div>
-          );
-        })}
+              return (
+                <div key={key} className="flex flex-col gap-4">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wide">{key}</label>
+                  {!isComposite ? (
+                    <div 
+                      className="bg-[#1e2329]/50 border border-transparent rounded-xl text-base font-mono text-gray-100"
+                      style={{ padding: '0.75rem 1.25rem' }}
+                    >
+                      {String(val ?? '')}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={String(val ?? '')}
+                      onChange={(e) => handleInputChange(key, e.target.value)}
+                      className="bg-[#0b0e11] border border-[#2b3139] text-gray-100 focus:border-[#fcd535] rounded-xl text-base font-mono focus:outline-none transition-colors"
+                      style={{ padding: '0.75rem 1.25rem' }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Action Buttons */}
       {isComposite && (
-        <div className="pt-3 border-t border-[#2b3139] space-y-2">
+        <div className="pt-6 border-t border-[#2b3139] flex flex-col gap-3">
           <button
             type="button"
             onClick={handleSave}
-            className="w-full py-2.5 rounded-lg bg-[#fcd535] hover:bg-[#f0b90b] text-[#0b0e11] font-bold text-sm transition-all shadow-md flex items-center justify-center gap-2"
+            className="w-full rounded-lg bg-[#fcd535] hover:bg-[#f0b90b] text-[#0b0e11] font-bold text-sm uppercase tracking-wider transition-all shadow-md"
+            style={{ padding: '0.625rem 1.25rem' }}
           >
-            <span>💾 Cập nhật Tham số</span>
+            UPDATE PARAMETERS
           </button>
 
           {onDelete && (
             <button
               type="button"
               onClick={onDelete}
-              className="w-full py-2 rounded-lg bg-[#f6465d]/20 hover:bg-[#f6465d]/30 text-[#f6465d] border border-[#f6465d]/30 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
+              className="w-full rounded-lg bg-[#f6465d]/10 hover:bg-[#f6465d]/20 text-[#f6465d] border border-[#f6465d]/30 font-bold text-xs uppercase tracking-wider transition-all"
+              style={{ padding: '0.5rem 1rem' }}
             >
-              <span>🗑️ Xóa Chiến lược Composite</span>
+              DELETE COMPOSITE STRATEGY
             </button>
           )}
         </div>
