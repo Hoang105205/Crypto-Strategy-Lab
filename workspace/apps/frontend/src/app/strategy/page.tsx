@@ -38,9 +38,46 @@ export default function StrategyBuilderPage() {
     { name: 'SupportResistance', type: 'SR', parameters: { lookback: 5, tolerancePercent: 0.005 } },
   ];
 
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+  const generateDynamicMockTrades = (
+    stratName: string,
+    symbol: string,
+    tf: string,
+    capital: number
+  ): TradeItem[] => {
+    const basePrice = symbol.startsWith('BTC') ? 65000 : symbol.startsWith('ETH') ? 3400 : 140;
+    const seed = stratName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const count = 4 + (seed % 4);
+    const trades: TradeItem[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const entryPrice = basePrice * (1 + Math.sin(i + seed) * 0.03);
+      const isProfit = (i + seed) % 2 === 0;
+      const changePercent = isProfit ? 0.025 + (i * 0.004) : -0.018 - (i * 0.002);
+      const exitPrice = entryPrice * (1 + changePercent);
+      const qty = (capital * 0.15) / entryPrice;
+      const pnl = (exitPrice - entryPrice) * qty;
+
+      const entry = new Date(Date.now() - (count - i) * 86400000 * 2);
+      const exit = new Date(entry.getTime() + 3600000 * 8);
+
+      trades.push({
+        entryDate: entry.toISOString().replace('T', ' ').substring(0, 16),
+        exitDate: exit.toISOString().replace('T', ' ').substring(0, 16),
+        entryPrice,
+        exitPrice,
+        side: (i + seed) % 3 === 0 ? 'SHORT' : 'LONG',
+        quantity: qty,
+        pnl,
+      });
+    }
+    return trades;
+  };
+
   const fetchStrategies = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/strategies');
+      const res = await fetch(`${API_BASE_URL}/api/strategies`);
       if (res.ok) {
         const data = await res.json();
         setStrategies(data);
@@ -77,7 +114,7 @@ export default function StrategyBuilderPage() {
   }) => {
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/api/strategies/composite', {
+      const res = await fetch(`${API_BASE_URL}/api/strategies/composite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -96,7 +133,12 @@ export default function StrategyBuilderPage() {
       const newComposite: StrategyItem = {
         name: payload.name,
         type: 'COMPOSITE',
-        parameters: { childCount: payload.childStrategyNames.length, combiner: payload.combinerType },
+        parameters: {
+          childCount: payload.childStrategyNames.length,
+          childStrategies: payload.childStrategyNames.join(', '),
+          combinerType: payload.combinerType,
+          ...(payload.combinerType === 'WeightedScore' ? { weights: payload.combinerWeights || {} } : {}),
+        },
       };
       setStrategies((prev) => [...prev, newComposite]);
       setSelectedStrategy(newComposite);
@@ -115,7 +157,7 @@ export default function StrategyBuilderPage() {
     setBacktestStatus('Submitting job to Queue...');
 
     try {
-      const res = await fetch('http://localhost:3000/api/strategies/backtest', {
+      const res = await fetch(`${API_BASE_URL}/api/strategies/backtest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,14 +177,78 @@ export default function StrategyBuilderPage() {
     } catch {
       setBacktestStatus('Offline Simulation Executed');
     } finally {
-      // Generate sample simulated trades for instant feedback
-      const mockTrades: TradeItem[] = [
-        { entryDate: '2026-02-01 10:00', exitDate: '2026-02-02 14:00', entryPrice: 65000, exitPrice: 68500, side: 'LONG', pnl: 350, quantity: 0.1 },
-        { entryDate: '2026-02-03 09:00', exitDate: '2026-02-04 11:00', entryPrice: 68500, exitPrice: 67200, side: 'LONG', pnl: -130, quantity: 0.1 },
-        { entryDate: '2026-02-05 15:00', exitDate: '2026-02-07 18:00', entryPrice: 67200, exitPrice: 71000, side: 'LONG', pnl: 380, quantity: 0.1 },
-      ];
-      setTradeResults(mockTrades);
+      // Generate dynamic simulation trades reflecting selected strategy & pair inputs
+      const dynamicTrades = generateDynamicMockTrades(
+        selectedStrategy.name,
+        pair,
+        timeframe,
+        initialCapital
+      );
+      setTradeResults(dynamicTrades);
       setIsLoading(false);
+    }
+  };
+
+  const handleDeleteStrategy = async (strategyName: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn xóa chiến lược '${strategyName}' không?`)) return;
+
+    try {
+      await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(strategyName)}`, {
+        method: 'DELETE',
+      });
+    } catch {
+      // Local fallback
+    }
+
+    setStrategies((prev) => prev.filter((s) => s.name !== strategyName));
+    if (selectedStrategy?.name === strategyName) {
+      setSelectedStrategy(null);
+    }
+  };
+
+  const handleParametersUpdate = async (updated: Record<string, unknown>) => {
+    setEditedParameters(updated);
+    if (!selectedStrategy) return;
+
+    const newName = String(updated.name || selectedStrategy.name);
+    const updatedStrategy = {
+      ...selectedStrategy,
+      name: newName,
+      parameters: updated,
+    };
+    setSelectedStrategy(updatedStrategy);
+
+    // Update in strategies list so StrategyCard reflects the edited parameters live
+    setStrategies((prev) =>
+      prev.map((s) => (s.name === selectedStrategy.name ? updatedStrategy : s)),
+    );
+
+    if (selectedStrategy.type.toUpperCase() === 'COMPOSITE') {
+      const childrenString = String(updated.childStrategies || '');
+      const childrenNames = childrenString.split(',').map(s => s.trim()).filter(Boolean);
+      
+      const payload = {
+        name: String(updated.name || selectedStrategy.name),
+        childStrategyNames: childrenNames,
+        combinerType: String(updated.combinerType || 'MajorityVote'),
+        combinerWeights: updated.weights as Record<string, number>,
+      };
+
+      try {
+        await fetch(`${API_BASE_URL}/api/strategies/composite`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (payload.name !== selectedStrategy.name) {
+          await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(selectedStrategy.name)}`, {
+            method: 'DELETE',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to update composite strategy', err);
+      }
     }
   };
 
@@ -213,6 +319,11 @@ export default function StrategyBuilderPage() {
                     parameters={strat.parameters}
                     isSelected={selectedStrategy?.name === strat.name}
                     onSelect={() => handleSelectStrategy(strat)}
+                    onDelete={
+                      strat.type.toUpperCase() === 'COMPOSITE'
+                        ? () => handleDeleteStrategy(strat.name)
+                        : undefined
+                    }
                   />
                 ))}
               </div>
@@ -230,8 +341,16 @@ export default function StrategyBuilderPage() {
                   </div>
 
                   <ParameterEditor
+                    strategyName={selectedStrategy.name}
+                    strategyType={selectedStrategy.type}
                     initialParameters={selectedStrategy.parameters}
-                    onChange={(updated) => setEditedParameters(updated)}
+                    availableBaseStrategies={strategies}
+                    onSave={handleParametersUpdate}
+                    onDelete={
+                      selectedStrategy.type.toUpperCase() === 'COMPOSITE'
+                        ? () => handleDeleteStrategy(selectedStrategy.name)
+                        : undefined
+                    }
                   />
 
                   <button

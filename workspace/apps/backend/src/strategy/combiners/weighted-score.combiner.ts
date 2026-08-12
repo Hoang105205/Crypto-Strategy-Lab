@@ -9,6 +9,14 @@ export class WeightedScoreCombiner implements ICombiner {
     this.threshold = threshold;
   }
 
+  getType(): string {
+    return 'WeightedScore';
+  }
+
+  getWeights(): Record<string, number> {
+    return this.weights;
+  }
+
   combine(signals: Signal[]): Signal {
     if (!signals || signals.length === 0) {
       return {

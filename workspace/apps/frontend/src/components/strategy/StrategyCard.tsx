@@ -8,6 +8,7 @@ export interface StrategyCardProps {
   parameters: Record<string, unknown>;
   isSelected?: boolean;
   onSelect?: () => void;
+  onDelete?: () => void;
 }
 
 export const StrategyCard: React.FC<StrategyCardProps> = ({
@@ -16,6 +17,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   parameters,
   isSelected = false,
   onSelect,
+  onDelete,
 }) => {
   const getTypeBadgeColor = (t: string) => {
     switch (t.toUpperCase()) {
@@ -34,6 +36,24 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
     }
   };
 
+  const formatParamValue = (val: unknown): string => {
+    if (Array.isArray(val)) {
+      return val
+        .map((item) =>
+          typeof item === 'object' && item !== null && 'name' in item
+            ? (item as { name: string }).name
+            : String(item),
+        )
+        .join(', ');
+    }
+    if (typeof val === 'object' && val !== null) {
+      return Object.entries(val)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+    }
+    return String(val);
+  };
+
   return (
     <div
       onClick={onSelect}
@@ -45,13 +65,28 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
     >
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-base font-semibold text-gray-100 tracking-wide">{name}</h3>
-        <span
-          className={`px-2.5 py-0.5 text-xs font-medium rounded-full border ${getTypeBadgeColor(
-            type,
-          )}`}
-        >
-          {type}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`px-2.5 py-0.5 text-xs font-medium rounded-full border ${getTypeBadgeColor(
+              type,
+            )}`}
+          >
+            {type}
+          </span>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              title="Xóa chiến lược"
+              className="p-1 rounded text-gray-400 hover:text-[#f6465d] hover:bg-[#f6465d]/10 transition-colors text-xs"
+            >
+              🗑️
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-1.5 text-xs text-gray-400">
@@ -64,7 +99,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               key={key}
               className="px-2 py-1 rounded bg-[#0b0e11] text-gray-300 font-mono text-[11px]"
             >
-              {key}: <span className="text-[#fcd535]">{String(val)}</span>
+              {key}: <span className="text-[#fcd535]">{formatParamValue(val)}</span>
             </span>
           ))}
           {Object.keys(parameters || {}).length === 0 && (

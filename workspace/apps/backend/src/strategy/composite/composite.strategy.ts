@@ -1,10 +1,8 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
 import type { Candle, Signal, IStrategy, ICombiner } from '@crypto-strategy-lab/shared';
 import { StrategyType, SignalAction } from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 
-@Injectable()
-export class CompositeStrategy implements IStrategy, OnModuleInit {
+export class CompositeStrategy implements IStrategy {
   private readonly name: string;
   private readonly children: IStrategy[];
   private readonly combiner: ICombiner;
@@ -13,18 +11,15 @@ export class CompositeStrategy implements IStrategy, OnModuleInit {
     name: string = 'DefaultComposite',
     children: IStrategy[] = [],
     combiner?: ICombiner,
-    private readonly registry?: StrategyRegistry,
+    registry?: StrategyRegistry,
   ) {
     this.name = name;
     this.children = children;
     this.combiner = combiner || {
       combine: (signals: Signal[]) => signals[0] || { action: SignalAction.HOLD, confidence: 0 },
     };
-  }
-
-  onModuleInit() {
-    if (this.registry) {
-      this.registry.register(this);
+    if (registry && !registry.has(this.name)) {
+      registry.register(this);
     }
   }
 
@@ -37,10 +32,15 @@ export class CompositeStrategy implements IStrategy, OnModuleInit {
   }
 
   getParameters(): Record<string, unknown> {
+    const combinerType = (this.combiner as any)?.getType?.() || 'MajorityVote';
+    const weights = (this.combiner as any)?.getWeights?.();
+
     return {
       name: this.name,
       childCount: this.children.length,
-      childStrategies: this.children.map((c) => ({ name: c.getName(), type: c.getType() })),
+      childStrategies: this.children.map((c) => c.getName()).join(', '),
+      combinerType,
+      ...(weights && Object.keys(weights).length > 0 ? { weights } : {}),
     };
   }
 
