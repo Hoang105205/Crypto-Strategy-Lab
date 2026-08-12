@@ -7,7 +7,7 @@
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
 | News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
-| Event Infrastructure | Phương | Event bus, job queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) |
+| Event Infrastructure | Phương | Event bus, BullMQ/Redis backtest queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) + Redis |
 | Frontend | All (shell: Phương) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
 
 ## Module Details
@@ -34,18 +34,19 @@
 - **Contracts**: `kb/contracts/news.yaml`
 
 ### Event Infrastructure (Phương)
-- **Scope**: events/ (EventEmitter2, typed events), queue/ (worker pool, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
+- **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
 - **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs
-- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces (the Job Queue worker calls `IMarketDataService.getHistorical()` directly to fetch candles for backtesting)
+- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces and Redis (the BullMQ worker calls `IMarketDataService.getCandlesRange()` to fetch candles for backtesting)
 - **Module doc**: `kb/modules/event-infrastructure.md`
 - **Contracts**: `kb/contracts/events.yaml`
 
 ## Cross-Module Communication
 - Market Data → Event Infrastructure: publishes `MarketDataUpdated` (reserved; not yet consumed — see `kb/contracts/events.yaml`)
-- Strategy Engine → Event Infrastructure: publishes `BacktestRequested` when `source=USER`
-- Event Infrastructure Loop Controller → Job Queue: publishes `BacktestRequested` when `source=SEARCH_LOOP`
+- Strategy Engine → Event Infrastructure: awaits `IJobQueue.enqueue` for USER work, then publishes observational `BacktestRequested`
+- Event Infrastructure Loop Controller → Job Queue: awaits `IJobQueue.enqueue` for SEARCH_LOOP work, then publishes observational `BacktestRequested`
+- Event Infrastructure → Redis: BullMQ persists queue state, priorities, delays, locks, and bounded job history
 - Event Infrastructure → Strategy Engine: publishes `BacktestCompleted` / `BacktestFailed`
-- Event Infrastructure → Market Data: calls `IMarketDataService.getHistorical()` (interface only) from the Job Queue worker to fetch candles for backtesting
+- Event Infrastructure → Market Data: calls `IMarketDataService.getCandlesRange()` (interface only) from the BullMQ worker to fetch candles for backtesting
 - News & Sentiment → Strategy Engine: `SentimentStrategy` registered in StrategyRegistry
 - All modules → Frontend: REST + WebSocket only
 

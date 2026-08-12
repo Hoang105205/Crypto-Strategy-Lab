@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-09
-> **Status**: Active — All 12 ADRs complete, all W1 KB files filled
+> **Last Updated**: 2026-08-12
+> **Status**: Active — BullMQ/Redis queue upgrade adopted in ADR-0013
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

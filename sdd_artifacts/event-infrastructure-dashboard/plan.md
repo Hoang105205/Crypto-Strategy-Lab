@@ -1,23 +1,23 @@
 # Implementation Plan: Event Infrastructure Dashboard
 
-**Feature**: `event-infrastructure-dashboard` | **Date**: 2026-08-11 | **Spec**: [spec.md](spec.md)
+**Feature**: `event-infrastructure-dashboard` | **Date**: 2026-08-12 | **Spec**: [spec.md](spec.md)
 
 ## Summary
 
-Complete Member D's brownfield Event Infrastructure and realtime Dashboard in the existing modular monolith. Delivery follows five dependency-ordered slices: typed Event Bus, asynchronous backtest queue/worker, realtime Leaderboard, bounded Strategy Search Loop, and Dashboard/realtime UI. A contract-reconciliation gate precedes all source changes so the active KB and shared TypeScript contracts agree on producer-owned `jobId`, terminal-only `BacktestFailed`, retry delays, metric units, and canonical names.
+Complete Member D's brownfield Event Infrastructure and realtime Dashboard in the existing modular monolith. Delivery follows five dependency-ordered slices: typed Event Bus, BullMQ/Redis backtest queue/worker, realtime Leaderboard, bounded Strategy Search Loop, and Dashboard/realtime UI. A contract-reconciliation gate precedes source changes so KB, shared TypeScript contracts, BullMQ options, and operational configuration agree on producer-owned `jobId`, priority, terminal failure, retry delays, retention, metric units, and canonical names.
 
 The backend extends the existing `events`, `queue`, `leaderboard`, `loop`, and `dashboard` modules and adds the documented infrastructure WebSocket gateway. Event Infrastructure persists only its own Leaderboard, Loop, and Dead-letter data. Strategy Version resolution and Backtest Result persistence/detail remain behind Strategy Engine-owned public ports. Frontend work composes the completed Market Data dashboard rather than replacing it.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.7, Node.js runtime; React 19.2 for client components  
-**Primary Dependencies**: NestJS 11, `@nestjs/event-emitter` 3, Socket.IO 4.8, Next.js 16.3, Tailwind CSS 4, shared workspace package  
-**Storage**: PostgreSQL 16 through Prisma 6; in-memory queue state for MVP; persistent Dead-letter, Leaderboard, and Search Loop records  
+**Primary Dependencies**: NestJS 11, `@nestjs/event-emitter` 3, BullMQ 5, Redis 7, Socket.IO 4.8, Next.js 16.3, Tailwind CSS 4, shared workspace package
+**Storage**: PostgreSQL 16 through Prisma 6 for domain/projection/audit records; Redis 7 with AOF for BullMQ queue state, locks, retry delays, and bounded job history
 **Testing**: Jest 30 and Nest testing utilities for backend; Vitest 2 + React Testing Library/jsdom added for frontend per KB architecture  
-**Target Platform**: Local four-process course-project environment; browser frontend at port 3000 and backend at port 3001  
+**Target Platform**: Local course-project environment; browser frontend at port 3000, backend at port 3001, Redis at port 6379, PostgreSQL, and Python sentiment service
 **Project Type**: Monorepo web application with REST snapshot APIs and Socket.IO realtime updates  
 **Performance Goals**: Backtest submission returns before execution begins; worker concurrency defaults to 3 and is bounded; Leaderboard reads use persisted projections; no frontend polling for live progress  
-**Constraints**: Contract-first; no direct cross-module implementation imports or database access; no circular dependencies; preserve completed Market Data and News work; in-memory queue only for MVP; one active Search Loop; no auth or real funds
+**Constraints**: Contract-first; no direct cross-module implementation imports or database access; no circular dependencies; preserve completed Market Data and News work; BullMQ workers remain in the NestJS process while EventEmitter2 is process-local; one active Search Loop; no auth or real funds
 
 ## Constitution Check
 
@@ -27,17 +27,17 @@ The backend extends the existing `events`, `queue`, `leaderboard`, `loop`, and `
 |-----------|--------|-------|
 | I. Architecture Quality Over Trading Profitability | ✅ PASS | The plan strengthens replaceable Event, queue, generator, scoring, and UI boundaries; it adds no trading logic. |
 | II. Contract-Driven | ✅ PASS | Phase 0 reconciles active KB/shared contracts before dependent code. Feature-local contracts map every public operation and Event. |
-| III. Extension Points Must Be Demonstrable | ✅ PASS | Tests prove queue backend, generator, scoring policy, subscriber, and worker-concurrency replaceability. |
-| IV. Simplicity Over Cleverness | ✅ PASS | MVP remains in-process and in-memory; no Redis, broker, microservice, CQRS, or event store is introduced. |
+| III. Extension Points Must Be Demonstrable | ✅ PASS | The queue-backend extension point is exercised by delivering BullMQ/Redis behind the existing `IJobQueue`; other policies remain replaceable. |
+| IV. Simplicity Over Cleverness | ✅ PASS | Redis is introduced only for the now-required durable BullMQ queue; workers and the Event Bus remain in-process, with no microservice, CQRS, Kafka, RabbitMQ, or event store. |
 | V. Knowledge Base as Truth | ✅ PASS | Active KB wins over stale plan/study-guide names; required KB changes are explicit gates. |
 | VI. Explicit Over Implicit | ✅ PASS | Explicit tokens, DTOs, state transitions, configuration, error codes, and contracts replace hidden coupling. |
 | Security constraints | ✅ PASS | No accounts or funds; no new secrets; errors remain user-safe. |
 
 ## Architecture Decision
 
-**Approach**: Extend the existing modular monolith with application services and adapters inside the already-declared Event Infrastructure modules. Use an in-process typed Event Bus for notification, public ports for operations requiring immediate results, an in-memory priority queue behind `IJobQueue`, persistent projections for Leaderboard/Loop/DLQ, REST for snapshots/commands, and a dedicated infrastructure Socket.IO namespace for realtime push.
+**Approach**: Extend the existing modular monolith with application services and adapters inside the declared Event Infrastructure modules. Use an in-process typed Event Bus for notification, public ports for operations requiring immediate results, `BullMqJobQueue` behind `IJobQueue`, Redis-backed BullMQ workers in the NestJS process, PostgreSQL projections/audit for Leaderboard/Loop/DLQ, REST snapshots/commands, and a dedicated infrastructure Socket.IO namespace.
 
-**Rationale**: This directly applies ADR-0005, ADR-0006, ADR-0011, and ADR-0012. It preserves the project deployment topology while making the scale-up seams demonstrable. A dedicated `/infrastructure` realtime namespace avoids modifying the completed `/market-data` gateway and keeps reconnect/resync behavior explicit.
+**Rationale**: This applies ADR-0005, ADR-0006, ADR-0011, and ADR-0013. Redis makes accepted queue work durable and BullMQ supplies priority, retries, locking, recovery, and inspection without changing consumers. Workers stay in-process so `BacktestCompleted` reaches process-local EventEmitter2 subscribers. A dedicated `/infrastructure` realtime namespace preserves the completed `/market-data` gateway.
 
 **Modules affected**:
 
@@ -71,12 +71,12 @@ Leaderboard and Search Loop may proceed in parallel after the Event Bus and thei
 
 ### Phase P0 — Contract and Schema Gate
 
-1. Update `kb/contracts/events.yaml` retry delays to `[1000, 4000]`, document three total attempts, document `USER` priority with FIFO inside each group, and retain terminal-only `BacktestFailed`.
+1. Reconcile `kb/contracts/events.yaml` and ADR-0013 with BullMQ queue name, Redis persistence, custom `jobId`, priorities `1/10`, three attempts, delays `[1000, 4000]`, retention, stalled recovery, and terminal-only `BacktestFailed`.
 2. Reconcile shared contracts: require `{ jobId }` in `IJobQueue.enqueue`, remove `willRetry`, use enum-backed statuses/criteria, and export all infrastructure DTOs once.
 3. Add Strategy Engine-owned public ports for Strategy Version resolution, executable Strategy resolution, Backtest Result persistence, and Backtest Result detail reads. Event Infrastructure depends on tokens/interfaces only; tests use fakes until Huy supplies production providers.
 4. Add canonical DI tokens for queue and Strategy ports. Use type-only imports in decorated constructor signatures per agent learning.
 5. Add `executedAt` to `LeaderboardEntry`; add unique `jobId` and `updatedAt` to `SearchLoopCandidate`; make the no-improvement bound non-null with default 50. Hoàng reviews the Prisma migration.
-6. Update KB open questions for priority, score/Top-K, retry delays, and canonical `getCandlesRange()` naming before P1/P2 code consumes them.
+6. Add validated Redis/BullMQ configuration and update KB open questions for score/Top-K and canonical `getCandlesRange()` naming before P1/P2 code consumes them.
 
 ### Phase P1 — Typed Event Bus
 
@@ -89,14 +89,14 @@ Leaderboard and Search Loop may proceed in parallel after the Event Bus and thei
 
 ### Phase P2 — Backtest Queue, Worker, and Dead Letter
 
-1. Implement an in-memory `IJobQueue` with separate FIFO lists for `USER` and `SEARCH_LOOP`, one job registry, status registry, completion timestamps, and terminal-publication guards.
-2. Add explicit queue configuration (`WORKER_CONCURRENCY`, default 3; attempts 3; delays 1s/4s) and an injectable clock/scheduler seam for deterministic tests without primitive constructor injection.
-3. Subscribe an enqueue handler to `BacktestRequested`; validate source/`loopRunId`, preserve `jobId`, reject duplicates, and schedule work without blocking the publisher.
-4. Implement bounded worker dispatch. Workers call Market Data and Strategy public ports, persist one immutable result, then publish `BacktestCompleted` using the originating correlation ID.
-5. Classify zero candles and missing Strategy Version as non-retryable. Retry other eligible failures twice; intermediate failures update status/logs only.
-6. Make terminal transition atomic/idempotent, persist `DeadLetterJob`, and publish one `BacktestFailed` and one `BacktestDeadLettered` per terminal transition.
-7. Implement status/stats/dead-letter list/manual retry operations and controllers. Manual retry marks the DLQ record resolved and requeues the same job at attempt 1.
-8. Test priority, FIFO, delayed availability, concurrency, duplicate IDs, exact event counts, stats, and recovery with fake timers/ports.
+1. Add BullMQ and Redis dependencies plus a validated Redis connection provider. Producer connections fail fast; worker connections persist/reconnect; all connections close on shutdown.
+2. Implement `BullMqJobQueue` over queue `backtest`. Preserve producer UUID as BullMQ `jobId`, explicitly reject duplicates, map USER to priority 1 and SEARCH_LOOP to 10, and configure bounded completed/failed retention.
+3. Inject `IJobQueue` into request producers. Validate source/`loopRunId`, await Redis enqueue, then publish observational `BacktestRequested`; do not register an Event subscriber that enqueues the same job.
+4. Run a BullMQ Worker inside NestJS with concurrency 3. Workers call Market Data and Strategy public ports, persist one immutable/idempotent result, then publish `BacktestCompleted` using the originating correlation ID.
+5. Configure three attempts and a custom deterministic BullMQ backoff of 1s then 4s. Use BullMQ's non-retryable error mechanism for zero candles and missing Strategy Version.
+6. Make terminal transition atomic/idempotent, retain the BullMQ failed job, mirror `DeadLetterJob` to PostgreSQL, and publish one `BacktestFailed` and one `BacktestDeadLettered` per terminal transition.
+7. Implement BullMQ-backed status/stats plus dead-letter list/manual retry operations. Manual retry resets BullMQ attempt counters and atomically resolves the PostgreSQL mirror.
+8. Add graceful worker shutdown, Redis health reporting, and startup reconciliation. Test Redis restart survival, priority/FIFO, delayed retry, concurrency, duplicate IDs, stalls, exact side-effect counts, retention, outage behavior, and recovery using disposable Redis.
 
 ### Phase P3 — Realtime Leaderboard
 
@@ -115,7 +115,7 @@ Leaderboard and Search Loop may proceed in parallel after the Event Bus and thei
 3. Resolve a generated candidate to an immutable Strategy Version through the Strategy public port, create a candidate row with unique job ID, and publish a complete search-originated request.
 4. Subscribe idempotently to terminal completion/failure. Match by `loopRunId` and `jobId`, record late/in-flight outcomes, and never generate a successor after pause or terminal stop.
 5. Evaluate stop conditions in specified order and use epsilon 0.01. Default no-improvement limit is 50 and cannot be disabled without another bound.
-6. Retry generation at most three times, fail with `generator_error`, and reconcile orphan active runs to `process_restarted` at startup.
+6. Retry generation at most three times, fail with `generator_error`, and reconcile active runs against BullMQ state at startup; only unrecoverable orphans become `orphaned_after_restart`.
 7. Publish started/progress/stopped Events only on valid transitions. Results arriving after a terminal stop are persisted silently and do not emit a post-stop progress Event.
 8. Implement Loop command/query controllers and unit/integration tests for all state and race paths.
 
@@ -166,7 +166,9 @@ workspace/
 │       │   ├── event-bus.spec.ts
 │       │   └── events.module.ts
 │       ├── queue/
-│       │   ├── backtest.queue.ts
+│       │   ├── bullmq-job.queue.ts
+│       │   ├── redis.connection.ts
+│       │   ├── bullmq.config.ts
 │       │   ├── backtest.worker.ts
 │       │   ├── dead-letter.repository.ts
 │       │   ├── queue.controller.ts
@@ -221,7 +223,8 @@ workspace/
 
 ## Testing Strategy
 
-- Use fake clocks/schedulers for retry timing; never use long sleeps.
+- Use BullMQ integration tests against disposable Redis; keep retry delay assertions bounded and avoid long real sleeps in unit suites.
+- Test NestJS restart while Redis remains running, Redis outage/recovery, graceful shutdown, and stalled-job idempotency.
 - Use test doubles for `IMarketDataService` and Strategy Engine ports so queue/Loop tests do not wait for other members.
 - Use repository interfaces/fakes for most service tests and Nest testing modules with a mocked `PrismaService` for DI/controller integration.
 - Add module-boot tests for Events, Queue, Leaderboard, Loop, and Dashboard to catch token/export cycles.
@@ -234,6 +237,14 @@ workspace/
 |----------|---------|------------|
 | `BACKTEST_WORKER_CONCURRENCY` | `3` | integer 1–32 |
 | `BACKTEST_MAX_ATTEMPTS` | `3` | fixed to 3 for MVP contract |
+| `BACKTEST_QUEUE_NAME` | `backtest` | non-empty, deployment-stable |
+| `REDIS_HOST` | `localhost` | non-empty hostname |
+| `REDIS_PORT` | `6379` | integer 1–65535 |
+| `REDIS_USERNAME` | empty | optional |
+| `REDIS_PASSWORD` | empty | optional secret, never logged |
+| `REDIS_DB` | `0` | integer 0 or greater |
+| `BACKTEST_JOB_RETENTION_AGE_SECONDS` | `86400` | positive integer |
+| `BACKTEST_JOB_RETENTION_COUNT` | `1000` | positive integer |
 | `LEADERBOARD_TOP_K` | `10` | integer 1–100 |
 | `INFRASTRUCTURE_WS_NAMESPACE` | `/infrastructure` | non-empty namespace beginning `/` |
 
@@ -241,9 +252,8 @@ Retry delays (1s/4s), epsilon (0.01), and no-improvement default (50) are named 
 
 ## Constitution Re-check After Design
 
-All gates remain **PASS**. The two new Strategy integration ports and two minimal schema fields are boundary repairs required by the spec; they do not introduce a module, technology, or cross-module database dependency. The separate infrastructure WebSocket namespace preserves completed Market Data behavior and uses an already-installed transport.
+All gates remain **PASS**. BullMQ/Redis is the approved queue-backend upgrade in ADR-0013, not a new domain module. Strategy ports and schema fields remain boundary repairs. The separate infrastructure WebSocket namespace preserves completed Market Data behavior.
 
 ## Complexity Tracking
 
-No Constitution violation requires justification.
-
+Redis adds one runtime dependency justified by the explicit durability requirement and ADR-0013. Kafka, RabbitMQ, separate workers, and a durable event log remain outside scope.

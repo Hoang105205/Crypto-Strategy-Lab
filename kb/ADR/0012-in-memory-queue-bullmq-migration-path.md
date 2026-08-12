@@ -1,7 +1,10 @@
 # ADR-0012: In-Memory Queue with BullMQ Migration Path
 
 ## Status
-Accepted
+Superseded by ADR-0013
+
+> **Deprecated**: BullMQ/Redis is now the accepted backtest queue backend. This ADR is retained as
+> decision history; see ADR-0013 for the target architecture and operational semantics.
 
 ## Context
 ADR-0006 established an in-memory job queue for backtest execution, which is sufficient for the
@@ -60,4 +63,4 @@ The migration path:
 ## Links
 - Relates to ADR-0005 (Event-Driven Communication)
 - Relates to ADR-0006 (Job Queue + Worker for Backtesting) — the decision this ADR extends
-- Superseded by: none
+- Superseded by: ADR-0013 (Adopt BullMQ with Redis for Backtest Jobs)

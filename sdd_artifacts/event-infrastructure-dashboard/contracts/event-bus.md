@@ -33,7 +33,7 @@ interface IEventBus {
 | Event | Publisher | Subscribers |
 |-------|-----------|-------------|
 | `MarketDataUpdated` | Market Data | none in MVP |
-| `BacktestRequested` | Strategy Engine (`USER`) or Loop Controller (`SEARCH_LOOP`) | Job Queue |
+| `BacktestRequested` | Strategy Engine (`USER`) or Loop Controller (`SEARCH_LOOP`), after durable enqueue | none in MVP (observational notification) |
 | `BacktestCompleted` | Backtest Worker | Strategy Engine, Leaderboard, Loop Controller |
 | `BacktestFailed` | Backtest Worker | Strategy Engine, Loop Controller |
 | `BacktestDeadLettered` | Job Queue | Loop Controller |
@@ -46,8 +46,8 @@ interface IEventBus {
 ## Delivery Rules
 
 - Publish is fire-and-forget and returns no subscriber result.
+- A command requiring acknowledgement MUST use its result-bearing interface. Specifically, producers await `IJobQueue.enqueue` before publishing `BacktestRequested`; the Event never drives enqueue.
 - Subscriber failure is caught/logged and cannot escape into publisher/sibling handlers.
 - Correlation identity is preserved through `BacktestRequested` → terminal result → Leaderboard/Loop Event chains.
 - `BacktestFailed` is terminal-only and has no `willRetry` field.
 - Reserved Events remain valid but have no invented subscriber.
-

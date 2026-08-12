@@ -22,6 +22,9 @@
 - [x] Module boundaries are respected
 - [x] Glossary terms are used correctly
 - [x] Active contracts take precedence over stale plan/study-guide wording
+- [x] ADR-0013 supersedes the in-memory queue path without rewriting ADR decision history
+- [x] BullMQ/Redis durability, priority, retry, retention, outage, and shutdown semantics are testable
+- [x] `202 queued` requires acknowledged Redis enqueue; observational `BacktestRequested` cannot drive enqueue
 - [x] Canonical route and shared-interface names match current sources
 - [x] Existing completed SDD features are treated as preserved dependencies
 

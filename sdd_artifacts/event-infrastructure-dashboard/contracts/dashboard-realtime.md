@@ -20,6 +20,10 @@
 ```
 
 The endpoint composes existing application services and performs no ranking or Loop decisions.
+`QueueStats` is authoritative in `kb/contracts/events.yaml`; the BullMQ/Redis projection includes
+`delayed` and `redisConnected` in addition to queued, processing, completed, and dead-letter counts.
+If the queue snapshot cannot be obtained, the endpoint uses the stable dependency-error shape below
+instead of returning stale counts as healthy.
 
 ## Stable Error Shape
 
@@ -56,4 +60,3 @@ No stack traces or raw dependency errors are returned.
 5. Resume channel application after reconciliation.
 
 The existing `/market-data` namespace and socket-room protocol are unchanged.
-

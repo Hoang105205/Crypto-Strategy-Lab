@@ -7,7 +7,7 @@
 
 ## Scope Summary
 
-This feature supplies the asynchronous coordination and realtime presentation layer for Crypto Strategy Lab. It accepts backtest requests without blocking callers, executes them through bounded background work, reacts to completed results with a deterministic Leaderboard, orchestrates a bounded Search Loop, and exposes current state to users through snapshot queries and realtime updates.
+This feature supplies the asynchronous coordination and realtime presentation layer for Crypto Strategy Lab. It accepts backtest requests without blocking callers, persists them in a Redis-backed BullMQ queue, executes them through bounded background work, reacts to completed results with a deterministic Leaderboard, orchestrates a bounded Search Loop, and exposes current state to users through snapshot queries and realtime updates.
 
 This is a brownfield feature. Existing Market Data, Strategy Engine, News & Sentiment, shared contracts, charts, hooks, and completed SDD artifacts are preserved. Event Infrastructure may consume another module only through an active contract or shared interface and may not absorb that module's business logic.
 
@@ -38,7 +38,7 @@ As a user or Search Loop, I can submit a backtest and receive its identifier imm
 
 **Why this priority**: Asynchronous execution is the critical scalability and responsiveness boundary for both manual backtests and automated search.
 
-**Independent Test**: Submit jobs to the queue using test doubles for market data, strategy lookup, backtesting, evaluation, persistence, and Events; verify scheduling, concurrency, priority, success, retry, terminal failure, dead-letter inspection, and manual recovery.
+**Independent Test**: Submit jobs through `BullMqJobQueue` against disposable Redis using test doubles for domain dependencies; verify durable storage, restart recovery, scheduling, concurrency, priority, success, retry, stalled-job handling, terminal failure, dead-letter inspection, manual recovery, and shutdown.
 
 **Acceptance Scenarios**:
 
@@ -52,6 +52,10 @@ As a user or Search Loop, I can submit a backtest and receive its identifier imm
 8. **Given** no historical candles or an unknown Strategy Version, **When** the worker detects the non-retryable condition, **Then** remaining attempts are skipped and the job follows the terminal dead-letter path.
 9. **Given** an operator retries a dead-lettered job, **When** recovery is accepted, **Then** its attempt counter resets to one, its original identity and payload are preserved, and it returns to `QUEUED`.
 10. **Given** an operator requests queue health, **When** the snapshot is returned, **Then** it reports queued, processing, completed-in-last-24-hours, and dead-lettered counts accurately.
+11. **Given** waiting or delayed jobs exist in Redis, **When** NestJS restarts while Redis remains available, **Then** jobs retain their identity and resume processing without being resubmitted.
+12. **Given** a worker loses its lock or exits ungracefully, **When** BullMQ marks the job stalled, **Then** the job is recovered according to the stalled-job policy and idempotency prevents duplicate result or terminal side effects.
+13. **Given** Redis is unavailable during an enqueue request, **When** the configured producer retry limit is exhausted, **Then** the caller receives a stable dependency-unavailable response and no false queued acknowledgement.
+14. **Given** the backend receives a shutdown signal, **When** graceful shutdown begins, **Then** the BullMQ Worker stops taking new jobs, active work is allowed to finish within the application shutdown policy, and Redis connections close cleanly.
 
 ---
 
@@ -89,7 +93,7 @@ As a user, I can start, pause, resume, stop, and observe an automated generate-b
 
 1. **Given** no active run and a valid bounded configuration, **When** the user starts a Search Loop, **Then** one `RUNNING` run is created, `SearchLoopStarted` is published, and candidate generation begins.
 2. **Given** a run is already `RUNNING` or `PAUSED`, **When** another start is requested, **Then** the request is rejected as a conflict and identifies the active run.
-3. **Given** a candidate is generated, **When** it is submitted for backtesting, **Then** the Loop creates a `jobId` and publishes the full `BacktestRequested` payload with source `SEARCH_LOOP` and a non-null `loopRunId`.
+3. **Given** a candidate is generated, **When** it is submitted for backtesting, **Then** the Loop creates `jobId` + `correlationId`, awaits durable `IJobQueue.enqueue`, and then publishes observational `BacktestRequested` with source `SEARCH_LOOP` and a non-null `loopRunId`.
 4. **Given** a candidate receives terminal completion, **When** the result is recorded, **Then** tested count, iteration, candidate status, score, and best Strategy are updated and `SearchLoopProgress` is published.
 5. **Given** a candidate receives terminal failure, **When** it is recorded, **Then** it counts as tested, is excluded from best-score calculation, and does not stop the Loop by itself.
 6. **Given** the user pauses a run, **When** a job is already in flight, **Then** no new candidate is generated, the in-flight job may finish and be recorded, and the run remains non-terminal.
@@ -98,7 +102,7 @@ As a user, I can start, pause, resume, stop, and observe an automated generate-b
 9. **Given** maximum candidates, maximum duration, or no-improvement limit is reached, **When** stop conditions are evaluated, **Then** the run ends as `COMPLETED` with a deterministic reason.
 10. **Given** a score changes by no more than `0.01`, **When** improvement is evaluated, **Then** it does not reset the no-improvement counter.
 11. **Given** candidate generation fails three consecutive times, **When** the retry allowance is exhausted, **Then** the run ends as `FAILED` with reason `generator_error`.
-12. **Given** the process restarts with a persisted `RUNNING` run but no corresponding active work, **When** startup reconciliation occurs, **Then** the orphaned run becomes `FAILED` with reason `process_restarted`.
+12. **Given** the process restarts with a persisted `RUNNING` run, **When** startup reconciliation finds its matching BullMQ job in waiting, delayed, or active state, **Then** the run remains recoverable; if no matching job exists, it becomes `FAILED` with reason `orphaned_after_restart`.
 
 ---
 
@@ -170,7 +174,7 @@ As a user, I can navigate a consistent application shell, monitor live market da
 
 #### Backtest Job Queue Requirements
 
-- **FR-020**: A valid backtest submission MUST be acknowledged with its producer-generated `jobId` without waiting for execution.
+- **FR-020**: A valid backtest submission MUST be acknowledged with its producer-generated `jobId` after BullMQ accepts it, without waiting for execution; `BacktestRequested` is published afterward and MUST NOT be consumed to enqueue work.
 - **FR-021**: The queue MUST reject duplicate `jobId` values and MUST NOT replace a producer-generated identifier.
 - **FR-022**: Jobs MUST expose `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`, and `DEAD_LETTER` lifecycle states.
 - **FR-023**: Worker concurrency MUST be configurable, default to three, and never exceed the active configuration.
@@ -184,6 +188,12 @@ As a user, I can navigate a consistent application shell, monitor live market da
 - **FR-031**: An operator MUST be able to list Dead-letter Jobs and retry an eligible job with its attempt reset to one.
 - **FR-032**: Queue health MUST report queued, processing, completed-in-last-24-hours, and dead-lettered counts.
 - **FR-033**: A replacement queue backend MUST be possible without changing queue consumers or business flows.
+- **FR-034**: The active `IJobQueue` implementation MUST use BullMQ backed by Redis and MUST use the producer UUID as BullMQ `jobId`.
+- **FR-035**: `USER` jobs MUST use BullMQ priority `1`, `SEARCH_LOOP` jobs priority `10`, and equal-priority jobs MUST remain FIFO.
+- **FR-036**: Automatic retry MUST use three total attempts and deterministic waits of 1 second then 4 seconds; non-retryable failures MUST discard remaining attempts.
+- **FR-037**: Waiting and delayed jobs MUST survive a NestJS restart while Redis remains available.
+- **FR-038**: BullMQ completed and failed job retention MUST be bounded by configurable age/count policies; Redis MUST use an explicitly documented persistence policy.
+- **FR-039**: Queue processing, result persistence, terminal events, and dead-letter mirroring MUST be idempotent under stalled-job recovery and at-least-once execution.
 
 #### Realtime Leaderboard Requirements
 
@@ -217,7 +227,7 @@ As a user, I can navigate a consistent application shell, monitor live market da
 - **FR-071**: Resuming MUST preserve the run identity, iteration, tested candidates, and best result.
 - **FR-072**: Stopping MUST prevent new generation, permit in-flight result recording, and publish terminal status.
 - **FR-073**: Candidate generation MUST allow no more than three consecutive failures before terminal `generator_error`.
-- **FR-074**: Startup reconciliation MUST mark orphaned active runs as `FAILED` with reason `process_restarted`.
+- **FR-074**: Startup reconciliation MUST preserve an active run when BullMQ contains its matching waiting/delayed/active job; only an unrecoverable orphan MUST become `FAILED` with reason `orphaned_after_restart`.
 - **FR-075**: Loop state and each candidate outcome MUST remain queryable and reproducible.
 - **FR-076**: Replacing the Strategy Generator MUST NOT require changes to queueing, backtesting, evaluation, or ranking.
 
@@ -278,8 +288,10 @@ As a user, I can navigate a consistent application shell, monitor live market da
 - **SC-011**: Replacing the active Strategy Generator test double requires zero changes to queue, worker, Leaderboard, or Loop acceptance tests.
 - **SC-012**: After simulated realtime disconnection and missed updates, reconnect plus snapshot reload yields the same Dashboard and Leaderboard state as a fresh client.
 - **SC-013**: Dashboard and Leaderboard remain fully operable at representative desktop and sub-768px mobile widths with keyboard-only navigation and no hidden required data.
-- **SC-014**: All five subfeature acceptance suites pass without requiring live Binance, live sentiment service, or a production queue backend.
+- **SC-014**: All five subfeature acceptance suites pass without live Binance or live sentiment service; queue integration suites run against disposable Redis with the production BullMQ adapter.
 - **SC-015**: Architecture analysis reports no direct implementation import, circular dependency, duplicated shared contract, or cross-module database access introduced by this feature.
+- **SC-016**: Waiting and delayed jobs keep the same `jobId` and complete after a NestJS restart while Redis stays running.
+- **SC-017**: A duplicate BullMQ execution caused by stalled recovery creates no duplicate Backtest Result, Leaderboard Entry, terminal Event, or Dead-letter record.
 
 ## Assumptions
 
@@ -288,7 +300,7 @@ As a user, I can navigate a consistent application shell, monitor live market da
 - Manual `USER` jobs have priority over `SEARCH_LOOP` jobs; FIFO is retained within each source group.
 - Default worker concurrency is three, default Top-K is ten, and default no-improvement limit is fifty iterations.
 - The MVP supports one active Search Loop and has no authentication, user accounts, or real-fund trading.
-- The in-memory queue is the MVP delivery; a durable distributed queue is a documented replacement path, not part of this feature.
+- BullMQ/Redis is the required queue delivery. Workers run inside the NestJS backend process for this feature because `IEventBus` remains process-local.
 - Existing Prisma models are available, but their owner must review any schema change requested during planning.
 - Existing Market Data frontend and backend SDD features are complete. Their charts, hooks, subscription behavior, and controls are integration dependencies, not rewrite targets.
 - Strategy Engine owns Strategy implementations, immutable Strategy Versions, Backtester, Evaluator, and Backtest Result domain behavior.
@@ -299,7 +311,7 @@ As a user, I can navigate a consistent application shell, monitor live market da
 
 - Trading strategy, Strategy Registry, Backtester, Evaluator, or Strategy Generator algorithm implementation.
 - Binance ingestion, historical-data parsing, Market Data chart rewrite, or News/Sentiment implementation.
-- Production BullMQ/Redis delivery, multiple simultaneous Search Loops, microservice extraction, authentication, authorization, or real trading.
+- Separate BullMQ worker processes, a cross-process/durable Event Bus, multiple simultaneous Search Loops, microservice extraction, authentication, authorization, or real trading.
 - Client-side calculation of signals, trades, evaluation metrics, Leaderboard scores, or Search Loop decisions.
 - A separate dynamic Strategy-detail route; detail remains inline or in a side panel for MVP.
 
@@ -309,9 +321,9 @@ As a user, I can navigate a consistent application shell, monitor live market da
 - **E2E flows affected**: `kb/flows/strategy-backtest.md`, `kb/flows/strategy-search-loop.md`, and `kb/flows/leaderboard-update.md`.
 - **Architecture constraints**: Modular Monolith; contract and shared-interface boundaries; Events for notification and side effects; public interfaces for operations requiring a result; REST snapshots plus realtime push; no cross-module implementation imports.
 - **Constitution gates**: architecture quality over profitability; contract-first delivery; demonstrable extension points; simple MVP implementation; KB as truth; explicit naming and behavior.
-- **Relevant ADRs**: ADR-0005 Event-Driven Communication, ADR-0006 Job Queue/Worker, ADR-0011 Leaderboard as Observer, ADR-0012 In-Memory Queue migration path.
+- **Relevant ADRs**: ADR-0005 Event-Driven Communication, ADR-0006 Job Queue/Worker, ADR-0011 Leaderboard as Observer, ADR-0013 BullMQ/Redis Queue (supersedes ADR-0012).
 - **Design constraints**: canonical routes, shared 64px dark shell, Dashboard 8/4 desktop layout, responsive single-column mobile behavior, financial numeric typography, semantic trading colors, accessible focus/status/sort states, stable loading/error/stale states.
-- **Glossary terms**: Event, Event Bus, Event Envelope, Correlation ID, Job, Worker, Retry Policy, Exponential Backoff, Dead-letter Queue, Idempotent handler, Leaderboard, Leaderboard Score, Top-K, Search Loop, Search Loop Run, WebSocket Gateway, BFF, Strategy Version, and Reproducibility.
+- **Glossary terms**: Event, Event Bus, Event Envelope, Correlation ID, Job, Worker, BullMQ, Redis, Stalled Job, Retry Policy, Backoff, Dead-letter Queue, Idempotent handler, Leaderboard, Leaderboard Score, Top-K, Search Loop, Search Loop Run, WebSocket Gateway, BFF, Strategy Version, and Reproducibility.
 
 ## Brownfield Dependencies and Gates
 

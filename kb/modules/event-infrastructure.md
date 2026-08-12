@@ -2,16 +2,16 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-09
+> **Last Updated**: 2026-08-12
 
 ## 1. Overview
-- **Responsibility**: The system's nervous system — event bus, job queue, leaderboard, search loop orchestration, and dashboard BFF
+- **Responsibility**: The system's nervous system — event bus, Redis-backed BullMQ job queue, leaderboard, search loop orchestration, and dashboard BFF
 - **Layer**: Backend
-- **Depends on**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` (shared interfaces only — no direct imports of another module's implementation)
+- **Depends on**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` (shared interfaces only — no direct imports of another module's implementation), BullMQ, Redis
 - **Depended by**: All modules (publish/subscribe via `IEventBus`), Frontend (dashboard BFF, WebSocket)
 - **Contracts**: `kb/contracts/events.yaml`
 - **Source files**: `apps/backend/src/events/`, `queue/`, `leaderboard/`, `loop/`, `dashboard/`, `websocket/`
-- **Related ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0011 (Leaderboard as Observer), ADR-0012 (In-Memory Queue → BullMQ Migration Path)
+- **Related ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0011 (Leaderboard as Observer), ADR-0013 (BullMQ/Redis Queue; supersedes ADR-0012)
 
 ## 2. Component Architecture
 
@@ -20,9 +20,10 @@
 |-----------|---------------|---------|---------|
 | EventBus | Typed wrapper around EventEmitter2 — `publish()` / `subscribe()`, wraps payloads in `EventEnvelope` | Event-Driven / Mediator | `apps/backend/src/events/event-bus.ts` |
 | Event Types | All typed event name + payload definitions (mirrors `kb/contracts/events.yaml`) | n/a | `apps/backend/src/events/event-types.ts` |
-| JobQueue | In-memory FIFO queue + worker pool, retry with exponential backoff, dead-letter queue | Job Queue/Worker | `apps/backend/src/queue/backtest.queue.ts` |
-| BacktestWorker | Consumes `BacktestRequested`, calls `IMarketDataService` + `IBacktester` + `IEvaluator`, persists result, publishes `BacktestCompleted`/`BacktestFailed` | Worker | `apps/backend/src/queue/backtest.worker.ts` |
-| DeadLetterQueue | Storage + inspection for jobs that exhausted retries | Dead-letter Queue | `apps/backend/src/queue/dead-letter.ts` |
+| BullMqJobQueue | `IJobQueue` adapter over BullMQ; Redis-backed priority/FIFO state, stats, retry, retention, and recovery | Job Queue/Worker | `apps/backend/src/queue/bullmq-job.queue.ts` |
+| RedisConnection | Validates and owns BullMQ producer/worker Redis connections and shutdown lifecycle | Infrastructure Adapter | `apps/backend/src/queue/redis.connection.ts` |
+| BacktestWorker | Consumes BullMQ jobs from Redis, calls `IMarketDataService` + `IBacktester` + `IEvaluator`, persists result, publishes `BacktestCompleted`/`BacktestFailed` | Worker | `apps/backend/src/queue/backtest.worker.ts` |
+| DeadLetterRepository | Mirrors terminal BullMQ failures to PostgreSQL for stable audit/REST inspection and recovery | Repository | `apps/backend/src/queue/dead-letter.repository.ts` |
 | LeaderboardService | Subscribes to `BacktestCompleted`, computes score, maintains Top-K, publishes `LeaderboardUpdated` | Observer | `apps/backend/src/leaderboard/leaderboard.service.ts` |
 | LeaderboardRepository | Persists/queries `LeaderboardEntry` rows | Repository | `apps/backend/src/leaderboard/leaderboard.repository.ts` |
 | LoopController | Orchestrates the search loop: generate → enqueue → collect → decide next step, entirely through events/interfaces | Orchestrator / State Machine | `apps/backend/src/loop/strategy-loop.ts` |
@@ -40,9 +41,9 @@ flowchart TD
 
     subgraph EventInfra["Event Infrastructure (Phương)"]
         EB[EventBus]
-        JQ[JobQueue]
+        JQ[BullMqJobQueue]
         W[BacktestWorker]
-        DLQ[DeadLetterQueue]
+        DLQ[DeadLetterRepository]
         LB[LeaderboardService]
         LC[LoopController]
         LS[LoopStatusService]
@@ -55,13 +56,17 @@ flowchart TD
     end
 
     DB[(PostgreSQL)]
+    REDIS[(Redis / BullMQ)]
     FE[Frontend]
 
-    SC -->|publish BacktestRequested| EB
-    LC -->|publish BacktestRequested| EB
-    EB --> JQ
+    SC -->|await enqueue USER| JQ
+    LC -->|await enqueue SEARCH_LOOP| JQ
+    SC -->|notify BacktestRequested| EB
+    LC -->|notify BacktestRequested| EB
+    JQ --> REDIS
+    REDIS --> W
     JQ --> W
-    W -->|IMarketDataService.getHistorical| MDS
+    W -->|IMarketDataService.getCandlesRange| MDS
     W -->|IBacktester.run + IEvaluator.evaluate| StrategyEngine
     W -->|save BacktestResult| DB
     W -->|publish BacktestCompleted / BacktestFailed| EB
@@ -85,7 +90,7 @@ flowchart TD
 ## 3. Design Patterns
 
 ### Event-Driven Architecture — ADR-0005
-- **Where**: `EventBus` — the only channel modules use to talk to each other
+- **Where**: `EventBus` — the channel for cross-module notifications and reactive side effects; acknowledged commands/queries use public interfaces such as `IJobQueue`
 - **Why**: Strategy Engine, Market Data, News & Sentiment, and Event Infrastructure must evolve independently. A direct-call architecture (`LeaderboardService.update()` called from inside the Backtester) would force every module to import every other module's internals, which fails extensibility scenario #4 (100 → 100,000 backtests) and #7 (Binance disconnect must not affect the rest of the system).
 - **How**: `EventBus` wraps NestJS's `EventEmitter2`. `publish(eventType, payload, correlationId?)` builds an `EventEnvelope` (adds `eventId`, `occurredAt`, generates a `correlationId` if none is passed) and emits it. `subscribe(eventType, handler)` registers a handler; the wrapper catches and logs handler exceptions so one failing subscriber can never break the publisher or a sibling subscriber. All event names and payload shapes are defined once in `kb/contracts/events.yaml` and mirrored in `event-types.ts` (compile-time typed via TypeScript discriminated unions keyed on `eventType`).
 - **Trade-offs**:
@@ -93,17 +98,18 @@ flowchart TD
   - Positive: swapping `EventEmitter2` for Redis Pub/Sub later only requires re-implementing `IEventBus` — no consumer code changes (extensibility scenario for message-bus swap).
   - Negative: eventual consistency — there's a small window between `BacktestCompleted` and the Leaderboard reflecting it. Acceptable because the frontend gets `LeaderboardUpdated` over WebSocket instead of polling.
   - Negative: harder to trace than a direct call stack — mitigated by `correlationId` propagated through every event in a chain (`BacktestRequested` → `BacktestCompleted` → `LeaderboardUpdated`) and structured logging keyed on it.
-  - Negative: at-least-once delivery is not guaranteed by in-process `EventEmitter2` if the process crashes between `publish()` and a subscriber running — acceptable for a course project MVP; flagged as a risk for a future durable broker (see ADR-0012).
+  - Negative: the process-local event bus is still not durable. BullMQ makes accepted queue jobs durable, but it does not make `EventEmitter2` deliveries cross-process or replayable (see ADR-0013's topology constraint).
 
-### Job Queue / Worker — ADR-0006
-- **Where**: `JobQueue` + `BacktestWorker`, triggered by `BacktestRequested`
+### Job Queue / Worker — ADR-0006 + ADR-0013
+- **Where**: `BullMqJobQueue` + Redis + `BacktestWorker`, invoked through `IJobQueue.enqueue`
 - **Why**: A single backtest can take seconds; the Strategy Engine's REST endpoint (`POST /api/strategies/backtest`) must return immediately (`202 Accepted`) instead of blocking the HTTP request thread. This is what lets the system scale from a handful of manual backtests to a search loop running thousands of candidates (extensibility scenario #4).
-- **How**: Strategy Engine publishes `BacktestRequested` for `source: "USER"`; Loop Controller publishes it for `source: "SEARCH_LOOP"`. In both cases the producer generates `jobId` before publishing. `JobQueue.enqueue()` preserves that ID, rejects duplicates, wraps the payload in a `JobRequest` (adds `attempt: 1`, `maxAttempts: 3`, timestamps), and appends it to an in-memory FIFO array. A fixed-size pool of worker "loops" (configurable concurrency, default 3) pulls jobs off the queue. `BacktestWorker` calls `IMarketDataService.getHistorical()`, `IBacktester.run()`, `IEvaluator.evaluate()`, persists the `BacktestResult`, and publishes `BacktestCompleted`. On a retryable exception, the worker updates queue state and re-queues with exponential backoff without publishing `BacktestFailed`. After 3 failed attempts, or immediately for a non-retriable error, the worker moves the job to the dead-letter queue and publishes terminal `BacktestFailed` plus `BacktestDeadLettered`, each exactly once.
+- **How**: Strategy Engine calls `IJobQueue.enqueue` for USER work; Loop Controller calls it for SEARCH_LOOP work. The producer UUID becomes BullMQ `jobId`. The call validates, rejects an existing ID, assigns priority `1` or `10`, and awaits Redis persistence before returning. The producer then publishes observational `BacktestRequested` with the same correlation identity; no queue subscriber acts on that Event. Equal-priority jobs are FIFO. A BullMQ `Worker` consumes with concurrency 3, calls `IMarketDataService.getCandlesRange()`, resolves the immutable strategy version, runs/evaluates, persists `BacktestResult`, then publishes `BacktestCompleted`. Retryable errors use three attempts with 1s/4s delays; terminal failures remain in BullMQ's failed set, mirror idempotently to `DeadLetterJob`, and publish terminal events exactly once.
 - **Trade-offs**:
-  - Positive: horizontal scale is a config change (increase worker pool size), not an architecture change.
+  - Positive: waiting and delayed jobs survive NestJS restarts while Redis remains available; BullMQ recovers stalled work.
   - Positive: retry + dead-letter queue means one bad candidate (e.g., a strategy that throws on malformed candle data) can't stall the whole search loop.
-  - Negative: in-memory queue does not survive a process restart — an accepted MVP limitation, explicitly tracked in ADR-0012's migration path to BullMQ/Redis for durability.
-  - Negative: worker pool concurrency is shared across manual user backtests and the search loop — a long-running loop can starve interactive requests. Mitigated by giving `source: "USER"` jobs FIFO priority over `source: "SEARCH_LOOP"` jobs in the queue's dequeue order (see Section 10, open question).
+  - Positive: USER jobs have explicit higher priority than SEARCH_LOOP jobs; FIFO is preserved within a priority.
+  - Negative: Redis is required for queue availability and must be monitored and persisted.
+  - Constraint: workers remain in the NestJS process until `IEventBus` gains a cross-process transport; BullMQ alone does not carry domain events to process-local observers.
 
 ### Observer — ADR-0011
 - **Where**: `LeaderboardService` subscribes to `BacktestCompleted`; `LoopController` also subscribes to `BacktestCompleted`/`BacktestFailed`
@@ -124,16 +130,16 @@ flowchart TD
 
 ```
 Strategy Engine (source=USER) / Loop Controller (source=SEARCH_LOOP)
-        │  generate jobId, then publish('BacktestRequested', complete payload)
+        │  generate jobId + correlationId; await IJobQueue.enqueue
         ▼
-     EventBus ──────────────────────────────────────────────┐
+     BullMqJobQueue → Redis ────────────────────────────────┐
         │                                                     │
         ▼                                                     │
-     JobQueue.enqueue(payload) → preserve jobId; add attempt=1  │
+     return queued; publish notification (does not drive Worker)│
         │                                                     │
         ▼                                                     │
    BacktestWorker (pulled from pool)                          │
-        │  1. IMarketDataService.getHistorical(pair, tf, range)
+        │  1. IMarketDataService.getCandlesRange(pair, tf, range)
         │  2. StrategyRegistry.get(strategyVersionId)          │
         │  3. IBacktester.run(strategy, candles, config)       │
         │  4. IEvaluator.evaluate(trades, capital)             │
@@ -143,7 +149,7 @@ Strategy Engine (source=USER) / Loop Controller (source=SEARCH_LOOP)
         │
         no (exception)
         ▼
-   attempt < maxAttempts? ──yes──▶ re-enqueue after backoff delay
+   attempt < maxAttempts? ──yes──▶ BullMQ delayed retry
         │
         no
         ▼
@@ -176,18 +182,21 @@ Strategy Engine (source=USER) / Loop Controller (source=SEARCH_LOOP)
 sequenceDiagram
     participant SE as Strategy Engine
     participant EB as EventBus
-    participant JQ as JobQueue
+    participant JQ as BullMqJobQueue
+    participant R as Redis
     participant W as BacktestWorker
     participant MD as IMarketDataService
     participant LB as LeaderboardService
     participant WS as PushGateway
     participant FE as Frontend
 
-    SE->>SE: generate jobId (source=USER)
-    SE->>EB: publish(BacktestRequested, complete payload)
-    EB->>JQ: enqueue(payload), preserve jobId
-    JQ->>W: dequeue job
-    W->>MD: getHistorical(pair, timeframe, range)
+    SE->>SE: generate jobId + correlationId (source=USER)
+    SE->>JQ: await enqueue(payload), preserve jobId + priority
+    JQ->>R: persist BullMQ job
+    JQ-->>SE: accepted
+    SE->>EB: publish observational BacktestRequested
+    R->>W: claim job with lock
+    W->>MD: getCandlesRange(pair, timeframe, range)
     MD-->>W: Candle[]
     W->>W: IBacktester.run() + IEvaluator.evaluate()
     W->>W: save BacktestResult (PostgreSQL)
@@ -203,21 +212,23 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant JQ as JobQueue
+    participant JQ as BullMqJobQueue
+    participant R as Redis
     participant W as BacktestWorker
     participant EB as EventBus
-    participant DLQ as DeadLetterQueue
+    participant DLQ as DeadLetterRepository
 
-    JQ->>W: dequeue job (attempt 1)
+    R->>W: claim job (attempt 1)
     W--xW: unhandled exception
-    W->>JQ: re-enqueue (attempt 2, delay 1s)
-    JQ->>W: dequeue job (attempt 2)
+    W->>R: BullMQ delayed retry (attempt 2, 1s)
+    R->>W: claim job (attempt 2)
     W--xW: unhandled exception
-    W->>JQ: re-enqueue (attempt 3, delay 4s)
-    JQ->>W: dequeue job (attempt 3)
+    W->>R: BullMQ delayed retry (attempt 3, 4s)
+    R->>W: claim job (attempt 3)
     W--xW: unhandled exception
     W->>JQ: maxAttempts reached
-    JQ->>DLQ: deadLetter(jobId, reason)
+    R->>R: retain job in failed set
+    JQ->>DLQ: mirror deadLetter(jobId, reason)
     JQ->>EB: publish terminal BacktestFailed exactly once
     JQ->>EB: publish BacktestDeadLettered exactly once
 ```
@@ -239,9 +250,9 @@ sequenceDiagram
     loop until stop condition met
         LC->>SG: generate(1)
         SG-->>LC: candidate strategy
-        LC->>LC: generate jobId
-        LC->>EB: publish(BacktestRequested, source=SEARCH_LOOP, loopRunId, jobId)
-        EB->>JQ: enqueue and preserve jobId
+        LC->>LC: generate jobId + correlationId
+        LC->>JQ: await enqueue(source=SEARCH_LOOP, loopRunId, jobId)
+        LC->>EB: notify BacktestRequested after acceptance
         JQ-->>LC: (async) BacktestCompleted / BacktestFailed
         LC->>LC: record result, evaluate stop conditions
         LC->>EB: publish(SearchLoopProgress)
@@ -295,28 +306,30 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 
 ## 8. Quality Attributes
 - **Security**: No auth in MVP (per `kb/CONSTITUTION.md`). Loop start/stop/pause endpoints are unauthenticated but rate-limited (max 1 active loop run at a time, enforced server-side — a second `POST /api/loop/start` while one is `RUNNING`/`PAUSED` returns `409 Conflict`). Error responses never leak stack traces to the client — only `{ error: string, code: string }`.
-- **Performance**: Worker pool concurrency is configurable (default 3); scaling from 100 to 100,000 backtests is a config change plus, per ADR-0012, a swap to BullMQ with Redis-backed workers running as separate processes — no consumer-facing interface changes. `GET /api/leaderboard` reads from the denormalized `LeaderboardEntry` table (already Top-K, already sorted) — never recomputes ranking on read.
-- **Reliability**: Retry policy (3 attempts, exponential backoff 1s/4s/16s) + dead-letter queue for jobs (`kb/contracts/events.yaml`). Every subscriber handler is wrapped so a thrown exception is logged, not propagated — one bad event handler cannot crash the publisher or other subscribers. Leaderboard upsert is idempotent on `backtestResultId` (duplicate `BacktestCompleted` delivery is a no-op).
+- **Performance**: BullMQ worker concurrency is configurable (default 3). USER priority prevents a search loop from indefinitely delaying interactive work. `GET /api/leaderboard` reads from the denormalized `LeaderboardEntry` table (already Top-K, already sorted) — never recomputes ranking on read.
+- **Reliability**: Redis AOF plus BullMQ durable job state, three total attempts with 1s/4s retry delays, stalled-job recovery, graceful worker shutdown, and PostgreSQL dead-letter audit (`kb/contracts/events.yaml`). Worker side effects and subscribers are idempotent because stalled/redelivered jobs can execute at least once. EventEmitter2 remains process-local and is not claimed as a durable event log.
 - **Observability**: `correlationId` propagates through `BacktestRequested → BacktestCompleted/Failed → LeaderboardUpdated` and through `SearchLoopStarted → BacktestRequested → SearchLoopProgress → SearchLoopStopped`, enabling full request tracing in logs. `GET /api/queue/stats` and `GET /api/dashboard/summary` expose live counts (queued, processing, dead-lettered, current loop iteration) so the demo can show "Loop is running: 125 candidates tested" without inspecting logs.
-- **Scalability**: See ADR-0012 — swapping the in-memory queue for BullMQ/Redis requires only a new `IJobQueue` implementation; `EventBus`, `LeaderboardService`, and `LoopController` are unaffected because they depend on the interface, not the implementation.
+- **Scalability**: BullMQ/Redis is the accepted target (ADR-0013). Increasing in-process concurrency is configuration-only. Horizontal worker processes additionally require replacing the process-local `IEventBus`; this prerequisite must be completed before claiming multi-process completion-event delivery.
 
 ## 9. Testing Strategy
 - **Unit tests**:
   - `EventBus`: publish wraps payload in a valid `EventEnvelope`; a throwing subscriber does not affect other subscribers or the publisher.
-  - `JobQueue`/`BacktestWorker`: enqueue preserves the producer-supplied `jobId` and rejects duplicates; retry increments `attempt` and applies the correct backoff delay; job moves to dead-letter after `maxAttempts`; `getStats()` counts match queue state.
+  - `BullMqJobQueue`/`BacktestWorker`: enqueue preserves `jobId`; duplicate IDs conflict; USER priority and equal-priority FIFO hold; attempts/delays are correct; retention is bounded; terminal failures mirror once to `DeadLetterJob`; `getStats()` maps BullMQ states correctly.
   - `LeaderboardService`: score computation is correct for known inputs; duplicate `BacktestCompleted` (same `backtestResultId`) does not create a duplicate entry; Top-K trimming keeps exactly K entries sorted correctly.
   - `LoopController`: stop conditions trigger correctly (`maxCandidates` reached, `maxDurationMs` elapsed, `stopOnNoImprovementIterations` reached, user-requested stop); pause prevents new candidates from being generated; resume continues from the same `loopRunId`.
 - **Integration tests**:
-  - End-to-end event flow: publish `BacktestRequested` on a real `EventBus` instance with an in-memory `IMarketDataService`/`IBacktester` test double → assert `BacktestCompleted` is published with correct payload shape.
+  - Redis-backed queue flow: await `IJobQueue.enqueue` with Redis and Strategy/Market Data test doubles, publish the notification, and assert the BullMQ job is consumed and `BacktestCompleted` is correct.
+  - Restart recovery: enqueue waiting/delayed jobs, restart NestJS without stopping Redis, and assert jobs resume without changing identity.
+  - Stalled/idempotency path: simulate worker loss and prove recovered execution does not duplicate `BacktestResult`, terminal events, or dead-letter records.
   - Completion → Leaderboard → WebSocket: publish `BacktestCompleted` → assert `LeaderboardUpdated` is published and a connected mock WebSocket client receives `leaderboard:update`.
   - Full search loop: start a loop with `maxCandidates: 5` against test doubles → assert exactly 5 `BacktestRequested` events are published and the loop reaches `COMPLETED` with `stopReason: "max_candidates_reached"`.
   - Dead-letter path: force `IBacktester.run()` to throw on every attempt → assert the job ends in `DEAD_LETTER` status and both `BacktestFailed` and `BacktestDeadLettered` are published exactly once.
-- **Manual/demo verification**: kill and restart the mock backtester mid-loop to show retry/backoff in logs; disconnect the WebSocket client to show the frontend's `connection:status` indicator switch to "reconnecting".
+- **Manual/demo verification**: enqueue jobs, restart NestJS while Redis stays up, and show waiting work resumes; demonstrate USER priority, retry/backoff, DLQ recovery, Redis outage/recovery, and WebSocket reconnection.
 
 ## 10. Open Questions / TODOs
 - [x] ~~Confirm `BacktestRequested`/`BacktestCompleted` field ownership split with Huy.~~ **Resolved 2026-08-09** — `kb/contracts/events.yaml` is the sole event-payload SSoT; Strategy Engine owns `BacktestConfig` and `EvaluationMetrics`, while Event Infrastructure owns envelope/routing metadata. — Owner: Phương + Huy
 - [x] ~~Resolve `BacktestFailed` publisher mismatch.~~ **Resolved 2026-08-09** — Event Infrastructure's Job Queue Worker is the sole publisher of the exactly-once terminal event; Strategy Engine and Loop Controller consume it. — Owner: Phương + Huy
 - [x] ~~Confirm Prisma schema/table ownership for `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, `DeadLetterJob`.~~ **Resolved 2026-08-09** — Hoàng handles all Prisma model definitions (owns `shared/` + Prisma schema). Phương defines entity shapes in this file; Hoàng translates them into `schema.prisma`. — Owner: Hoàng
-- [ ] Decide whether `JobQueue` should give `source: "USER"` jobs FIFO priority over `source: "SEARCH_LOOP"` jobs, or process strictly FIFO for MVP simplicity. — Owner: Phương
+- [x] ~~Decide queue priority.~~ **Resolved 2026-08-12** — BullMQ priority `1` for USER and `10` for SEARCH_LOOP; FIFO within equal priority. — Owner: Phương
 - [ ] Confirm final leaderboard scoring formula and default Top-K value with the team (see `kb/flows/leaderboard-update.md` Business Rules). — Owner: Phương
 - [ ] Confirm whether `NewsCollected` will actually be published in W2+ (currently reserved/unused) — see `kb/contracts/events.yaml`. — Owner: Thuận

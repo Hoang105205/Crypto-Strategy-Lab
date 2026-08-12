@@ -142,7 +142,8 @@ channel:
   the event bus, and the frontend never know about reconnection mechanics. They only see
   the `onDisconnect` / `onReconnect` callbacks (defined in `IMarketDataAdapter`, see
   `kb/contracts/market-data.yaml`).
-- Positive: Consistent with ADR-0006's retry policy (same 1s/4s/16s backoff sequence) —
+- Positive: Uses a bounded 1s/4s/16s reconnect sequence appropriate to external WebSockets. The
+  BullMQ backtest job policy is separately defined by ADR-0013 as three attempts with 1s/4s waits —
   the team has one mental model for retry patterns.
 - Positive: Bounded — 3 attempts with increasing delays means the worst case is
   1s + 4s + 16s = 21 seconds before giving up. No unbounded loop (spec Section 23).
@@ -162,7 +163,7 @@ channel:
 
 ## Links
 - Relates to ADR-0004 (Adapter Pattern for Data Sources) — the adapter owns reconnection logic
-- Relates to ADR-0006 (Job Queue + Worker for Backtesting) — same exponential backoff pattern (1s, 4s, 16s)
+- Relates to ADR-0013 (BullMQ/Redis Backtest Jobs) — separate retry policy; do not reuse WebSocket reconnect delays for jobs
 - Relates to ADR-0009 (Sentiment Service as Separate Process) — Python service failure handled separately via graceful degradation, not auto-reconnect
 - See also: `kb/contracts/market-data.yaml` (`onDisconnect`, `onReconnect` callbacks in `IMarketDataAdapter`)
 - See also: `kb/modules/market-data.md` Section 8 (Quality Attributes — Error handling)

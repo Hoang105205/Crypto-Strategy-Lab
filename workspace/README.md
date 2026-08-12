@@ -11,6 +11,7 @@ Platform for analyzing, combining, and evaluating crypto trading strategies.
 | Frontend | Next.js (TypeScript) | 16.x |
 | Database | PostgreSQL + Prisma | 16 / 6.x |
 | Events | EventEmitter2 (NestJS) | 3.x |
+| Backtest Queue | BullMQ + Redis | 5.x / 7.x |
 | Sentiment | Python FastAPI + VADER | 0.115+ |
 | Monorepo | Turborepo + npm workspaces | 2.x |
 
@@ -25,7 +26,7 @@ crypto-strategy-lab/
 │   │   │   ├── strategy/          # Huy — registry, strategies, composite, backtest, search
 │   │   │   ├── news/              # Thuan — providers, sentiment client, sentiment strategy
 │   │   │   ├── events/            # Phuong — IEventBus (EventEmitter2 wrapper)
-│   │   │   ├── queue/             # Phuong — IJobQueue, worker pool, dead-letter
+│   │   │   ├── queue/             # Phuong — BullMQ/Redis IJobQueue, worker, dead-letter audit
 │   │   │   ├── leaderboard/       # Phuong — top-K ranking (Observer pattern)
 │   │   │   ├── loop/              # Phuong — strategy search loop controller
 │   │   │   ├── dashboard/         # Phuong — BFF REST + WebSocket gateway
@@ -53,7 +54,7 @@ crypto-strategy-lab/
 │   ├── contracts/                 # YAML contracts (market-data, strategy, news, events)
 │   ├── modules/                   # Module architecture docs
 │   ├── flows/                     # End-to-end flow docs
-│   ├── ADR/                       # Architecture Decision Records (0001-0012)
+│   ├── ADR/                       # Architecture Decision Records (0001-0013)
 │   └── ...
 ├── plans/                         # Project plan & requirement spec
 ├── docker-compose.yml             # PostgreSQL 16 + Redis 7
@@ -69,7 +70,7 @@ crypto-strategy-lab/
 | Hoang (Lead) | Market Data, Shared Infrastructure, Database | 0001, 0002, 0004, 0007 |
 | Huy | Strategy Engine (registry, composite, backtest, search) | 0003, 0008 |
 | Thuan | News & Sentiment (providers, Python service, sentiment strategy) | 0009, 0010 |
-| Phuong | Event Infrastructure (bus, queue, leaderboard, loop, dashboard) | 0005, 0006, 0011, 0012 |
+| Phuong | Event Infrastructure (bus, BullMQ/Redis queue, leaderboard, loop, dashboard) | 0005, 0006, 0011, 0013 (supersedes 0012) |
 
 ## Getting Started
 
@@ -84,6 +85,12 @@ npm install
 ```bash
 docker-compose up -d
 ```
+
+Redis is required by the target BullMQ backtest queue. The target Compose configuration enables
+AOF persistence so waiting and delayed jobs survive a backend restart.
+
+> Documentation status: BullMQ/Redis is the accepted target architecture. Its source-code and
+> Compose rollout is tracked by `../sdd_artifacts/event-infrastructure-dashboard/tasks.md`.
 
 ### 3. Set up environment
 

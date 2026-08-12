@@ -7,7 +7,7 @@
 ## 1. Overview
 - **Responsibility**: Register, analyze, compose, backtest, evaluate, and search trading strategies using a plugin architecture
 - **Layer**: Backend (NestJS module) + Frontend (Next.js pages)
-- **Depends on**: `IMarketDataService`, `IEventBus`, `IJobQueue` (shared interfaces only)
+- **Depends on**: `IMarketDataService`, `IEventBus`, `IJobQueue` (shared interfaces only; BullMQ/Redis remains hidden behind `IJobQueue`)
 - **Depended by**: Event Infrastructure (via `IBacktester`, `IStrategyGenerator` interfaces), News & Sentiment (`NewsSentimentStrategy` registered in StrategyRegistry)
 - **Contracts**: `kb/contracts/strategy.yaml`
 - **Source files**:
@@ -151,13 +151,14 @@ StrategyController (REST)
          StrategyVersionService.get(versionId) → verify exists
               │
               ▼
-         generate jobId (UUID)
+         generate jobId + correlationId (UUID)
               │
               ▼
-         IEventBus.publish('BacktestRequested', {
+         await IJobQueue.enqueue('BACKTEST', {
            jobId, strategyVersionId, pair, timeframe, startDate, endDate,
            backtestConfig, source: 'USER', loopRunId: null
-         })
+         }, correlationId)
+         IEventBus.publish('BacktestRequested', payload, correlationId)
               │
               ▼
          return { jobId, status: 'queued' }
@@ -165,7 +166,7 @@ StrategyController (REST)
               │   ← (async, handled by Phương's Job Queue worker) ─────┐
               │                                                           │
               │   Worker calls:                                           │
-              │     1. IMarketDataService.getHistorical(pair, tf, range)  │
+              │     1. IMarketDataService.getCandlesRange(pair, tf, range)│
               │     2. Backtester.run(strategy, candles, config)          │
               │     3. Evaluator.evaluate(trades, capital)                │
               │     4. Save BacktestResult to DB                         │
@@ -193,8 +194,9 @@ sequenceDiagram
 
     FE->>SC: POST /api/strategies/backtest {versionId, pair, timeframe, dateRange, backtestConfig}
     SC->>VS: get(versionId) → verify immutable snapshot exists
-    SC->>SC: generate jobId
-    SC->>SC: publish BacktestRequested (source=USER, loopRunId=null)
+    SC->>SC: generate jobId + correlationId
+    SC->>SC: await IJobQueue.enqueue (source=USER)
+    SC->>SC: publish observational BacktestRequested
     SC-->>FE: 202 Accepted {jobId, status: 'queued'}
 ```
 
@@ -224,16 +226,17 @@ sequenceDiagram
 sequenceDiagram
     participant SC as StrategyController
     participant EB as IEventBus
-    participant JQ as JobQueue (Phương)
+    participant JQ as IJobQueue / BullMQ (Phương)
     participant BT as Backtester
     participant EV as Evaluator
     participant MD as IMarketDataService
     participant DB as PostgreSQL
 
-    SC->>SC: generate jobId
-    SC->>EB: publish('BacktestRequested', complete payload, source=USER)
-    EB->>JQ: event delivered; preserve producer jobId
-    JQ->>MD: getHistorical(pair, timeframe, dateRange)
+    SC->>SC: generate jobId + correlationId
+    SC->>JQ: await enqueue(complete payload, source=USER)
+    JQ-->>SC: accepted in Redis
+    SC->>EB: publish observational BacktestRequested
+    JQ->>MD: getCandlesRange(pair, timeframe, dateRange)
     MD-->>JQ: Candle[]
     JQ->>BT: run(strategy, candles, config)
     BT->>BT: replay candles → generate trades
@@ -268,7 +271,8 @@ See `kb/contracts/strategy.yaml` for the full contract. Summary:
 | `/api/strategies/:id/versions` | GET | List strategy version history |
 
 Events:
-- **Publishes**: `BacktestRequested` (consumed by Phương's Job Queue)
+- **Calls**: `IJobQueue.enqueue` and awaits durable acceptance before returning `202`
+- **Publishes**: observational `BacktestRequested` after enqueue; it is not consumed to create the job
 - **Consumes**: `BacktestCompleted` and terminal `BacktestFailed` (published by Phương's Job Queue Worker)
 - **Payload SSoT**: `kb/contracts/events.yaml`; this module does not define reduced copies of event payloads
 
@@ -283,7 +287,7 @@ Events:
 - **Error handling**:
   - Invalid strategy parameters → 400 Bad Request with validation errors.
   - Strategy not found in registry → 404 Not Found.
-  - Backtest job failure → handled by Job Queue retry logic (Phương). Strategy Engine publishes the event and trusts the queue.
+  - Backtest job failure → handled by BullMQ retry/dead-letter logic behind `IJobQueue` (Phương). Strategy Engine publishes the request and consumes terminal outcomes only.
   - Empty candle data → Backtester returns zero trades, Evaluator returns default metrics (0% return, 0 trades).
 
 ## 9. Testing Strategy
@@ -296,7 +300,7 @@ Events:
   - `StrategyVersionService.create()` → version number increments, snapshot is immutable.
 - **Integration tests**:
   - `POST /api/strategies/composite` → creates composite, verify registry contains it.
-  - `POST /api/strategies/backtest` → publishes `BacktestRequested` event (mock EventBus).
+  - `POST /api/strategies/backtest` → awaits mock `IJobQueue.enqueue`, publishes `BacktestRequested` only on success, and returns `503 QUEUE_UNAVAILABLE` on enqueue failure.
   - Full pipeline with mock queue: strategy → backtest → evaluate → result stored.
   - Extensibility test: register `MACDStrategy` → verify backtest works without code changes.
 
