@@ -57,19 +57,21 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`p-4 rounded-xl border transition-all cursor-pointer ${
+      className={`p-6 rounded-2xl border transition-all cursor-pointer shadow-md ${
         isSelected
-          ? 'bg-[#1e2329] border-[#fcd535] shadow-lg shadow-[#fcd535]/10'
-          : 'bg-[#1e2329]/80 border-[#2b3139] hover:border-gray-500 hover:bg-[#1e2329]'
+          ? 'bg-[#1e2329] border-[#fcd535] shadow-xl shadow-[#fcd535]/15 ring-1 ring-[#fcd535]'
+          : 'bg-[#1e2329]/90 border-[#2b3139] hover:border-gray-500 hover:bg-[#1e2329]'
       }`}
+      style={{ padding: '1.5rem' }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-semibold text-gray-100 tracking-wide">{name}</h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-lg font-bold text-gray-100 tracking-wide">{name}</h3>
         <div className="flex items-center gap-2">
           <span
-            className={`px-2.5 py-0.5 text-xs font-medium rounded-full border ${getTypeBadgeColor(
+            className={`text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm ${getTypeBadgeColor(
               type,
             )}`}
+            style={{ padding: '0.25rem 0.625rem' }}
           >
             {type}
           </span>
@@ -80,30 +82,32 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
                 e.stopPropagation();
                 onDelete();
               }}
-              title="Xóa chiến lược"
-              className="p-1 rounded text-gray-400 hover:text-[#f6465d] hover:bg-[#f6465d]/10 transition-colors text-xs"
+              title="Delete strategy"
+              className="text-[10px] font-extrabold text-[#f6465d] bg-[#f6465d]/10 hover:bg-[#f6465d]/20 border border-[#f6465d]/30 rounded-md uppercase tracking-wider transition-colors"
+              style={{ padding: '0.25rem 0.5rem' }}
             >
-              🗑️
+              DELETE
             </button>
           )}
         </div>
       </div>
 
-      <div className="space-y-1.5 text-xs text-gray-400">
-        <div className="text-[11px] font-medium text-gray-500 uppercase tracking-wider">
+      <div className="flex flex-col gap-5 text-sm text-gray-300 pt-2 border-t border-[#2b3139]/50">
+        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
           Parameters
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-4">
           {Object.entries(parameters || {}).map(([key, val]) => (
             <span
               key={key}
-              className="px-2 py-1 rounded bg-[#0b0e11] text-gray-300 font-mono text-[11px]"
+              className="rounded-xl bg-[#0b0e11] text-gray-200 font-mono text-xs border border-[#2b3139] shadow-sm flex items-center gap-1.5"
+              style={{ padding: '0.5rem 1rem' }}
             >
-              {key}: <span className="text-[#fcd535]">{formatParamValue(val)}</span>
+              <span className="text-gray-400 capitalize">{key}:</span> <span className="text-[#fcd535] font-bold">{formatParamValue(val)}</span>
             </span>
           ))}
           {Object.keys(parameters || {}).length === 0 && (
-            <span className="italic text-gray-500">No parameters</span>
+            <span className="italic text-gray-500 text-xs px-2">No parameters</span>
           )}
         </div>
       </div>

@@ -26,54 +26,66 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades }) => {
   }
 
   return (
-    <div className="bg-[#1e2329] border border-[#2b3139] rounded-xl overflow-hidden shadow-xl">
-      <div className="p-4 border-b border-[#2b3139] flex items-center justify-between">
-        <h3 className="text-sm font-bold text-gray-200 uppercase tracking-wider">Executed Trade History</h3>
-        <span className="text-xs px-2.5 py-1 rounded bg-gray-800 text-gray-400 font-mono">
+    <div className="bg-[#0b0e11] rounded-2xl overflow-hidden shadow-2xl">
+      <div 
+        className="bg-[#1e2329] border-b border-[#2b3139]/40 flex items-center justify-between"
+        style={{ padding: '1.25rem 1.5rem' }}
+      >
+        <h3 className="text-sm font-black text-gray-100 uppercase tracking-wider">Executed Trade History</h3>
+        <span 
+          className="text-xs rounded-lg bg-[#0b0e11] text-gray-300 font-mono border border-[#2b3139]/50"
+          style={{ padding: '0.375rem 0.75rem' }}
+        >
           Total: {trades.length} Trades
         </span>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs font-mono">
+        <table className="w-full text-left border-collapse text-sm font-mono">
           <thead>
-            <tr className="bg-[#0b0e11] text-gray-400 uppercase text-[10px] tracking-wider border-b border-[#2b3139]">
-              <th className="p-3">#</th>
-              <th className="p-3">Side</th>
-              <th className="p-3">Entry Date</th>
-              <th className="p-3">Exit Date</th>
-              <th className="p-3 text-right">Entry Price</th>
-              <th className="p-3 text-right">Exit Price</th>
-              <th className="p-3 text-right">Quantity</th>
-              <th className="p-3 text-right">PnL ($)</th>
+            <tr className="bg-[#14181d] text-gray-400 uppercase text-xs tracking-wider border-b border-[#2b3139]/40">
+              <th className="px-6 py-4" style={{ padding: '1rem 1.5rem' }}>#</th>
+              <th className="px-6 py-4" style={{ padding: '1rem 1.5rem' }}>Side</th>
+              <th className="px-6 py-4" style={{ padding: '1rem 1.5rem' }}>Entry Date</th>
+              <th className="px-6 py-4" style={{ padding: '1rem 1.5rem' }}>Exit Date</th>
+              <th className="px-6 py-4 text-right" style={{ padding: '1rem 1.5rem' }}>Entry Price</th>
+              <th className="px-6 py-4 text-right" style={{ padding: '1rem 1.5rem' }}>Exit Price</th>
+              <th className="px-6 py-4 text-right" style={{ padding: '1rem 1.5rem' }}>Quantity</th>
+              <th className="px-6 py-4 text-right" style={{ padding: '1rem 1.5rem' }}>PnL ($)</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#2b3139] text-gray-200">
+          <tbody className="text-gray-200">
             {trades.map((t, idx) => {
               const isProfit = t.pnl >= 0;
               return (
-                <tr key={idx} className="hover:bg-[#2b3139]/40 transition-colors">
-                  <td className="p-3 text-gray-500">{idx + 1}</td>
-                  <td className="p-3">
+                <tr 
+                  key={idx} 
+                  className={`transition-colors hover:bg-[#1e2329] ${
+                    idx % 2 === 0 ? 'bg-[#0b0e11]' : 'bg-[#14181d]/50'
+                  }`}
+                >
+                  <td className="px-6 py-4 text-gray-500 font-bold" style={{ padding: '1rem 1.5rem' }}>{idx + 1}</td>
+                  <td className="px-6 py-4" style={{ padding: '1rem 1.5rem' }}>
                     <span
-                      className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                      className={`px-2.5 py-1 rounded-md font-bold text-xs uppercase tracking-wider shadow-sm ${
                         t.side === 'LONG'
-                          ? 'bg-[#0ecb81]/20 text-[#0ecb81]'
-                          : 'bg-[#f6465d]/20 text-[#f6465d]'
+                          ? 'bg-[#0ecb81]/20 text-[#0ecb81] border border-[#0ecb81]/30'
+                          : 'bg-[#f6465d]/20 text-[#f6465d] border border-[#f6465d]/30'
                       }`}
                     >
                       {t.side}
                     </span>
                   </td>
-                  <td className="p-3 text-gray-400">{new Date(t.entryDate).toLocaleString()}</td>
-                  <td className="p-3 text-gray-400">{new Date(t.exitDate).toLocaleString()}</td>
-                  <td className="p-3 text-right text-gray-300 font-semibold">{t.entryPrice.toFixed(2)}</td>
-                  <td className="p-3 text-right text-gray-300 font-semibold">{t.exitPrice.toFixed(2)}</td>
-                  <td className="p-3 text-right text-gray-400">{t.quantity.toFixed(4)}</td>
+                  <td className="px-6 py-4 text-gray-300" style={{ padding: '1rem 1.5rem' }}>{new Date(t.entryDate).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-gray-300" style={{ padding: '1rem 1.5rem' }}>{new Date(t.exitDate).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-right text-gray-200 font-bold" style={{ padding: '1rem 1.5rem' }}>{t.entryPrice.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-right text-gray-200 font-bold" style={{ padding: '1rem 1.5rem' }}>{t.exitPrice.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-right text-gray-400" style={{ padding: '1rem 1.5rem' }}>{t.quantity.toFixed(4)}</td>
                   <td
-                    className={`p-3 text-right font-bold ${
+                    className={`px-6 py-4 text-right font-black text-base ${
                       isProfit ? 'text-[#0ecb81]' : 'text-[#f6465d]'
                     }`}
+                    style={{ padding: '1rem 1.5rem' }}
                   >
                     {isProfit ? `+${t.pnl.toFixed(2)}` : t.pnl.toFixed(2)}
                   </td>
