@@ -17,8 +17,11 @@ import { BacktesterService } from './backtester';
 import { EvaluatorService } from './evaluator';
 import { RandomGenerator, DomainGuidedGenerator } from './generators';
 import { StrategyVersioningService } from './versioning';
+import { EventBusService } from './events';
+import { StrategyController } from './controllers';
 
 @Module({
+  controllers: [StrategyController],
   providers: [
     StrategyRegistry,
     MovingAverageStrategy,
@@ -31,6 +34,7 @@ import { StrategyVersioningService } from './versioning';
     RandomGenerator,
     DomainGuidedGenerator,
     StrategyVersioningService,
+    EventBusService,
   ],
   exports: [
     StrategyRegistry,
@@ -40,6 +44,7 @@ import { StrategyVersioningService } from './versioning';
     RandomGenerator,
     DomainGuidedGenerator,
     StrategyVersioningService,
+    EventBusService,
   ],
 })
 export class StrategyModule {}
