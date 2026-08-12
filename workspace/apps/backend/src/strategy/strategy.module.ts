@@ -12,6 +12,8 @@ import {
   SupportResistanceStrategy,
 } from './strategies';
 
+import { CompositeStrategy } from './composite';
+
 @Module({
   providers: [
     StrategyRegistry,
@@ -19,7 +21,8 @@ import {
     RsiStrategy,
     BollingerBandsStrategy,
     SupportResistanceStrategy,
+    CompositeStrategy,
   ],
-  exports: [StrategyRegistry],
+  exports: [StrategyRegistry, CompositeStrategy],
 })
 export class StrategyModule {}
