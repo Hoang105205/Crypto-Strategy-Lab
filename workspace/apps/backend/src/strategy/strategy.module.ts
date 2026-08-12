@@ -13,6 +13,10 @@ import {
 } from './strategies';
 
 import { CompositeStrategy } from './composite';
+import { BacktesterService } from './backtester';
+import { EvaluatorService } from './evaluator';
+import { RandomGenerator, DomainGuidedGenerator } from './generators';
+import { StrategyVersioningService } from './versioning';
 
 @Module({
   providers: [
@@ -22,7 +26,20 @@ import { CompositeStrategy } from './composite';
     BollingerBandsStrategy,
     SupportResistanceStrategy,
     CompositeStrategy,
+    BacktesterService,
+    EvaluatorService,
+    RandomGenerator,
+    DomainGuidedGenerator,
+    StrategyVersioningService,
   ],
-  exports: [StrategyRegistry, CompositeStrategy],
+  exports: [
+    StrategyRegistry,
+    CompositeStrategy,
+    BacktesterService,
+    EvaluatorService,
+    RandomGenerator,
+    DomainGuidedGenerator,
+    StrategyVersioningService,
+  ],
 })
 export class StrategyModule {}
