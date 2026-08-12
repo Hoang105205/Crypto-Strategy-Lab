@@ -68,5 +68,18 @@ export class StrategyRegistry {
   has(nameOrType: string): boolean {
     return this.strategies.has(nameOrType);
   }
+
+  /**
+   * Unregister/delete a strategy by name
+   */
+  unregister(name: string): boolean {
+    const strat = this.strategies.get(name);
+    if (!strat) return false;
+    const key = `${strat.getType()}:${strat.getName()}`;
+    this.strategies.delete(name);
+    this.strategies.delete(key);
+    this.logger.log(`Unregistered strategy plugin: [${name}]`);
+    return true;
+  }
 }
 

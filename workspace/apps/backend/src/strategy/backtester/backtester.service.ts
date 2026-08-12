@@ -34,7 +34,7 @@ export class BacktesterService implements IBacktester {
 
         openPosition = {
           entryPrice: candle.close,
-          entryDate: new Date(candle.timestamp),
+          entryDate: new Date(candle.closeTime),
           quantity,
         };
       }
@@ -43,10 +43,10 @@ export class BacktesterService implements IBacktester {
         const pnl = (candle.close - openPosition.entryPrice) * openPosition.quantity;
 
         trades.push({
-          entryDate: openPosition.entryDate,
-          exitDate: new Date(candle.timestamp),
           entryPrice: openPosition.entryPrice,
+          entryDate: openPosition.entryDate,
           exitPrice: candle.close,
+          exitDate: new Date(candle.closeTime),
           side: 'LONG',
           pnl,
           quantity: openPosition.quantity,
@@ -62,10 +62,10 @@ export class BacktesterService implements IBacktester {
       const pnl = (lastCandle.close - openPosition.entryPrice) * openPosition.quantity;
 
       trades.push({
-        entryDate: openPosition.entryDate,
-        exitDate: new Date(lastCandle.timestamp),
         entryPrice: openPosition.entryPrice,
+        entryDate: openPosition.entryDate,
         exitPrice: lastCandle.close,
+        exitDate: new Date(lastCandle.closeTime),
         side: 'LONG',
         pnl,
         quantity: openPosition.quantity,

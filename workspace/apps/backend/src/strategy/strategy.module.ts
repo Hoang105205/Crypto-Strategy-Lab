@@ -12,7 +12,6 @@ import {
   SupportResistanceStrategy,
 } from './strategies';
 
-import { CompositeStrategy } from './composite';
 import { BacktesterService } from './backtester';
 import { EvaluatorService } from './evaluator';
 import { RandomGenerator, DomainGuidedGenerator } from './generators';
@@ -28,7 +27,6 @@ import { StrategyController } from './controllers';
     RsiStrategy,
     BollingerBandsStrategy,
     SupportResistanceStrategy,
-    CompositeStrategy,
     BacktesterService,
     EvaluatorService,
     RandomGenerator,
@@ -38,7 +36,6 @@ import { StrategyController } from './controllers';
   ],
   exports: [
     StrategyRegistry,
-    CompositeStrategy,
     BacktesterService,
     EvaluatorService,
     RandomGenerator,

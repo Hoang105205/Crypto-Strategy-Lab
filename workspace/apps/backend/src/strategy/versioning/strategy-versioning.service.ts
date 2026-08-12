@@ -1,8 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { IStrategy, StrategyVersion } from '@crypto-strategy-lab/shared';
 import { StrategyType } from '@crypto-strategy-lab/shared';
-import { v4 as uuidv4 } from 'crypto';
-
 @Injectable()
 export class StrategyVersioningService {
   private readonly logger = new Logger(StrategyVersioningService.name);

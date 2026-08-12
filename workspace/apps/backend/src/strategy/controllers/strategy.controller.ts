@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, HttpException, HttpStatus, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, HttpException, HttpStatus, HttpCode } from '@nestjs/common';
 import type { IStrategy } from '@crypto-strategy-lab/shared';
 import { CombinerType } from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
@@ -28,6 +28,15 @@ export class StrategyController {
     }));
   }
 
+  @Delete(':name')
+  deleteStrategy(@Param('name') name: string) {
+    const deleted = this.registry.unregister(name);
+    if (!deleted) {
+      throw new HttpException(`Strategy '${name}' not found`, HttpStatus.NOT_FOUND);
+    }
+    return { message: `Strategy '${name}' deleted successfully` };
+  }
+
   @Post('composite')
   createComposite(@Body() dto: CreateCompositeDto) {
     if (!dto || !dto.name || !dto.childStrategyNames || dto.childStrategyNames.length === 0) {
@@ -50,8 +59,11 @@ export class StrategyController {
       combiner = new MajorityVoteCombiner();
     }
 
+    if (this.registry.has(dto.name)) {
+      this.registry.unregister(dto.name);
+    }
+
     const composite = new CompositeStrategy(dto.name, children, combiner, this.registry);
-    this.registry.register(composite);
 
     const version = this.versioning.createVersion(composite);
 

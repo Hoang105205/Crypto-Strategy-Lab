@@ -1,6 +1,9 @@
 import { Signal, ICombiner, SignalAction } from '@crypto-strategy-lab/shared';
 
 export class MajorityVoteCombiner implements ICombiner {
+  getType(): string {
+    return 'MajorityVote';
+  }
   combine(signals: Signal[]): Signal {
     if (!signals || signals.length === 0) {
       return {
