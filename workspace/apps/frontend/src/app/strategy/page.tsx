@@ -47,20 +47,28 @@ export default function StrategyBuilderPage() {
     capital: number
   ): TradeItem[] => {
     const basePrice = symbol.startsWith('BTC') ? 65000 : symbol.startsWith('ETH') ? 3400 : 140;
-    const seed = stratName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const count = 4 + (seed % 4);
+    const tfMultiplier = tf === '15m' ? 0.25 : tf === '1h' ? 1 : tf === '4h' ? 4 : 24;
+    const tfSeed = tf.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const seed = stratName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + tfSeed;
+    
+    // Timeframe influences trade frequency (e.g. 15m produces more trades, 1d fewer)
+    const count = tf === '15m' ? 8 : tf === '1h' ? 6 : tf === '4h' ? 5 : 3;
     const trades: TradeItem[] = [];
 
     for (let i = 0; i < count; i++) {
-      const entryPrice = basePrice * (1 + Math.sin(i + seed) * 0.03);
+      const volatility = 0.015 * Math.sqrt(tfMultiplier);
+      const entryPrice = basePrice * (1 + Math.sin(i * 1.7 + seed) * volatility);
       const isProfit = (i + seed) % 2 === 0;
-      const changePercent = isProfit ? 0.025 + (i * 0.004) : -0.018 - (i * 0.002);
+      const changePercent = isProfit 
+        ? (0.012 + (i * 0.003)) * Math.sqrt(tfMultiplier) 
+        : (-0.01 - (i * 0.002)) * Math.sqrt(tfMultiplier);
       const exitPrice = entryPrice * (1 + changePercent);
       const qty = (capital * 0.15) / entryPrice;
       const pnl = (exitPrice - entryPrice) * qty;
 
-      const entry = new Date(Date.now() - (count - i) * 86400000 * 2);
-      const exit = new Date(entry.getTime() + 3600000 * 8);
+      const durationMs = 3600000 * tfMultiplier * (1.5 + (i % 3));
+      const entry = new Date(Date.now() - (count - i) * 86400000 * (tfMultiplier > 4 ? 2 : 1));
+      const exit = new Date(entry.getTime() + durationMs);
 
       trades.push({
         entryDate: entry.toISOString().replace('T', ' ').substring(0, 16),
