@@ -1,10 +1,15 @@
 # Quickstart: Event Infrastructure Dashboard
 
+> **Delivery note**: This quickstart describes the accepted BullMQ/Redis target. Run the queue
+> scenarios after the implementation and Compose work in `tasks.md` (especially T012-T020 and T049)
+> is complete.
+
 ## Prerequisites
 
 - Node.js compatible with the workspace and npm 10.x
 - Dependencies installed from `workspace/`
 - PostgreSQL available when running persistence-backed scenarios
+- Redis 7 available with AOF persistence for BullMQ scenarios
 - Current Prisma client generated
 - Strategy integration providers available for a real backtest; test doubles are used for isolated feature tests
 
@@ -16,6 +21,25 @@ From `workspace/`:
 npm install
 npx prisma generate --schema apps/backend/prisma/schema.prisma
 npm run build
+```
+
+Start infrastructure from the repository root before the backend:
+
+```powershell
+docker compose up -d postgres redis
+```
+
+Required queue configuration (defaults shown):
+
+```text
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+BACKTEST_QUEUE_NAME=backtest
+BACKTEST_WORKER_CONCURRENCY=3
+BACKTEST_MAX_ATTEMPTS=3
+BACKTEST_JOB_RETENTION_AGE_SECONDS=86400
+BACKTEST_JOB_RETENTION_COUNT=1000
 ```
 
 After Hoàng reviews the migration, apply it in the project's normal development database workflow before persistence-backed validation.
@@ -44,14 +68,14 @@ npm run build
 
 ### Scenario 2: Successful asynchronous backtest
 
-1. Publish `BacktestRequested` with a producer UUID and successful test doubles.
+1. Call `IJobQueue.enqueue` with a producer UUID and successful test doubles, await acceptance, then publish observational `BacktestRequested`.
 2. Query status immediately and after completion.
 3. ✅ Expected: the same UUID moves `QUEUED` → `PROCESSING` → `COMPLETED`; one `BacktestCompleted` is emitted.
 
 ### Scenario 3: Retry and dead letter
 
 1. Configure a test Backtester to fail on all executions.
-2. Advance fake time through 1s and 4s.
+2. Observe the BullMQ job move through the configured 1s and 4s retry delays.
 3. ✅ Expected: exactly three attempts, one terminal failure Event, one dead-letter Event, and one inspectable DLQ row.
 
 ### Scenario 4: USER priority
@@ -65,6 +89,18 @@ npm run build
 1. Deliver the same valid `BacktestCompleted` twice.
 2. Query the Leaderboard.
 3. ✅ Expected: one entry and one ranking broadcast; score and rank are deterministic.
+
+### Scenario 5a: Redis-backed restart recovery
+
+1. Enqueue waiting and delayed backtest jobs.
+2. Stop and restart NestJS without stopping Redis.
+3. ✅ Expected: the same BullMQ `jobId` values remain and processing resumes; no job is resubmitted by the client.
+
+### Scenario 5b: Redis outage and graceful shutdown
+
+1. Stop Redis and submit a backtest; then restore Redis.
+2. Send a shutdown signal while a worker is active.
+3. ✅ Expected: enqueue fails with `QUEUE_UNAVAILABLE` rather than a false `202`; workers reconnect after Redis returns; graceful shutdown stops intake and closes connections cleanly.
 
 ### Scenario 6: Bounded Search Loop
 
@@ -92,9 +128,8 @@ npm run build
 
 ## Extensibility Checks
 
-- Bind a fake alternative `IJobQueue`; consumers compile and tests remain unchanged.
+- Bind `BullMqJobQueue` behind `IJobQueue`; consumers remain unchanged from the former adapter contract.
 - Bind a second `IStrategyGenerator`; queue/worker/Leaderboard code remains unchanged.
 - Bind a different scoring policy; Backtester/Worker tests remain unchanged.
 - Add an Event subscriber; existing publisher and subscribers remain unchanged.
 - Set worker concurrency to another valid value; only throughput changes.
-

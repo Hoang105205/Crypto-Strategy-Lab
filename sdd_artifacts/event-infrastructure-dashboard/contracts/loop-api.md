@@ -59,5 +59,4 @@ At least one effective bound is required; the no-improvement bound defaults to 5
 - `SearchLoopStarted`: emitted after the run is persisted as `RUNNING`.
 - `SearchLoopProgress`: emitted after a terminal candidate is recorded while the run remains non-terminal.
 - `SearchLoopStopped`: emitted once for `COMPLETED`, `STOPPED_BY_USER`, or `FAILED`.
-- Search-originated `BacktestRequested`: producer-generated `jobId`, source `SEARCH_LOOP`, non-null `loopRunId`.
-
+- Search Loop generates `jobId` + `correlationId`, awaits `IJobQueue.enqueue`, then emits observational `BacktestRequested` with source `SEARCH_LOOP` and non-null `loopRunId`.

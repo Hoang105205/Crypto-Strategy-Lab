@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-09
+> **Last Updated**: 2026-08-12
 
 ## 1. Overview
 - **Description**: Continuous automated search — generate candidate strategies, backtest them via the queue, evaluate, and feed the best back into generation
@@ -13,7 +13,7 @@
 ## 2. Preconditions
 - At least one `IStrategyGenerator` implementation is registered (`RandomGenerator` at minimum; `DomainGuidedGenerator` optional for MVP)
 - `IBacktester` and `IEvaluator` are available via the Strategy Engine module
-- Job Queue workers are running and not already saturated by an existing loop run
+- Redis is reachable and the BullMQ backtest worker is running
 - Historical market data is available for the configured pair + timeframe (Market Data module)
 - No other `SearchLoopRun` is currently `RUNNING` or `PAUSED` (MVP supports one active loop at a time — see Business Rules BR-6)
 - The user has supplied a valid stop condition (at least one of `maxCandidates`, `maxDurationMs`, or the default `stopOnNoImprovementIterations` applies)
@@ -23,7 +23,7 @@
 2. **LoopController validates and creates the run** — LoopController checks no other loop is active, creates a `SearchLoopRun` row (`status: RUNNING`, `iteration: 0`), and returns `{ loopRunId, status: "RUNNING" }` to the frontend
 3. **LoopController announces start** — LoopController → `EventBus.publish('SearchLoopStarted', { loopRunId, config, startedAt })`
 4. **LoopController requests a candidate** — LoopController → `IStrategyGenerator.generate(1)` → Strategy Engine (via shared interface, not a direct module import)
-5. **Candidate is submitted for backtesting** — LoopController generates `jobId`, then calls `EventBus.publish('BacktestRequested', { jobId, strategyVersionId, pair, timeframe, startDate, endDate, backtestConfig, source: "SEARCH_LOOP", loopRunId })` → Job Queue preserves that ID and enqueues the request exactly like a user-submitted backtest (see `kb/flows/strategy-backtest.md`)
+5. **Candidate is submitted for backtesting** — LoopController generates `jobId` + `correlationId`, awaits `IJobQueue.enqueue`, and only after Redis acceptance publishes observational `BacktestRequested`. BullMQ assigns SEARCH_LOOP priority `10` (see `kb/flows/strategy-backtest.md`).
 6. **Worker executes the backtest** — Job Queue Worker runs the standard backtest pipeline (`IMarketDataService` → `IBacktester` → `IEvaluator`) and publishes `BacktestCompleted` or `BacktestFailed`
 7. **LoopController consumes the result** — LoopController (also an Observer of `BacktestCompleted`/`BacktestFailed`, alongside `LeaderboardService`) matches the event's `loopRunId` to its own active run, records a `SearchLoopCandidate` row, and updates `testedCandidates`, `bestScoreSoFar`, and `bestStrategyVersionId` if the new candidate scores higher
 8. **LoopController broadcasts progress** — LoopController → `EventBus.publish('SearchLoopProgress', { loopRunId, iteration, testedCandidates, currentCandidate, bestScoreSoFar, bestStrategyVersionId })` → relayed to the frontend over WebSocket (`loop:progress`)
@@ -69,22 +69,22 @@
 - LoopController records the `SearchLoopCandidate` with `status: FAILED`, does **not** count it toward `bestScoreSoFar`, and continues to the next iteration — one bad candidate never stops the loop
 - If failures exceed a threshold (e.g., 50% of the last 10 candidates fail), the loop logs a warning but continues; a future enhancement could auto-pause on a failure-rate threshold (not MVP)
 
-### Worker pool is saturated
+### BullMQ worker concurrency is saturated
 - Step 5/6: all workers are busy with either loop-originated or user-originated jobs
-- The `BacktestRequested` job simply waits in the FIFO queue — the loop's iteration is not considered "stuck," it is `BACKTESTING` (per `SearchLoopProgress.currentCandidate.status`) until the worker picks it up
+- The job remains in Redis in BullMQ waiting/prioritized state. USER priority `1` jobs run before SEARCH_LOOP priority `10`; SEARCH_LOOP jobs remain FIFO relative to each other. The iteration stays `BACKTESTING` until a worker picks it up.
 - This is visible to the user as a longer time between progress updates, not an error
 
-### System restarts mid-loop
-- Because the MVP queue and `SearchLoopRun` state are in-memory-adjacent (queue) / database-backed (loop run), a process restart loses any in-flight job in the queue but the `SearchLoopRun` row remains with its last known `status: RUNNING`
-- On startup, `LoopController` reconciles: any `SearchLoopRun` left in `RUNNING` state with no active worker activity is transitioned to `FAILED` with `stopReason: "process_restarted"` — the user must start a new loop
-- This is an accepted MVP limitation; ADR-0012's durable-queue migration path also addresses recovering in-flight jobs across restarts
+### NestJS restarts mid-loop
+- Waiting and delayed jobs remain in Redis. On startup, BullMQ resumes them with the same `jobId`; an interrupted active job is recovered through BullMQ's stalled-job mechanism.
+- `LoopController` reconciles the persisted `SearchLoopRun` against BullMQ state. It keeps the run active when a matching waiting, delayed, or active job exists. Only a run with no recoverable job becomes `FAILED` with `stopReason: "orphaned_after_restart"`.
+- Because recovery can cause at-least-once execution, Backtest Result persistence, candidate recording, and terminal event handling must be idempotent.
 
 ### User starts a second loop while one is active
 - Step 1: `POST /api/loop/start` while a `SearchLoopRun` is `RUNNING` or `PAUSED` → `409 Conflict { error: "A search loop is already active", loopRunId }`
 - Flow terminates — user must stop the existing run first (Business Rules BR-6)
 
 ## 7. Business Rules
-- **BR-1**: Loop orchestration communicates via events/interfaces only — `LoopController` never imports Strategy Engine internals, only `IStrategyGenerator`, and never imports Backtester/Evaluator directly (it goes through the same `BacktestRequested`/`BacktestCompleted` events as a manual user backtest)
+- **BR-1**: Loop orchestration uses public interfaces/events only — `IStrategyGenerator` to generate, `IJobQueue.enqueue` to durably submit, observational `BacktestRequested`, and terminal `BacktestCompleted`/`BacktestFailed`; it never imports Backtester/Evaluator internals
 - **BR-2**: Stop conditions are evaluated in this priority order after each candidate: (1) user-requested stop/pause, (2) `maxCandidates` reached, (3) `maxDurationMs` elapsed, (4) `stopOnNoImprovementIterations` consecutive iterations without a `bestScoreSoFar` improvement (default 50). At least one numeric bound (`maxCandidates` or `maxDurationMs`) SHOULD be set by the user; if neither is set, `stopOnNoImprovementIterations` is the only safety net and MUST always be active — an unbounded `while(true)` loop is never permitted (spec Section 23)
 - **BR-3**: "Improvement" means the new candidate's `score` (same formula as the Leaderboard, `kb/flows/leaderboard-update.md` BR-2) exceeds `bestScoreSoFar` by more than a negligible epsilon (0.01) — this avoids resetting the no-improvement counter on floating-point noise
 - **BR-4**: A candidate is only counted toward `testedCandidates` once its backtest reaches a terminal state (`BacktestCompleted` or the exactly-once terminal `BacktestFailed`) — a candidate still queued, retrying, or backtesting is not yet "tested"
@@ -94,6 +94,6 @@
 
 ## 8. Related
 - **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`
-- **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker)
+- **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0013 (BullMQ/Redis)
 - **Module files**: `kb/modules/event-infrastructure.md`, `kb/modules/strategy-engine.md`
 - **Related flows**: `kb/flows/strategy-backtest.md` (the single-backtest flow reused by every loop iteration), `kb/flows/leaderboard-update.md` (reacts independently to the same `BacktestCompleted` events), `kb/flows/composite-with-sentiment.md` (search space can include sentiment-based composites)

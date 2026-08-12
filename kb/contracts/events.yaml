@@ -3,7 +3,7 @@
 # This file is the sole Single Source of Truth for all typed event names, publishers,
 # subscribers, and complete payload shapes on the bus. Module contracts reference these
 # definitions and must not duplicate reduced payload schemas.
-# See also: kb/modules/event-infrastructure.md, ADR-0005, ADR-0006, ADR-0011, ADR-0012
+# See also: kb/modules/event-infrastructure.md, ADR-0005, ADR-0006, ADR-0011, ADR-0013
 
 # ---------------------------------------------------------------------------
 # Shared envelope — every event published on IEventBus is wrapped in this
@@ -30,7 +30,7 @@ entities:
       maxAttempts: number      # Default 3 — see retry_policy below
       correlationId: UUID
       createdAt: DateTime
-      availableAt: DateTime    # Job is not picked up before this time — used to implement backoff delay
+      availableAt: DateTime    # Derived from BullMQ waiting/delayed state; job is not eligible before this time
 
   JobStatus:
     fields:
@@ -46,6 +46,8 @@ entities:
       processing: number
       completedLast24h: number
       deadLettered: number
+      delayed: number           # Jobs waiting for a BullMQ retry delay
+      redisConnected: boolean
 
   LeaderboardEntryPayload:
     fields:
@@ -95,16 +97,19 @@ interfaces:
 
   IJobQueue:
     description: >
-      Queue + worker abstraction for long-running backtest jobs (ADR-0006). In-memory implementation
-      for W1–W2, swappable for BullMQ/Redis without changing any consumer of this interface (ADR-0012).
+      Queue + worker abstraction for long-running backtest jobs (ADR-0006). The required implementation
+      is BullMqJobQueue backed by Redis (ADR-0013); consumers remain isolated from BullMQ classes.
     methods:
       - name: enqueue
         args: "(jobType: string, payload: object & { jobId: UUID }, correlationId?: UUID)"
         returns: "Promise<{ jobId: UUID }>"
         description: >
-          Adds a job using the producer-supplied payload.jobId and returns that same ID immediately.
-          The queue never generates or replaces jobId and rejects a duplicate jobId. It does not
-          execute the job synchronously.
+          Adds a job using the producer-supplied payload.jobId and returns that same ID after Redis
+          confirms acceptance, without waiting for backtest execution.
+          The adapter passes it as BullMQ's custom jobId, never generates or replaces it, and turns
+          BullMQ's duplicate-ID no-op behavior into an explicit conflict. USER jobs use priority 1;
+          SEARCH_LOOP jobs use priority 10; equal-priority jobs are FIFO. Enqueue does not execute
+          the job synchronously.
       - name: getStatus
         args: "(jobId: UUID)"
         returns: "Promise<JobStatus>"
@@ -112,16 +117,16 @@ interfaces:
         args: "(jobId: UUID)"
         returns: "Promise<void>"
         description: >
-          Manually re-enqueues a dead-lettered job with the attempt counter reset to 1. This is an
-          operator-triggered recovery action — automatic retries on transient failure are handled
-          internally by the worker and do not call this method.
+          Manually retries a failed BullMQ job with attempt counters reset, while atomically marking
+          its PostgreSQL DeadLetterJob mirror resolved. This is operator-triggered recovery;
+          automatic retries are handled by BullMQ.
       - name: deadLetter
         args: "(jobId: UUID, reason: string)"
         returns: "Promise<void>"
         description: >
-          Moves a job to the dead-letter queue after it exhausts maxAttempts or immediately when it
-          encounters a non-retriable error. Called internally by the worker; not intended to be
-          called by other modules.
+          Finalizes a job in BullMQ's failed set and idempotently mirrors its payload/error to the
+          PostgreSQL DeadLetterJob audit record after attempts are exhausted or a non-retriable
+          error occurs. Called internally only.
       - name: getStats
         args: "()"
         returns: "Promise<QueueStats>"
@@ -129,17 +134,32 @@ interfaces:
 
 # ---------------------------------------------------------------------------
 # Retry policy — applies to every job on the queue (BACKTEST is the only job
-# type in the MVP). See ADR-0006.
+# type in the MVP). See ADR-0006 and ADR-0013.
 # ---------------------------------------------------------------------------
 retry_policy:
   maxAttempts: 3
-  backoff: exponential
-  delaysMs: [1000, 4000, 16000]   # attempt 1 fails -> wait 1s; attempt 2 fails -> wait 4s; attempt 3 fails -> wait 16s
+  backoff: custom-bullmq
+  delaysMs: [1000, 4000]          # three total attempts: wait 1s before attempt 2 and 4s before attempt 3
   onExhausted: "IJobQueue.deadLetter() is called, then terminal BacktestFailed and BacktestDeadLettered are each published exactly once"
   onNonRetriable: "Skip remaining attempts, call IJobQueue.deadLetter(), then publish terminal BacktestFailed and BacktestDeadLettered exactly once"
   nonRetriableErrors:
     - "Zero historical candles returned for the requested pair/timeframe/date range"
     - "Strategy version not found in registry"
+
+queue_runtime:
+  implementation: "BullMqJobQueue"
+  queueName: "backtest"
+  storage: "Redis with AOF persistence"
+  workerTopology: "In-process NestJS BullMQ Worker; separate processes require a cross-process IEventBus"
+  concurrencyDefault: 3
+  priorities:
+    USER: 1
+    SEARCH_LOOP: 10
+  ordering: "FIFO within the same priority"
+  idempotency: "Producer UUID is BullMQ jobId; duplicate IDs return conflict"
+  retention: "Completed and failed jobs use bounded age/count policies configured by environment"
+  shutdown: "Worker.close() stops new intake and waits for active jobs; ungraceful loss relies on stalled-job recovery"
+  deliverySemantics: "At least once around stalls/recovery; worker side effects must be idempotent"
 
 # ---------------------------------------------------------------------------
 # Events
@@ -172,12 +192,12 @@ events:
 
   BacktestRequested:
     publisher: "Strategy Engine when source=USER; Event Infrastructure (Loop Controller) when source=SEARCH_LOOP"
-    subscribersOnBus: ["Event Infrastructure (Job Queue)"]
+    subscribersOnBus: []
     description: >
-      Published when a user or the Search Loop submits a strategy for backtesting. Strategy Engine
-      publishes user requests; Loop Controller publishes search-loop requests. Each producer creates
-      jobId before publishing. The Job Queue consumes the event, preserves that ID, and enqueues a
-      BACKTEST job for a worker to process.
+      Observational notification published only after a user or Search Loop request has been durably
+      accepted by IJobQueue/BullMQ. Each producer creates jobId and correlationId, awaits enqueue,
+      then publishes this Event with the same identities. The Job Queue MUST NOT subscribe and
+      enqueue from this fire-and-forget Event; doing so could produce false 202 responses or duplicates.
     payload:
       jobId: UUID                      # Generated by the publisher; correlates request to result
       strategyVersionId: UUID

@@ -44,13 +44,15 @@ that would consume a quarter of the project timeline.
 NestJS is specifically designed for modular monoliths: each `@Module()` has its own
 providers, controllers, and exports. Dependency injection is scoped per module. The
 `EventEmitter2` integration provides in-process typed events (ADR-0005) that decouple
-modules at runtime — the Strategy Engine publishes `BacktestRequested`, the Job Queue
-subscribes, and neither imports the other's service classes.
+modules at runtime. Acknowledged operations use shared interfaces: Strategy Engine awaits
+`IJobQueue.enqueue`, then publishes observational `BacktestRequested`; neither module imports the
+other's implementation classes.
 
 The monolith keeps optionality open: because modules communicate exclusively through
 `IEventBus` (ADR-0005) and `IJobQueue` (ADR-0006) interfaces — never direct method calls —
-any module can be extracted into a separate process later by swapping the in-process bus
-for Redis Pub/Sub and the in-memory queue for BullMQ (ADR-0012). This directly answers
+the backtest queue is now externalized to BullMQ/Redis (ADR-0013) without changing business
+consumers. Extracting workers into separate processes still requires replacing the process-local
+Event Bus. This directly answers
 spec Section 40.4 ("if backtests grow from 100 to 100,000, how does the architecture
 change?") without paying the cost upfront (YAGNI, Constitution Principle IV).
 
@@ -63,16 +65,17 @@ change?") without paying the cost upfront (YAGNI, Constitution Principle IV).
   ownership per module.
 - Positive: In-process event bus means zero message-serialization overhead — events
   carry full typed payloads, not JSON strings.
-- Positive: Extraction path is preserved — swapping EventEmitter2 for Redis Pub/Sub
-  requires changing only the `IEventBus` implementation, not any consumer code.
+- Positive: The queue-backend extension point is demonstrated by ADR-0013: BullMQ/Redis replaces
+  process memory without changing Strategy Engine, Loop, Leaderboard, or Dashboard consumers.
+- Positive: The remaining extraction path is preserved — swapping EventEmitter2 for a
+  cross-process adapter requires changing only the `IEventBus` implementation.
 - Negative: A crash in one module's unhandled exception can bring down the entire process.
   Mitigated by: `IEventBus` subscriber isolation (a throwing handler is caught and logged,
   never crashes the publisher), and the Python sentiment service is genuinely isolated
   as a separate process (ADR-0009).
-- Negative: Cannot independently scale individual modules (e.g., scale only the backtest
-  workers). Mitigated by: the Job Queue + Worker pattern (ADR-0006) allows adding worker
-  threads within the process. If true horizontal scaling is needed later, the queue
-  backend swaps to BullMQ/Redis (ADR-0012) and workers become separate processes.
+- Negative: Cannot yet scale backtest workers across processes because EventEmitter2 remains
+  process-local. BullMQ/Redis supplies durable queue state and in-process concurrency now;
+  horizontal workers require the Event Bus transport upgrade first.
 - Risk: Without discipline, a developer could import a sibling module's provider directly.
   Mitigated by: `kb/MODULES.md` boundary rules, `kb/CONTRIBUTING.md` review checklist,
   and the fact that NestJS module imports are visible in `*.module.ts` files.
@@ -81,6 +84,6 @@ change?") without paying the cost upfront (YAGNI, Constitution Principle IV).
 - Relates to ADR-0001 (Record Architecture Decisions) — this is the first architectural choice
 - Relates to ADR-0005 (Event-Driven Communication) — the event bus is what keeps modules decoupled inside the monolith
 - Relates to ADR-0006 (Job Queue + Worker for Backtesting) — the queue provides async scaling within the monolith
-- Relates to ADR-0012 (In-Memory Queue with BullMQ Migration Path) — the extraction path this decision keeps open
+- Relates to ADR-0013 (BullMQ/Redis Backtest Jobs) — accepted externalized queue state
 - Relates to ADR-0009 (Sentiment Service as Separate Process) — the one case where process isolation is justified
 - Superseded by: none

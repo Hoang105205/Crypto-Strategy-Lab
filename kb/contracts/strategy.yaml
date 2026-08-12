@@ -161,6 +161,10 @@ endpoints:
       backtestConfig: "BacktestConfig"
     response:
       type: "{ jobId: string, status: 'queued' }"
+      semantics: "202 is returned only after IJobQueue/BullMQ confirms Redis acceptance"
+    errors:
+      - "409 DUPLICATE_JOB_ID"
+      - "503 QUEUE_UNAVAILABLE"
 
   - method: GET
     path: /api/strategies/backtest/:id
@@ -177,9 +181,10 @@ endpoints:
 events_published:
   - name: BacktestRequested
     description: >
-      Published by Strategy Engine for a user-submitted request after validation. Strategy Engine
-      generates jobId and sets source=USER and loopRunId=null. Loop-originated requests are published
-      independently by Event Infrastructure's Loop Controller.
+      Observational notification published by Strategy Engine only after IJobQueue/BullMQ durably
+      accepts a user-submitted job. Strategy Engine generates jobId + correlationId, awaits enqueue,
+      sets source=USER and loopRunId=null, then publishes with the same identities. Loop-originated
+      notifications follow the same order in Event Infrastructure.
     payload_contract: "kb/contracts/events.yaml#/events/BacktestRequested/payload"
 
 events_consumed:

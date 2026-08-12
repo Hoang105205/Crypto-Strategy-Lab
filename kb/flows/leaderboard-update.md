@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-07
+> **Last Updated**: 2026-08-12
 
 ## 1. Overview
 - **Description**: When a backtest completes, the leaderboard re-ranks the Top-K strategies and pushes the update to the frontend in real time
@@ -54,7 +54,7 @@
 ## 6. Error & Exception Flows
 
 ### Duplicate event delivery
-- `BacktestCompleted` is delivered twice for the same `backtestResultId` (e.g., a future durable queue redelivers on worker restart)
+- `BacktestCompleted` is delivered twice for the same `backtestResultId` (e.g., BullMQ recovers a stalled job after worker loss)
 - Step 3's idempotency check short-circuits the handler — no duplicate entry, no duplicate `LeaderboardUpdated` broadcast
 
 ### Missing or malformed metrics in payload
@@ -65,7 +65,7 @@
 ### Database write fails during entry upsert
 - Step 5 fails (e.g., transient DB error) — the handler logs the error and does not publish `LeaderboardUpdated`
 - No retry is attempted from within the event handler (Observer handlers are fire-and-forget); the leaderboard will simply reflect this result on the *next* successful `BacktestCompleted` for the same strategy, or an operator can be alerted via logs
-- This is an accepted MVP limitation — a future durable-queue-backed Leaderboard could re-process from a persisted event log
+- This remains a process-local Event Bus limitation. BullMQ persists jobs, not the domain event log; a future durable `IEventBus` adapter is required for event replay.
 
 ### Frontend WebSocket disconnected
 - `PushGateway` has no active connection for a client — the broadcast is simply not received by that client (no error, no retry queue for offline clients)
@@ -86,6 +86,6 @@
 
 ## 8. Related
 - **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`
-- **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0011 (Leaderboard as Observer)
+- **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0011 (Leaderboard as Observer), ADR-0013 (BullMQ/Redis)
 - **Module files**: `kb/modules/event-infrastructure.md`, `kb/modules/strategy-engine.md`
 - **Related flows**: `kb/flows/strategy-backtest.md` (produces the `BacktestCompleted` that triggers this flow), `kb/flows/strategy-search-loop.md` (the loop consumes the same `BacktestCompleted` events in parallel with the Leaderboard)

@@ -2,7 +2,7 @@
 
 > **Owner**: Huy
 > **Status**: Active
-> **Last Updated**: 2026-08-09
+> **Last Updated**: 2026-08-12
 
 ## 1. Overview
 - **Description**: A user requests a backtest of a strategy (single or composite); the job is enqueued, executed by a worker, evaluated for metrics, and the result is stored and pushed to the frontend
@@ -14,18 +14,18 @@
 - Strategy must be registered in `StrategyRegistry` (via `register()`)
 - Strategy version must exist in the database (created by `StrategyVersionService`)
 - Historical candle data must be available for the requested pair + timeframe + date range (Market Data module)
-- Job Queue workers must be running (Event Infrastructure module)
+- Redis and the BullMQ Backtest Worker must be available (Event Infrastructure module)
 
 ## 3. Flow Steps
 
 1. **User configures backtest** — Frontend Strategy Builder → user selects strategy, pair (e.g. BTCUSDT), timeframe (e.g. 1h), date range, and `backtestConfig` (`initialCapital`, `positionSizePercent`, optional `commission` and `slippage`)
 2. **Frontend submits backtest request** — Frontend → `POST /api/strategies/backtest` → Strategy Engine (StrategyController)
-3. **Strategy Engine validates and identifies request** — StrategyController verifies `strategyVersionId` exists, pair is valid, date range and `backtestConfig` are valid, then generates the UUID `jobId` before publishing
-4. **Strategy Engine publishes event** — StrategyController → `IEventBus.publish('BacktestRequested', { jobId, strategyVersionId, pair, timeframe, startDate, endDate, backtestConfig, source: "USER", loopRunId: null })` → Event Bus (Phương)
-5. **Strategy Engine returns queued status** — StrategyController → Frontend: `202 Accepted { jobId, status: 'queued' }`
-6. **Job Queue worker picks up job** — Event Infrastructure (Phương) → queue receives `BacktestRequested`, preserves the producer-supplied `jobId` unchanged, rejects duplicate IDs, and makes the job available to a worker
-7. **Worker fetches historical candles** — Worker → `IMarketDataService.getHistorical(pair, timeframe, startDate, endDate)` → Market Data (Hoàng)
-8. **Worker reconstructs strategy** — Worker → `StrategyRegistry.get(strategyVersionId)` → the `IStrategy` instance
+3. **Strategy Engine validates and identifies request** — StrategyController validates inputs, then generates UUIDs for `jobId` and `correlationId`
+4. **Strategy Engine durably submits the job** — StrategyController awaits `IJobQueue.enqueue('BACKTEST', payload, correlationId)`. `BullMqJobQueue` preserves the UUID as BullMQ `jobId`, rejects duplicates, assigns USER priority `1`, and persists the job in Redis.
+5. **Strategy Engine acknowledges and notifies** — only after enqueue succeeds, StrategyController publishes observational `BacktestRequested` with the same identities and returns `202 Accepted { jobId, status: 'queued' }`. If Redis is unavailable, it returns stable `503 QUEUE_UNAVAILABLE` and does not publish/acknowledge.
+6. **BullMQ worker picks up job** — Worker claims the Redis job; the queue does not depend on consuming `BacktestRequested`
+7. **Worker fetches historical candles** — Worker → `IMarketDataService.getCandlesRange(pair, timeframe, startDate, endDate)` → Market Data (Hoàng)
+8. **Worker resolves strategy** — Worker → `IStrategyExecutionPort.resolveVersion(strategyVersionId)` → immutable version + executable `IStrategy`, without importing Strategy Engine internals
 9. **Worker runs backtest** — Worker → `Backtester.run(strategy, candles, config)` → replays candles chronologically, calls `strategy.analyze()` on each window, simulates trades based on signals
 10. **Worker evaluates results** — Worker → `Evaluator.evaluate(trades, initialCapital)` → computes Return, WinRate, MaxDrawdown, SharpeRatio, ProfitFactor
 11. **Worker saves result** — Worker → `BacktestResult` saved to PostgreSQL via Prisma (linked to `strategyVersionId`)
@@ -48,7 +48,7 @@
 - All other steps are identical — the Backtester treats composites and singles uniformly (Composite Pattern)
 
 ### Search Loop Automated Backtest
-- Steps 1–5 are replaced by the Loop Controller (Phương) programmatically generating a candidate and `jobId`, then publishing the same complete `BacktestRequested` payload with `source: "SEARCH_LOOP"` and the non-null `loopRunId`
+- Steps 1–5 are replaced by Loop Controller generating a candidate, `jobId`, and `correlationId`, awaiting `IJobQueue.enqueue` with SEARCH_LOOP priority `10`, then publishing the observational `BacktestRequested` notification
 - Steps 6–14 are identical — the queue and worker don't know if the request came from a user or the loop
 
 ## 6. Error & Exception Flows
@@ -68,7 +68,7 @@
 
 ### Backtest job fails (worker error)
 - Step 9 or 10: Unhandled exception in Backtester or Evaluator
-- Job Queue retry logic (Phương): 3 attempts with exponential backoff (1s, 4s, 16s)
+- BullMQ retry logic (Phương): three total attempts with deterministic delays of 1s then 4s
 - Intermediate retryable failures update queue state/logs only; they do not publish `BacktestFailed`
 - After max retries → job moves to the dead-letter queue; the Job Queue Worker publishes terminal `BacktestFailed` exactly once and the queue publishes `BacktestDeadLettered` exactly once
 
@@ -84,9 +84,11 @@
 - **BR-5**: Evaluator requires at least 1 completed trade to compute meaningful metrics; 0 trades → all metrics are 0/NaN with a flag
 - **BR-6**: The request producer creates `jobId` before publishing; the Job Queue preserves it unchanged across enqueue, retries, completion, failure, and dead-letter handling
 - **BR-7**: `BacktestFailed` is terminal-only and is published exactly once per failed `jobId`; retryable attempt failures never emit it
+- **BR-8**: BullMQ may recover stalled work with at-least-once execution, so result persistence and terminal side effects MUST be idempotent on `jobId`/`backtestResultId`
+- **BR-9**: `202 queued` means Redis has accepted the BullMQ job. Publishing `BacktestRequested` alone MUST NOT enqueue work.
 
 ## 8. Related
 - **Contracts**: `kb/contracts/strategy.yaml`, `kb/contracts/events.yaml`
-- **ADRs**: ADR-0003 (Plugin Architecture), ADR-0006 (Job Queue for Backtesting), ADR-0008 (Strategy Versioning)
+- **ADRs**: ADR-0003 (Plugin Architecture), ADR-0006 (Job Queue for Backtesting), ADR-0008 (Strategy Versioning), ADR-0013 (BullMQ/Redis)
 - **Module files**: `kb/modules/strategy-engine.md`, `kb/modules/event-infrastructure.md`, `kb/modules/market-data.md`
 - **Related flows**: `kb/flows/strategy-search-loop.md` (automated backtest via loop), `kb/flows/leaderboard-update.md` (reaction to BacktestCompleted)

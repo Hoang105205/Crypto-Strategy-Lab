@@ -10,7 +10,7 @@
 
 - [x] Supabase project exists and its Postgres instance is active (Supabase Dashboard). *(Verified 2026-08-10: migration applied.)*
 - [x] Connection string obtained: Dashboard → **Connect** → **Session mode** (direct connection, port 5432). Do NOT use the transaction pooler (port 6543) — Prisma `migrate dev` needs a direct connection. *(Pitfall fixed: password special chars must be URL-encoded (`@`→`%40`, `#`→`%23`) and the whole value quoted in `.env`, else dotenv truncates at `#`.)*
-- [x] Docker is no longer required for this feature. (`docker-compose.yml` still defines a Redis container for the future BullMQ queue — only needed later by Phương.)
+- [x] Docker is not required by Market Data itself. Repository-level Redis is required by Event Infrastructure's accepted BullMQ target (ADR-0013), not by this feature's runtime logic.
 
 ## 2. Environment variables (`.env`)
 

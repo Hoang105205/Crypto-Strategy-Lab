@@ -22,15 +22,27 @@ interface IJobQueue {
 - `source=USER` requires absent/null `loopRunId`.
 - `source=SEARCH_LOOP` requires non-null `loopRunId`.
 - Duplicate `jobId` returns conflict and creates no second execution.
+- The required adapter is `BullMqJobQueue`; it passes the UUID as BullMQ `jobId` in queue `backtest`.
+- Request producers MUST await `enqueue`; `BacktestRequested` is published only after success and is not consumed to create the job.
 
 ## Scheduling
 
-- Source priority: `USER` before `SEARCH_LOOP`.
-- Ordering inside each source: FIFO by enqueue order.
+- BullMQ priority: `USER=1`, `SEARCH_LOOP=10` (lower numeric value runs first).
+- Ordering inside equal priority: FIFO by enqueue order.
 - Default concurrency: 3.
 - Attempt 1 failure → 1s wait → attempt 2.
 - Attempt 2 failure → 4s wait → attempt 3.
 - Attempt 3 failure → terminal dead-letter path.
+- Waiting/delayed jobs are stored in Redis and survive a NestJS restart.
+- Workers run in the NestJS process with graceful shutdown; stalls may cause at-least-once execution.
+
+## Redis and Retention
+
+- Redis persistence: AOF enabled in the documented Docker Compose environment.
+- Producer connection: bounded request retries and stable `503 QUEUE_UNAVAILABLE` on failure.
+- Worker connection: persistent reconnect behavior.
+- Completed and failed jobs: bounded by configured age/count retention.
+- Terminal failed jobs remain in BullMQ's failed set and are mirrored idempotently to PostgreSQL `DeadLetterJob`.
 
 ## Strategy Integration Ports
 
@@ -56,6 +68,7 @@ These ports are owned/provided by Strategy Engine. Event Infrastructure does not
 - Retryable attempt failure publishes no failure Event.
 - Exhausted or non-retryable failure publishes exactly one `BacktestFailed` and one `BacktestDeadLettered`.
 - Zero candles and unknown Strategy Version are non-retryable.
+- Result persistence, completion publication, and DLQ mirroring are idempotent under stalled recovery.
 
 ## Queue API
 
@@ -75,5 +88,4 @@ These ports are owned/provided by Strategy Engine. Event Infrastructure does not
 { "jobId": "uuid", "status": "QUEUED" }
 ```
 
-**Errors**: `404 JOB_NOT_FOUND`, `409 JOB_ALREADY_RESOLVED`, `503 STRATEGY_ENGINE_UNAVAILABLE`.
-
+**Errors**: `404 JOB_NOT_FOUND`, `409 JOB_ALREADY_RESOLVED`, `503 QUEUE_UNAVAILABLE`, `503 STRATEGY_ENGINE_UNAVAILABLE`.

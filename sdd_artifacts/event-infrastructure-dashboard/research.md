@@ -15,10 +15,10 @@
 - **KB reference**: ADR-0006; `kb/modules/event-infrastructure.md` Job Retry sequence.
 
 ### D3: Manual Job Priority
-- **Chosen**: Two FIFO source queues; dequeue `USER` first, otherwise `SEARCH_LOOP`.
+- **Chosen**: One BullMQ queue with priority `1` for `USER` and `10` for `SEARCH_LOOP`; equal-priority jobs remain FIFO.
 - **Rationale**: Prevents a long search from starving interactive requests while maintaining deterministic ordering.
-- **Alternatives considered**: Strict global FIFO; numeric heap priority. Global FIFO harms responsiveness; a heap is unnecessary for two fixed classes.
-- **KB reference**: `kb/modules/event-infrastructure.md` open question and ADR-0006 consequence.
+- **Alternatives considered**: Strict global FIFO; separate physical queues. Global FIFO harms responsiveness; separate queues complicate global concurrency and stats.
+- **KB reference**: ADR-0013 and `kb/contracts/events.yaml` `queue_runtime`.
 
 ### D4: Event Delivery Semantics
 - **Chosen**: Fire-and-forget publication with subscriber wrappers that catch sync failures and attach rejection handlers to async work; Event Envelope version starts at 1.
@@ -26,11 +26,15 @@
 - **Alternatives considered**: Await all subscribers; expose the underlying emitter. Both change the contract/coupling model.
 - **KB reference**: ADR-0005 and `kb/contracts/events.yaml` `IEventBus`.
 
-### D5: Deterministic Queue Scheduling and Testing
-- **Chosen**: In-memory source queues plus a job registry, bounded dispatcher, and injectable clock/scheduler abstraction; test with fake timers and polling predicates.
-- **Rationale**: Meets MVP simplicity and makes retry timing/concurrency deterministic without long sleeps or constructor-injected primitive arrays.
-- **Alternatives considered**: BullMQ now; raw `setTimeout` sleeps in tests. BullMQ is out of scope; sleeps are flaky per agent learning.
-- **KB reference**: ADR-0006, ADR-0012, `agent_learn/lessons/market-data-backend-2026-08-10.md`.
+`BacktestRequested` is therefore observational: Strategy Engine/Loop Controller first await
+`IJobQueue.enqueue`, then publish it. Enqueuing from a fire-and-forget subscriber was rejected
+because the producer could return `202` before Redis acceptance and could not surface an outage.
+
+### D5: BullMQ/Redis Queue Backend and Testing
+- **Chosen**: `BullMqJobQueue` backed by Redis with production options exercised in integration tests against disposable Redis; unit-test domain processors with ports/fakes.
+- **Rationale**: ADR-0013 makes durability, priority, retry, recovery, and inspection delivered behavior. Testing the real adapter catches Redis/BullMQ state mapping that fake schedulers cannot.
+- **Alternatives considered**: Retain the in-memory adapter; RabbitMQ; Kafka; mock BullMQ entirely. The first contradicts the upgrade, brokers add unnecessary platform scope, and mocking alone cannot prove restart recovery.
+- **KB reference**: ADR-0013; `kb/contracts/events.yaml`.
 
 ### D6: Strategy Engine Integration Boundary
 - **Chosen**: Add Strategy Engine-owned public ports for resolving immutable Strategy Versions/executable Strategies and saving/reading Backtest Results. Event Infrastructure consumes tokens only and uses test doubles independently.
@@ -38,11 +42,29 @@
 - **Alternatives considered**: Worker queries `StrategyVersion`/`BacktestResult` directly; internal HTTP calls; import `StrategyRegistry`. All introduce forbidden coupling or needless transport.
 - **KB reference**: `kb/MODULES.md` boundary rules; `kb/modules/event-infrastructure.md` data ownership.
 
-### D7: Event Infrastructure Persistence
-- **Chosen**: Prisma repositories inside Event Infrastructure for `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, and `DeadLetterJob`; queue/status remains in memory.
-- **Rationale**: These are the module's owned entities. Persistence supports restart reconciliation and snapshot reads while keeping MVP queue simple.
-- **Alternatives considered**: Persist all queue jobs; keep Loop/Leaderboard entirely in memory. The former exceeds MVP; the latter contradicts existing models and recovery/read requirements.
-- **KB reference**: ADR-0012; module data model Section 6.
+### D7: Queue State and Event Infrastructure Persistence
+- **Chosen**: BullMQ stores queue lifecycle in Redis; Prisma stores `LeaderboardEntry`, `SearchLoopRun`, `SearchLoopCandidate`, and the durable `DeadLetterJob` audit mirror.
+- **Rationale**: Redis is authoritative for live queue state while PostgreSQL preserves stable module-owned projections and DLQ audit independently of BullMQ retention.
+- **Alternatives considered**: Duplicate every queue transition in PostgreSQL; remove `DeadLetterJob`; keep Loop/Leaderboard in memory. These create dual-write complexity, lose audit/API stability, or contradict snapshot requirements.
+- **KB reference**: ADR-0013; module data model Section 6.
+
+### D16: Redis Connection and Persistence Policy
+- **Chosen**: Docker Compose Redis uses AOF. Queue-producing paths use bounded/fail-fast Redis request retries; worker connections reconnect persistently. Credentials are environment-only and never logged.
+- **Rationale**: HTTP callers must not receive false queued acknowledgements or wait forever, while workers should resume automatically after a transient Redis outage.
+- **Alternatives considered**: Redis without persistence; identical retry behavior for producers and workers; fail-open enqueue. Each risks lost work or misleading API behavior.
+- **KB reference**: ADR-0013.
+
+### D17: Retry, Stalls, and Idempotency
+- **Chosen**: Three total BullMQ attempts with a custom 1s/4s backoff; terminal jobs remain failed and mirror once to `DeadLetterJob`. Graceful shutdown calls `Worker.close()`; stalled recovery is accepted as at-least-once execution.
+- **Rationale**: BullMQ owns retry/lock state, but worker loss can cause re-execution. Idempotent result persistence and event/dead-letter guards protect domain state.
+- **Alternatives considered**: Treat stalls as immediate terminal failure; delete failed jobs; publish terminal events from generic QueueEvents alone. These reduce recovery or make domain side effects race-prone.
+- **KB reference**: ADR-0013; `kb/contracts/events.yaml`.
+
+### D18: Worker Topology
+- **Chosen**: Run BullMQ Worker inside NestJS for this feature.
+- **Rationale**: `IEventBus` is EventEmitter2 and process-local. A separate worker could run the job but could not deliver `BacktestCompleted` to Leaderboard/Loop subscribers without another transport.
+- **Alternatives considered**: Separate workers immediately; Redis Pub/Sub ad hoc inside the worker. Both expand scope or bypass `IEventBus`.
+- **KB reference**: ADR-0005; ADR-0013.
 
 ### D8: Minimal Schema Corrections
 - **Chosen**: Add `LeaderboardEntry.executedAt`; add unique `SearchLoopCandidate.jobId` and `updatedAt`; make `stopOnNoImprovementIterations` non-null default 50.
@@ -96,7 +118,7 @@
 
 - `winRate` is `[0,1]` per Strategy contract.
 - Canonical names are `/strategies`, `getCandlesRange`, and `run`.
-- Queue backend is in memory for MVP; BullMQ is a migration path only.
+- Queue backend is BullMQ/Redis; the in-memory implementation and ADR-0012 are superseded.
+- BullMQ workers remain in the NestJS process until `IEventBus` becomes cross-process.
 - `MarketDataUpdated` and `NewsCollected` remain reserved with no MVP consumer.
 - Strategy algorithms and Strategy-owned persistence are supplied through public ports, not implemented inside Event Infrastructure.
-

@@ -117,15 +117,15 @@ erDiagram
 | `deadLetteredAt` | DateTime | generated | Terminal time |
 | `resolvedAt` | DateTime | nullable | Set when manual retry is accepted |
 
-## In-Memory Models
+## Redis/BullMQ Operational Models
 
-### JobRequest
+### BullMQ Backtest Job
 
-Holds `jobId`, job type, contract payload, attempt, maximum attempts, correlation identity, created time, and next available time. The queue retains one registry entry per `jobId` across retries.
+Stored by BullMQ in Redis under queue `backtest`. BullMQ `job.id` is the producer UUID. Job data contains the contract payload and correlation identity; BullMQ metadata owns attempts made, priority, timestamps, delay, failure reason, progress, and lifecycle state. USER priority is `1`; SEARCH_LOOP priority is `10`.
 
 ### JobStatus
 
-Holds lifecycle status, current attempt, last sanitized error, and update time. Completion timestamps are retained in memory to calculate `completedLast24h`.
+`JobStatus` is a projection of BullMQ states: waiting/prioritized/delayed → `QUEUED`, active → `PROCESSING`, completed → `COMPLETED`, failed before terminal handling → `FAILED`, and a terminal failed job with an unresolved PostgreSQL mirror → `DEAD_LETTER`. `completedLast24h` is derived from retained BullMQ completion timestamps.
 
 ### EventEnvelope
 
@@ -141,6 +141,7 @@ Immutable delivery wrapper. It is not persisted in MVP; correlation identity is 
 - Existing `SearchLoopCandidate.loopRunId` supports run detail reads.
 - New unique `SearchLoopCandidate.jobId` supports terminal Event idempotency.
 - Existing unique `DeadLetterJob.jobId` prevents duplicate DLQ transitions.
+- BullMQ custom `jobId` prevents a second live/retained job with the same producer UUID in queue `backtest`.
 
 ## Migration Notes
 
@@ -158,4 +159,6 @@ Immutable delivery wrapper. It is not persisted in MVP; correlation identity is 
 - A run in a terminal state never generates another candidate.
 - A paused run may record its current in-flight candidate but does not generate a successor.
 - `source=USER` requires no Loop ID; `source=SEARCH_LOOP` requires a Loop ID.
-
+- Redis is authoritative for live queue lifecycle; PostgreSQL `DeadLetterJob` is the terminal audit/API mirror.
+- BullMQ retention must not remove a job before the configured operator inspection window.
+- Recovered/stalled execution may occur at least once; result and terminal side effects remain idempotent.
