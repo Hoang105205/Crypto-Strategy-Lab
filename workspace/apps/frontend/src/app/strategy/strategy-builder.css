@@ -1,0 +1,24 @@
+/* Strategy Builder Tailored Styles */
+
+.strategy-builder-bg {
+  background-color: #0b0e11;
+  color: #eaecef;
+}
+
+.strategy-glass-card {
+  background-color: rgba(30, 35, 41, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid #2b3139;
+}
+
+.strategy-gold-btn {
+  background-color: #fcd535;
+  color: #0b0e11;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.strategy-gold-btn:hover {
+  background-color: #f0b90b;
+  box-shadow: 0 4px 12px rgba(252, 213, 53, 0.2);
+}
