@@ -5,8 +5,21 @@
 import { Module } from '@nestjs/common';
 import { StrategyRegistry } from './registry/strategy.registry';
 
+import {
+  MovingAverageStrategy,
+  RsiStrategy,
+  BollingerBandsStrategy,
+  SupportResistanceStrategy,
+} from './strategies';
+
 @Module({
-  providers: [StrategyRegistry],
+  providers: [
+    StrategyRegistry,
+    MovingAverageStrategy,
+    RsiStrategy,
+    BollingerBandsStrategy,
+    SupportResistanceStrategy,
+  ],
   exports: [StrategyRegistry],
 })
 export class StrategyModule {}
