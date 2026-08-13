@@ -5,10 +5,10 @@
 ## REST Endpoints (NestJS Backend :3001)
 
 ### 1. `GET /api/news`
-Fetch latest news articles with sentiment classifications.
+Fetch paginated news articles filtered by coin or multiple coins.
 
 **Query Parameters**:
-- `limit` (number, optional, default: 10, max: 50): Number of articles to return.
+- `limit` (number, optional, default: 10, max: 50): Number of articles to return per page.
 - `offset` (number, optional, default: 0): Offset for pagination / Load More.
 - `coin` (string, optional, e.g. `'BTC'`): Single coin filter.
 - `coins` (string, optional, e.g. `'BTC,ETH'`): Comma-separated multi-coin filter.
@@ -44,10 +44,11 @@ Fetch latest news articles with sentiment classifications.
 ---
 
 ### 2. `GET /api/sentiment/aggregate`
-Fetch aggregate sentiment score and label for a coin over a timeframe.
+Fetch aggregate sentiment score and label for a coin or multiple coins over a timeframe.
 
 **Query Parameters**:
-- `coin` (string, required, e.g. `'BTC'`): Target coin ticker.
+- `coin` (string, optional, e.g. `'BTC'`): Single target coin ticker.
+- `coins` (string, optional, e.g. `'BTC,ETH'`): Comma-separated multi-coin tickers.
 - `timeframe` (string, optional, default: `'1h'`, enum: `['1h', '24h', '7d']`): Time window.
 
 **Response (200 OK)**:
@@ -57,35 +58,5 @@ Fetch aggregate sentiment score and label for a coin over a timeframe.
   "label": "POSITIVE",
   "articleCount": 12,
   "updatedAt": "2026-08-10T10:00:00.000Z"
-}
-```
-
----
-
-## Internal Micro-Service Endpoint (Python FastAPI :8000)
-
-### `POST /analyze`
-Internal HTTP REST call from NestJS `SentimentClient` to Python FastAPI. *Never exposed to frontend.*
-
-**Request**:
-```json
-{
-  "text": "Bitcoin price rallies following positive economic indicators and ETF approval."
-}
-```
-
-**Response (200 OK)**:
-```json
-{
-  "score": 0.76,
-  "label": "POSITIVE"
-}
-```
-
-**Degraded Response (Fallback on error/timeout)**:
-```json
-{
-  "score": 0.0,
-  "label": "NEUTRAL"
 }
 ```

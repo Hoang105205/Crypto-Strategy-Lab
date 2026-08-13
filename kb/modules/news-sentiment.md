@@ -148,8 +148,8 @@ Cron/User        INewsProvider        NewsService        SentimentClient       F
 ## 7. API Surface
 See `kb/contracts/news.yaml`.
 
-- **`GET /api/news?limit=10&coin=BTC`**: Returns latest news articles filtered by coin with sentiment score and label.
-- **`GET /api/sentiment/aggregate?timeframe=1h&coin=BTC`**: Returns aggregate sentiment score for specific coin.
+- **`GET /api/news?limit=10&offset=0&coin=BTC&coins=BTC,ETH`**: Returns paginated news articles filtered by single or multiple coins with sentiment score, label, and pagination metadata (`total`, `offset`, `limit`, `hasMore`).
+- **`GET /api/sentiment/aggregate?timeframe=1h&coin=BTC`**: Returns aggregate sentiment score for a single coin or multiple coins.
 - **`POST /analyze`** *(Internal Python FastAPI)*: Receives article text and returns ML sentiment score & label.
 
 ---

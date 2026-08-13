@@ -132,29 +132,55 @@ export class NewsService {
   }
 
   /**
-   * Get latest news articles from DB with optional coin and limit filter
+   * Get latest news articles from DB with optional offset-based pagination and coin/multi-coin filter
    */
-  async getLatestNews(limit: number = DEFAULT_NEWS_FETCH_LIMIT, coin?: string): Promise<NewsArticle[]> {
+  async getLatestNews(
+    limit: number = DEFAULT_NEWS_FETCH_LIMIT,
+    offset: number = 0,
+    coin?: string,
+    coins?: string[]
+  ): Promise<{ data: NewsArticle[]; pagination: { total: number; limit: number; offset: number; hasMore: boolean } }> {
     const whereCondition: any = {};
-    if (coin) {
+
+    if (coins && coins.length > 0) {
+      whereCondition.relatedCoins = {
+        hasSome: coins.map((c) => c.toUpperCase()),
+      };
+    } else if (coin) {
       whereCondition.relatedCoins = {
         has: coin.toUpperCase(),
       };
     }
 
-    const articles = await this.prisma.newsArticle.findMany({
-      where: whereCondition,
-      orderBy: { publishedAt: 'desc' },
-      take: limit,
-    });
+    const [total, articles] = await Promise.all([
+      this.prisma.newsArticle.count({ where: whereCondition }),
+      this.prisma.newsArticle.findMany({
+        where: whereCondition,
+        orderBy: { publishedAt: 'desc' },
+        skip: offset,
+        take: limit,
+      }),
+    ]);
 
-    return articles as unknown as NewsArticle[];
+    return {
+      data: articles as unknown as NewsArticle[],
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + articles.length < total,
+      },
+    };
   }
 
   /**
-   * Get aggregate sentiment score and label for a coin over a timeframe ('1h', '24h', '7d')
+   * Get aggregate sentiment score and label for a coin / multi-coins over a timeframe ('1h', '24h', '7d')
    */
-  async getAggregateSentiment(coin?: string, timeframe: string = '24h'): Promise<{ score: number; label: SentimentLabel; articleCount: number; updatedAt: string }> {
+  async getAggregateSentiment(
+    coin?: string,
+    timeframe: string = '24h',
+    coins?: string[]
+  ): Promise<{ score: number; label: SentimentLabel; articleCount: number; updatedAt: string }> {
     let timeframeMs = 86400000; // 24h default
     if (timeframe === '1h') timeframeMs = 3600000;
     if (timeframe === '7d') timeframeMs = 604800000;
@@ -165,7 +191,11 @@ export class NewsService {
       sentimentScore: { not: null },
     };
 
-    if (coin) {
+    if (coins && coins.length > 0) {
+      whereCondition.relatedCoins = {
+        hasSome: coins.map((c) => c.toUpperCase()),
+      };
+    } else if (coin) {
       whereCondition.relatedCoins = {
         has: coin.toUpperCase(),
       };
@@ -175,10 +205,14 @@ export class NewsService {
       where: whereCondition,
     });
 
-    // Fallback if no articles in strict window: query all recent articles for target coin
+    // Fallback if no articles in strict window: query all recent articles for target coin(s)
     if (articles.length === 0) {
       const fallbackWhere: any = { sentimentScore: { not: null } };
-      if (coin) fallbackWhere.relatedCoins = { has: coin.toUpperCase() };
+      if (coins && coins.length > 0) {
+        fallbackWhere.relatedCoins = { hasSome: coins.map((c) => c.toUpperCase()) };
+      } else if (coin) {
+        fallbackWhere.relatedCoins = { has: coin.toUpperCase() };
+      }
       articles = await this.prisma.newsArticle.findMany({
         where: fallbackWhere,
         take: 20,

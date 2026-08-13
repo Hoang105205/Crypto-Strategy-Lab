@@ -1,0 +1,19 @@
+feature: news-pagination-multicoin
+description: |
+  Nâng cấp đường ống News & Sentiment với 2 tính năng quan trọng:
+  1. Phân trang Offset Pagination (`limit`, `offset`) trả về metadata { total, limit, offset, hasMore } phục vụ nút "More stories" trên UI.
+  2. Lọc tin tức theo một hoặc nhiều đồng coin cùng lúc (`coin=BTC` hoặc `coins=BTC,ETH,SOL`).
+  3. Cập nhật lý do kiến trúc so sánh Local VADER ML vs External LLM API trong ADR-0009.
+created: 2026-08-13T10:21:00Z
+status: implemented
+phases:
+  - specify: completed
+  - plan: completed
+  - tasks: completed
+  - implement: completed
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected: [News & Sentiment, Frontend]
