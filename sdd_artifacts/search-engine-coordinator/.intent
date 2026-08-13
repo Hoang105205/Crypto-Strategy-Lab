@@ -1,0 +1,17 @@
+feature: search-engine-coordinator
+description: |
+  Triển khai SearchEngine coordinator và chuẩn hóa thư mục search
+created: 2026-08-13T14:10:00Z
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Strategy Engine
