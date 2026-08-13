@@ -30,8 +30,8 @@
 7. **Score & Classification**: Python VADER model classifies sentiment (`POSITIVE`, `NEGATIVE`, `NEUTRAL`) and calculates compound score (e.g. `0.82`).
 8. **Persist Sentiment**: `NewsService` saves the resulting `SentimentScore` linked to `NewsArticle` in PostgreSQL.
 9. **Display & Strategy Plugin**:
-   - **Frontend UI**: Next.js fetches `/api/news?coin=BTC` and `/api/sentiment/aggregate?coin=BTC` to render News Feed & Sentiment Gauge.
-   - **Strategy Engine**: `NewsSentimentStrategy` queries aggregate sentiment score for specific coins (Score > +0.7 → `BUY`, Score < -0.7 → `SELL`). Search engine can combine it into composite strategies (`MA + RSI + News Sentiment`).
+   - **Frontend UI**: Next.js fetches paginated news `GET /api/news?limit=10&offset=0&coin=BTC` (or multi-coin `GET /api/news?coins=BTC,ETH`) and `/api/sentiment/aggregate?coin=BTC` to render News Feed & Sentiment Gauge with pagination metadata (`total`, `offset`, `limit`, `hasMore`).
+   - **Strategy Engine**: `NewsSentimentStrategy` queries aggregate sentiment score for specific coins (Score > +0.5 → `BUY`, Score < -0.5 → `SELL`). Search engine can combine it into composite strategies (`MA + RSI + News Sentiment`).
 
 ---
 
@@ -48,6 +48,13 @@
 - User clicks "Refresh News" on Next.js Frontend (`app/news/page.tsx`).
 - Request calls NestJS `GET /api/news?forceRefresh=true`.
 - `NewsService` executes full pipeline immediately instead of waiting for cron scheduler.
+
+### Offset Pagination & Multi-Coin Load More (Frontend)
+- User opens Next.js News Feed (`app/news/page.tsx`).
+- Initial load requests `GET /api/news?limit=20&offset=0&coin=ALL` (or multi-coin `GET /api/news?limit=20&offset=0&coins=BTC,ETH`).
+- Response returns `{ data: articles, pagination: { total, limit, offset, hasMore } }`.
+- When user clicks "📰 More stories", Frontend increments offset (`offset = 20`) and calls `GET /api/news?limit=10&offset=20&coin=BTC`.
+- Backend NestJS executes `findMany({ skip: offset, take: limit })` with `hasSome: coins` or `has: coin` and returns subsequent page without duplicating articles.
 
 ---
 
