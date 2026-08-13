@@ -107,6 +107,31 @@
 
 ---
 
+## Phase 8: Convergence
+
+**Purpose**: Close gaps between specification and implementation
+**Generated**: 2026-08-12 by /hoang-sdd-converge
+
+- [X] CV001 🟢 [enhancement] Automatic VADER ML Re-analysis Recovery — Automatically re-analyze fallback neutral articles when Python Sentiment Service recovers (`apps/backend/src/news/services/news.service.ts`)
+- [X] T026 Live RSS Data Fetching — Replace mock articles in `RSSProvider` with live RSS XML fetching & keyword coin extraction (`workspace/apps/backend/src/news/providers/rss.provider.ts`)
+
+---
+
+## Phase 9: UI Layout & Pagination Enhancements
+
+**Purpose**: Refine UI container sizing, full-width header bar, 2-line article cards, and More stories pagination button.
+
+- [X] T027 UI Layout & Container Refinement — Expand `NewsFeed` container to `max-w-7xl`, full-width header bar with zero text clipping, and 2-line title/snippet card layout (`workspace/apps/frontend/src/components/news/NewsFeed.tsx`)
+- [X] T028 "More stories" Pagination Implementation — Load 20 articles initially, append "More stories" button at the bottom of the feed fetching 10-item increments (`workspace/apps/frontend/src/components/news/NewsFeed.tsx`)
+
+**Checkpoint**: Feature `news-sentiment-pipeline` UI Layout & Pagination 100% Implemented and Verified.
+
+
+**Checkpoint**: Feature `news-sentiment-pipeline` 100% Converged and Verified.
+
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

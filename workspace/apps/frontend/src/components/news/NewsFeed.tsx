@@ -1,9 +1,9 @@
 'use client';
 
-// NewsFeed Component — Renders crypto news articles with sentiment badges & coin filters
+// NewsFeed Component — Renders crypto news articles with sentiment badges, coin filters & pagination
 // Owner: Thuan | See: contracts/news-api.md & kb/DESIGN.md
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 export interface NewsArticle {
   id: string;
@@ -30,7 +30,9 @@ interface NewsFeedProps {
   onCoinChange?: (coin: string) => void;
 }
 
-const AVAILABLE_COINS = ['ALL', 'BTC', 'ETH', 'SOL'];
+const AVAILABLE_COINS = ['ALL', 'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA'];
+const INITIAL_ARTICLE_LIMIT = 20;
+const PAGE_SIZE_INCREMENT = 10;
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
   selectedCoin = 'ALL',
@@ -39,17 +41,29 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [aggregate, setAggregate] = useState<AggregateSentiment | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>(selectedCoin);
+  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_ARTICLE_LIMIT);
+
+  // Mouse Drag-to-Scroll refs & state
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
 
   useEffect(() => {
-    fetchNewsData(activeTab);
+    setVisibleCount(INITIAL_ARTICLE_LIMIT);
+    fetchNewsData(activeTab, INITIAL_ARTICLE_LIMIT);
   }, [activeTab]);
 
-  const fetchNewsData = async (coinFilter: string) => {
+  const fetchNewsData = async (coinFilter: string, fetchLimit: number) => {
     setLoading(true);
     try {
-      const coinParam = coinFilter === 'ALL' ? '' : `?coin=${coinFilter}`;
-      const newsRes = await fetch(`http://localhost:3001/api/news${coinParam}`);
+      const coinParam = coinFilter === 'ALL' ? '' : `coin=${coinFilter}`;
+      const limitParam = `limit=${Math.max(fetchLimit, 50)}`;
+      const queryStr = [coinParam, limitParam].filter(Boolean).join('&');
+      const newsRes = await fetch(`http://localhost:3001/api/news?${queryStr}`);
+
       if (newsRes.ok) {
         const newsJson = await newsRes.json();
         setArticles(newsJson.data || []);
@@ -118,49 +132,134 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     onCoinChange?.(coin);
   };
 
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    const newCount = visibleCount + PAGE_SIZE_INCREMENT;
+    if (newCount > articles.length) {
+      await fetchNewsData(activeTab, newCount);
+    }
+    setVisibleCount(newCount);
+    setLoadingMore(false);
+  };
+
+  // Mouse Drag-to-Scroll Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!tabsRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - tabsRef.current.offsetLeft);
+    setScrollLeft(tabsRef.current.scrollLeft);
+  };
+
+  const handleMouseLeaveOrUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !tabsRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - tabsRef.current.offsetLeft;
+    const walk = (x - startX) * 2;
+    tabsRef.current.scrollLeft = scrollLeft - walk;
+  };
+
+  // Date Formatting Helpers
+  const getRelativeTimeString = (dateStr: string): string => {
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+      if (diffInSeconds < 60) return 'Just now';
+      const diffInMinutes = Math.floor(diffInSeconds / 60);
+      if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+      const diffInHours = Math.floor(diffInMinutes / 60);
+      if (diffInHours < 24) return `${diffInHours}h ago`;
+      const diffInDays = Math.floor(diffInHours / 24);
+      return `${diffInDays}d ago`;
+    } catch {
+      return 'Recently';
+    }
+  };
+
+  const getFullDateTimeString = (dateStr: string): string => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const getSentimentBadge = (label?: string | null, score?: number | null) => {
     switch (label) {
       case 'POSITIVE':
         return (
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+          <span
+            className="text-xs font-extrabold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/20 shrink-0 inline-block"
+            style={{ padding: '8px 18px' }}
+          >
             🟢 POSITIVE {score !== null && score !== undefined ? `(+${score})` : ''}
           </span>
         );
       case 'NEGATIVE':
         return (
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
+          <span
+            className="text-xs font-extrabold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 shadow-sm shadow-rose-500/20 shrink-0 inline-block"
+            style={{ padding: '8px 18px' }}
+          >
             🔴 NEGATIVE {score !== null && score !== undefined ? `(${score})` : ''}
           </span>
         );
       default:
         return (
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+          <span
+            className="text-xs font-extrabold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-sm shadow-amber-500/20 shrink-0 inline-block"
+            style={{ padding: '8px 18px' }}
+          >
             🟡 NEUTRAL {score !== null && score !== undefined ? `(${score})` : ''}
           </span>
         );
     }
   };
 
+  const displayedArticles = articles.slice(0, visibleCount);
+
   return (
-    <div className="w-full max-w-6xl mx-auto p-6 space-y-6 text-slate-100 font-sans">
-      {/* Header & Sentiment Gauge */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-xl shadow-2xl">
-        <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
+    <div
+      className="w-full max-w-6xl mx-auto flex flex-col items-center text-slate-100 font-sans"
+      style={{ paddingBottom: '100px' }}
+    >
+      {/* 1. Header Bar — Guaranteed 40px top/bottom and 48px left/right padding */}
+      <div
+        className="w-full rounded-3xl bg-slate-900/90 border border-slate-800/90 backdrop-blur-2xl shadow-2xl flex flex-col md:flex-row items-center justify-between gap-8 overflow-hidden"
+        style={{ padding: '40px 48px' }}
+      >
+        <div className="space-y-4 text-center md:text-left max-w-3xl">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight bg-gradient-to-r from-cyan-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent leading-tight">
             Crypto News & Sentiment Analytics
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm sm:text-base text-slate-400 leading-relaxed font-medium">
             Real-time multi-source crypto RSS/Crawler ingestion powered by VADER ML NLP Analysis
           </p>
         </div>
 
         {aggregate && (
-          <div className="flex items-center gap-4 px-5 py-3 rounded-xl bg-slate-800/60 border border-slate-700/50">
+          <div
+            className="flex items-center gap-6 rounded-2xl bg-slate-800/90 border border-slate-700/80 shadow-2xl shrink-0"
+            style={{ padding: '20px 32px' }}
+          >
             <div className="text-right">
-              <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+              <div className="text-xs text-slate-400 uppercase tracking-widest font-bold">
                 Aggregate Mood ({activeTab})
               </div>
-              <div className="text-lg font-extrabold text-slate-100">
+              <div className="text-2xl font-black text-slate-100 mt-1">
                 Score: {aggregate.score > 0 ? `+${aggregate.score}` : aggregate.score}
               </div>
             </div>
@@ -169,77 +268,125 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         )}
       </div>
 
-      {/* Coin Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+      {/* 2. Coin Filter Tabs — Guaranteed 50px vertical margin & explicit button padding */}
+      <div
+        ref={tabsRef}
+        onMouseDown={handleMouseDown}
+        onMouseLeave={handleMouseLeaveOrUp}
+        onMouseUp={handleMouseLeaveOrUp}
+        onMouseMove={handleMouseMove}
+        className="w-full flex items-center justify-center gap-4 overflow-x-auto overflow-y-hidden select-none cursor-grab active:cursor-grabbing [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        style={{ marginTop: '50px', marginBottom: '50px', paddingTop: '10px', paddingBottom: '10px' }}
+      >
         {AVAILABLE_COINS.map((coin) => (
           <button
             key={coin}
             onClick={() => handleTabClick(coin)}
-            className={`px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${activeTab === coin
-                ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/20'
-                : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+            className={`rounded-2xl text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer ${activeTab === coin
+                ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-xl shadow-indigo-500/25 border border-indigo-400/40 scale-105'
+                : 'bg-slate-900/70 text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 border border-slate-800/60'
               }`}
+            style={{ padding: '14px 28px' }}
           >
             {coin === 'ALL' ? '🌐 All Markets' : `🪙 ${coin}`}
           </button>
         ))}
       </div>
 
-      {/* Articles Feed List */}
+      {/* 3. Articles Feed Grid — 2 COLUMNS layout with relative time & full datetime */}
       {loading ? (
-        <div className="flex justify-center items-center py-20 text-slate-400">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
-          <span className="ml-3 text-sm">Analyzing live market feeds...</span>
+        <div className="flex flex-col justify-center items-center py-28 text-slate-400 space-y-4 w-full">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
+          <span className="text-base font-semibold">Analyzing live market feeds...</span>
         </div>
-      ) : articles.length === 0 ? (
-        <div className="text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800 text-slate-400">
-          No news articles found for {activeTab}.
+      ) : displayedArticles.length === 0 ? (
+        <div className="text-center py-24 bg-slate-900/40 rounded-3xl border border-slate-800/80 text-slate-400 text-lg w-full">
+          No news articles found for <span className="font-bold text-cyan-400">{activeTab}</span>.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {articles.map((article) => (
-            <div
-              key={article.id}
-              className="flex flex-col justify-between p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-cyan-500/5 group"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span className="font-semibold text-indigo-400">{article.source}</span>
-                  <span>{new Date(article.publishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-
-                <a
-                  href={article.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-base font-semibold text-slate-100 group-hover:text-cyan-400 transition-colors line-clamp-2"
-                >
-                  {article.title}
-                </a>
-
-                <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
-                  {article.content}
-                </p>
-              </div>
-
-              <div className="mt-5 pt-4 border-t border-slate-800/60 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  {article.relatedCoins?.map((coin) => (
-                    <span
-                      key={coin}
-                      className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-800 text-slate-300 border border-slate-700"
-                    >
-                      {coin}
+        <div className="w-full flex flex-col items-center">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
+            {displayedArticles.map((article) => (
+              <div
+                key={article.id}
+                className="flex flex-col justify-between rounded-3xl bg-slate-900/80 border border-slate-800/90 hover:border-indigo-500/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-cyan-500/10 group min-h-[270px] w-full box-border"
+                style={{ padding: '32px 36px' }}
+              >
+                <div className="space-y-4">
+                  {/* Top Card Header: Source on Left, Relative Time on Right */}
+                  <div className="flex items-center justify-between text-xs font-semibold" style={{ marginBottom: '12px' }}>
+                    <span className="font-bold text-indigo-400 text-sm">{article.source}</span>
+                    <span className="bg-indigo-950/80 text-cyan-300 font-extrabold border border-indigo-700/50" style={{ padding: '4px 14px', borderRadius: '9999px' }}>
+                      ⏱️ {getRelativeTimeString(article.publishedAt)}
                     </span>
-                  ))}
+                  </div>
+
+                  <a
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-lg font-extrabold text-slate-100 group-hover:text-cyan-400 transition-colors line-clamp-2 min-h-[3.5rem] leading-relaxed"
+                    style={{ marginBottom: '10px' }}
+                  >
+                    {article.title}
+                  </a>
+
+                  <p className="text-sm text-slate-400 line-clamp-2 min-h-[3rem] leading-relaxed">
+                    {article.content}
+                  </p>
+
+                  {/* Full Date & Time — Directly under content, ABOVE the divider line */}
+                  <div
+                    className="text-xs text-slate-400 font-semibold flex items-center gap-2"
+                    style={{ marginTop: '16px' }}
+                  >
+                    <span className="text-slate-400 text-sm">📅</span>
+                    <span className="text-slate-300">{getFullDateTimeString(article.publishedAt)}</span>
+                  </div>
                 </div>
 
-                <div>
-                  {getSentimentBadge(article.sentimentLabel, article.sentimentScore)}
+                {/* Divider Line & Footer: Related Coins on Left, Sentiment Badge on Right */}
+                <div
+                  className="border-t border-slate-800/80 flex items-center justify-between gap-4"
+                  style={{ marginTop: '20px', paddingTop: '20px' }}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {article.relatedCoins?.map((coin) => (
+                      <span
+                        key={coin}
+                        className="text-xs font-extrabold rounded-lg bg-slate-800 text-slate-200 border border-slate-700/80"
+                        style={{ padding: '6px 14px' }}
+                      >
+                        {coin}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="shrink-0">
+                    {getSentimentBadge(article.sentimentLabel, article.sentimentScore)}
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* 4. More Stories Button — Guaranteed 50px top & 80px bottom margin with generous button padding */}
+          {articles.length > visibleCount && (
+            <div
+              className="flex justify-center w-full"
+              style={{ marginTop: '50px', marginBottom: '80px' }}
+            >
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="w-full max-w-md text-base font-extrabold text-white bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 rounded-2xl shadow-2xl shadow-indigo-500/30 border border-indigo-400/40 transition-all duration-300 transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 cursor-pointer"
+                style={{ padding: '18px 40px' }}
+              >
+                <span className="text-xl">📰</span>
+                <span>{loadingMore ? 'Loading more stories...' : 'More stories'}</span>
+              </button>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

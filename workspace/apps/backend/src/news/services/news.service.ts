@@ -3,9 +3,9 @@
 
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { 
-  RawArticle, 
-  NewsArticle, 
+import {
+  RawArticle,
+  NewsArticle,
   DEFAULT_NEWS_FETCH_LIMIT,
   SENTIMENT_NEUTRAL_SCORE,
   SentimentLabel,
@@ -24,7 +24,7 @@ export class NewsService {
     @Inject(INEWS_PROVIDER_TOKEN)
     private readonly providers: INewsProvider[],
     private readonly sentimentClient: SentimentClient,
-  ) {}
+  ) { }
 
   /**
    * Collect all news from active INewsProvider instances, normalize, enrich with ML sentiment score, deduplicate, and persist to DB
@@ -55,6 +55,35 @@ export class NewsService {
         });
 
         if (existing) {
+          // If existing article has neutral/default label, re-analyze with Python VADER ML
+          if (existing.sentimentScore === 0 || existing.sentimentLabel === 'NEUTRAL' || !existing.sentimentScore) {
+            const textToAnalyze = `${raw.title}. ${raw.content}`;
+            const sentimentResult = await this.sentimentClient.analyzeText(textToAnalyze);
+            if (sentimentResult.score !== 0.0 || sentimentResult.label !== SentimentLabel.NEUTRAL) {
+              const updated = await this.prisma.newsArticle.update({
+                where: { id: existing.id },
+                data: {
+                  sentimentScore: sentimentResult.score,
+                  sentimentLabel: sentimentResult.label,
+                },
+              });
+              await this.prisma.sentimentScore.create({
+                data: {
+                  articleId: existing.id,
+                  score: sentimentResult.score,
+                  label: sentimentResult.label,
+                  model: 'VADER',
+                  scoredAt: now,
+                },
+              });
+              this.logger.log(
+                `Re-analyzed existing article [${existing.id}] with real VADER ML: ${sentimentResult.label} (${sentimentResult.score})`
+              );
+              savedArticles.push(updated as unknown as NewsArticle);
+              continue;
+            }
+          }
+
           this.logger.verbose(`Skipping existing article: ${raw.title}`);
           savedArticles.push(existing as unknown as NewsArticle);
           continue;
@@ -125,13 +154,13 @@ export class NewsService {
   /**
    * Get aggregate sentiment score and label for a coin over a timeframe ('1h', '24h', '7d')
    */
-  async getAggregateSentiment(coin?: string, timeframe: string = '1h'): Promise<{ score: number; label: SentimentLabel; articleCount: number; updatedAt: string }> {
-    let timeframeMs = 3600000; // 1h default
-    if (timeframe === '24h') timeframeMs = 86400000;
+  async getAggregateSentiment(coin?: string, timeframe: string = '24h'): Promise<{ score: number; label: SentimentLabel; articleCount: number; updatedAt: string }> {
+    let timeframeMs = 86400000; // 24h default
+    if (timeframe === '1h') timeframeMs = 3600000;
     if (timeframe === '7d') timeframeMs = 604800000;
 
-    const sinceDate = new Date(Date.now() - timeframeMs);
-    const whereCondition: any = {
+    let sinceDate = new Date(Date.now() - timeframeMs);
+    let whereCondition: any = {
       publishedAt: { gte: sinceDate },
       sentimentScore: { not: null },
     };
@@ -142,9 +171,19 @@ export class NewsService {
       };
     }
 
-    const articles = await this.prisma.newsArticle.findMany({
+    let articles = await this.prisma.newsArticle.findMany({
       where: whereCondition,
     });
+
+    // Fallback if no articles in strict window: query all recent articles for target coin
+    if (articles.length === 0) {
+      const fallbackWhere: any = { sentimentScore: { not: null } };
+      if (coin) fallbackWhere.relatedCoins = { has: coin.toUpperCase() };
+      articles = await this.prisma.newsArticle.findMany({
+        where: fallbackWhere,
+        take: 20,
+      });
+    }
 
     if (articles.length === 0) {
       return {
