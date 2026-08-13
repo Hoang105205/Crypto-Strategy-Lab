@@ -11,6 +11,6 @@
 - T011 (Dọn dẹp xóa thư mục `generators/`) đã bị skip do giới hạn môi trường terminal. Người dùng hoặc lệnh xoá an toàn sẽ cần thực thi bước này bằng tay.
 
 ## KB Updates Needed
-- [ ] Update kb/ARCHITECTURE.md: Bổ sung Facade Pattern cho việc lấy candidate thông qua `SearchEngine`.
-- [ ] Update kb/modules/strategy-engine.md: Sửa sơ đồ component (Generators nay nằm trong `strategy/search/` thay vì `strategy/generators/`).
-- [ ] Update kb/flows/strategy-search-loop.md: Cập nhật bước "LoopController gọi Strategy Engine" sẽ đi qua class `SearchEngine`.
+- [x] Update kb/ARCHITECTURE.md: Bổ sung Facade Pattern cho việc lấy candidate thông qua `SearchEngine`.
+- [x] Update kb/modules/strategy-engine.md: Sửa sơ đồ component (Generators nay nằm trong `strategy/search/` thay vì `strategy/generators/`).
+- [x] Update kb/flows/strategy-search-loop.md: Cập nhật bước "LoopController gọi Strategy Engine" sẽ đi qua class `SearchEngine`.

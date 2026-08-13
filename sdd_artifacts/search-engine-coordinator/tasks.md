@@ -83,3 +83,4 @@
 
 ### Medium Gaps
 - [x] CV001 ⚠️ [partial] Clean up old directory — plan.md and tasks.md (T011) require deleting `apps/backend/src/strategy/generators/`, but the directory and duplicated files still exist. (Resolved by User)
+- [x] CV002 ⚠️ [missing] Implement `ISearchEngine` interface — `contracts/search-engine-contract.md` requires `ISearchEngine` interface, but `SearchEngine` class does not implement it and the interface is not defined anywhere.

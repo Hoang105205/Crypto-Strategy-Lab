@@ -112,7 +112,7 @@ crypto-strategy-lab/
 > See `kb/flows/realtime-market-data.md` for full step-by-step flow with error handling.
 
 ### Strategy Backtest Flow (secondary use case)
-1. User request → Strategy Engine; search candidate → Loop Controller. The producer generates `jobId` + `correlationId`, awaits `IJobQueue.enqueue()`, and receives confirmation only after BullMQ stores the prioritized job in Redis.
+1. User request → Strategy Engine; Loop Controller gọi Facade `SearchEngine` để xin candidate strategies (RANDOM hoặc DOMAIN_GUIDED). The producer generates `jobId` + `correlationId`, awaits `IJobQueue.enqueue()`, and receives confirmation only after BullMQ stores the prioritized job in Redis.
 2. After durable enqueue, the producer publishes `BacktestRequested` as an observational notification (`source=USER` or `source=SEARCH_LOOP`); the queue does not subscribe to this Event. A BullMQ Worker then claims the Redis job.
 3. Worker calls `IMarketDataService.getCandlesRange()` to fetch historical candles
 4. Worker calls `IBacktester.run(strategy, candles, config)` → produces `Trade[]`

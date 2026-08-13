@@ -5,8 +5,13 @@ import { DomainGuidedGenerator } from './domain-guided.generator';
 
 export type SearchGeneratorType = 'RANDOM' | 'DOMAIN_GUIDED';
 
+export interface ISearchEngine {
+  generateCandidates(count: number, type: SearchGeneratorType): IStrategy[];
+}
+
+
 @Injectable()
-export class SearchEngine {
+export class SearchEngine implements ISearchEngine {
   constructor(
     private readonly randomGenerator: RandomGenerator,
     private readonly domainGuidedGenerator: DomainGuidedGenerator,
