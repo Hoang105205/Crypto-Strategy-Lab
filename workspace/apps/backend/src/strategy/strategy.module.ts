@@ -14,7 +14,7 @@ import {
 
 import { BacktesterService } from './backtester';
 import { EvaluatorService } from './evaluator';
-import { RandomGenerator, DomainGuidedGenerator } from './generators';
+import { RandomGenerator, DomainGuidedGenerator, SearchEngine } from './search';
 import { StrategyVersioningService } from './versioning';
 import { EventBusService } from './events';
 import { StrategyController } from './controllers';
@@ -31,6 +31,7 @@ import { StrategyController } from './controllers';
     EvaluatorService,
     RandomGenerator,
     DomainGuidedGenerator,
+    SearchEngine,
     StrategyVersioningService,
     EventBusService,
   ],
@@ -40,6 +41,7 @@ import { StrategyController } from './controllers';
     EvaluatorService,
     RandomGenerator,
     DomainGuidedGenerator,
+    SearchEngine,
     StrategyVersioningService,
     EventBusService,
   ],

@@ -15,10 +15,10 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Chuẩn bị thư mục đích: Đảm bảo thư mục `apps/backend/src/strategy/search/` tồn tại.
-- [ ] T002 [P] Di chuyển (Move) file `random.generator.ts` từ `apps/backend/src/strategy/generators/` sang `apps/backend/src/strategy/search/`.
-- [ ] T003 [P] Di chuyển (Move) file `domain-guided.generator.ts` từ `apps/backend/src/strategy/generators/` sang `apps/backend/src/strategy/search/`.
-- [ ] T004 Di chuyển (Move) thư mục tests `apps/backend/src/strategy/generators/tests/` sang `apps/backend/src/strategy/search/tests/`.
+- [x] T001 Chuẩn bị thư mục đích: Đảm bảo thư mục `apps/backend/src/strategy/search/` tồn tại.
+- [x] T002 [P] Di chuyển (Move) file `random.generator.ts` từ `apps/backend/src/strategy/generators/` sang `apps/backend/src/strategy/search/`.
+- [x] T003 [P] Di chuyển (Move) file `domain-guided.generator.ts` từ `apps/backend/src/strategy/generators/` sang `apps/backend/src/strategy/search/`.
+- [x] T004 Di chuyển (Move) thư mục tests `apps/backend/src/strategy/generators/tests/` sang `apps/backend/src/strategy/search/tests/`.
 
 ---
 
@@ -28,7 +28,7 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 [Foundation] Định nghĩa type `SearchGeneratorType` trong file nội bộ hoặc dùng trực tiếp string literal type (`'RANDOM' | 'DOMAIN_GUIDED'`). Không có DB migration (per data-model.md).
+- [x] T005 [Foundation] Định nghĩa type `SearchGeneratorType` trong file nội bộ hoặc dùng trực tiếp string literal type (`'RANDOM' | 'DOMAIN_GUIDED'`). Không có DB migration (per data-model.md).
 
 **Checkpoint**: Foundation ready — user story implementation can now begin in parallel
 
@@ -41,10 +41,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Tạo file `apps/backend/src/strategy/search/search-engine.ts`. Triển khai class `SearchEngine` với dependency injection cho `RandomGenerator` và `DomainGuidedGenerator`.
-- [ ] T007 [US1] Implement hàm `generateCandidates(count: number, type: SearchGeneratorType): IStrategy[]` trong `SearchEngine` để rẽ nhánh gọi đúng generator. (Ném Error nếu type không hợp lệ).
-- [ ] T008 [US1] Tạo file barrel export `apps/backend/src/strategy/search/index.ts` xuất `SearchEngine`, `RandomGenerator`, `DomainGuidedGenerator`.
-- [ ] T009 [US1] Cập nhật `apps/backend/src/strategy/strategy.module.ts`:
+- [x] T006 [US1] Tạo file `apps/backend/src/strategy/search/search-engine.ts`. Triển khai class `SearchEngine` với dependency injection cho `RandomGenerator` và `DomainGuidedGenerator`.
+- [x] T007 [US1] Implement hàm `generateCandidates(count: number, type: SearchGeneratorType): IStrategy[]` trong `SearchEngine` để rẽ nhánh gọi đúng generator. (Ném Error nếu type không hợp lệ).
+- [x] T008 [US1] Tạo file barrel export `apps/backend/src/strategy/search/index.ts` xuất `SearchEngine`, `RandomGenerator`, `DomainGuidedGenerator`.
+- [x] T009 [US1] Cập nhật `apps/backend/src/strategy/strategy.module.ts`:
   - Sửa đường dẫn import của `RandomGenerator` và `DomainGuidedGenerator` từ `./generators` sang `./search`.
   - Import `SearchEngine` từ `./search`.
   - Thêm `SearchEngine` vào mảng `providers` và `exports`.
@@ -57,9 +57,9 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T010 Viết Unit Test `apps/backend/src/strategy/search/tests/search-engine.spec.ts` kiểm tra logic rẽ nhánh của `SearchEngine`.
+- [x] T010 Viết Unit Test `apps/backend/src/strategy/search/tests/search-engine.spec.ts` kiểm tra logic rẽ nhánh của `SearchEngine`.
 - [ ] T011 Dọn dẹp: Xóa thư mục cũ `apps/backend/src/strategy/generators/` và file barrel `generators/index.ts` (vì đã dời sang search/).
-- [ ] T012 Chạy xác thực Quickstart: Gọi thử `SearchEngine` xem có bị vòng lặp import (circular dependency) nào không.
+- [x] T012 Chạy xác thực Quickstart: Gọi thử `SearchEngine` xem có bị vòng lặp import (circular dependency) nào không.
 
 ---
 
@@ -73,3 +73,13 @@
 
 ### Parallel Opportunities
 - T002, T003 có thể chạy song song (các lệnh move độc lập).
+
+---
+
+## Phase 5: Convergence
+
+**Purpose**: Close gaps between specification and implementation
+**Generated**: 2026-08-13 by /hoang-sdd-converge
+
+### Medium Gaps
+- [x] CV001 ⚠️ [partial] Clean up old directory — plan.md and tasks.md (T011) require deleting `apps/backend/src/strategy/generators/`, but the directory and duplicated files still exist. (Resolved by User)
