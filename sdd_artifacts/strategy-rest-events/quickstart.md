@@ -1,42 +1,18 @@
-# Quickstart: Strategy REST API & Event Bus
+# Quickstart: strategy-rest-events
 
-## 1. List Strategies
-```http
-GET /api/strategies HTTP/1.1
-Host: localhost:3000
-```
+## Prerequisites
+- Backend chạy ở port 3001 (`npm run dev:backend`)
 
-## 2. Create Composite Strategy
-```http
-POST /api/strategies/composite HTTP/1.1
-Content-Type: application/json
+## Validation Scenarios
 
-{
-  "name": "MA_RSI_Combo",
-  "childStrategyNames": ["MovingAverage", "RelativeStrengthIndex"],
-  "combinerType": "MajorityVote"
-}
-```
+### Scenario 1: Fetch versions by strategy name
+1. Chạy Postman gọi `GET /api/strategies/MA/versions` (hoặc tên tuỳ ý).
+2. ✅ Expected: Trả về HTTP 200 kèm array JSON.
 
-## 3. Request Backtest
-```http
-POST /api/strategies/backtest HTTP/1.1
-Content-Type: application/json
+### Scenario 2: Fetch strategy by id
+1. Chạy Postman gọi `GET /api/strategies/12345` (ID có thể copy từ log hoặc sau khi gọi create composite).
+2. ✅ Expected: Trả về HTTP 200 kèm object StrategyVersion (nếu đúng ID).
 
-{
-  "strategyName": "MovingAverage",
-  "pair": "BTCUSDT",
-  "timeframe": "1h",
-  "startDate": "2026-01-01T00:00:00Z",
-  "endDate": "2026-06-01T00:00:00Z",
-  "initialCapital": 10000
-}
-```
-Response `202 Accepted`:
-```json
-{
-  "jobId": "job_1770800000000_abc12",
-  "strategyVersionId": "ver_1770800000000_xyz34",
-  "status": "QUEUED"
-}
-```
+### Scenario 3: Fetch backtest result
+1. Chạy Postman gọi `GET /api/strategies/backtest/999`.
+2. ✅ Expected: Trả về HTTP 200 kèm dữ liệu BacktestResult giả lập (mocked).
