@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-12
-> **Status**: Active — BullMQ/Redis queue upgrade adopted in ADR-0013
+> **Last Updated**: 2026-08-13
+> **Status**: Active — News API Pagination (offset/limit) & Multi-Coin Filter added to contracts, flows, and modules
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

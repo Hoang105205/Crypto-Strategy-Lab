@@ -40,16 +40,24 @@ endpoints:
     path: /api/news
     queryParams:
       limit: number # default 10, max 50
-      coin: string # e.g. 'BTC'
+      offset: number # default 0 (for offset-based pagination / Load More)
+      coin: string # e.g. 'BTC' (single coin filter)
+      coins: string # e.g. 'BTC,ETH,SOL' (comma-separated multi-coin filter)
     response:
       success: boolean
       data: NewsArticle[]
+      pagination:
+        total: number # total articles matching filter
+        limit: number # requested limit
+        offset: number # requested offset
+        hasMore: boolean # true if offset + limit < total
 
   - method: GET
     path: /api/sentiment/aggregate
     queryParams:
       timeframe: string # '1h' | '24h' | '7d'
-      coin: string # e.g. 'BTC'
+      coin: string # e.g. 'BTC' (single coin)
+      coins: string # e.g. 'BTC,ETH' (multi-coin filter)
     response:
       score: number # average score -1.0 to 1.0
       label: string # POSITIVE | NEGATIVE | NEUTRAL
