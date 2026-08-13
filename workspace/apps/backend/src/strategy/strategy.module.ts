@@ -19,7 +19,10 @@ import { StrategyVersioningService } from './versioning';
 import { EventBusService } from './events';
 import { StrategyController } from './controllers';
 
+import { DatabaseModule } from '../database/database.module';
+
 @Module({
+  imports: [DatabaseModule],
   controllers: [StrategyController],
   providers: [
     StrategyRegistry,

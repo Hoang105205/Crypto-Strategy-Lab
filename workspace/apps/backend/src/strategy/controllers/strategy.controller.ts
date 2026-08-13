@@ -7,6 +7,7 @@ import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
 import { WeightedScoreCombiner } from '../combiners/weighted-score.combiner';
 import { StrategyVersioningService } from '../versioning/strategy-versioning.service';
 import { EventBusService } from '../events/event-bus.service';
+import { PrismaService } from '../../database/prisma.service';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
 
@@ -16,6 +17,7 @@ export class StrategyController {
     private readonly registry: StrategyRegistry,
     private readonly versioning: StrategyVersioningService,
     private readonly eventBus: EventBusService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -114,25 +116,14 @@ export class StrategyController {
   }
 
   @Get('backtest/:id')
-  getBacktestResult(@Param('id') id: string) {
-    // For MVP, mock the BacktestResult since Prisma is not integrated yet.
-    return {
-      id,
-      strategyVersionId: 'mock-version-id',
-      pair: 'BTCUSDT',
-      timeframe: '1h',
-      startDate: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
-      endDate: new Date().toISOString(),
-      totalReturn: 5.4,
-      winRate: 0.65,
-      maxDrawdown: -2.1,
-      sharpeRatio: 1.2,
-      profitFactor: 1.5,
-      totalTrades: 20,
-      trades: [], // Mock empty trades
-      executedAt: new Date().toISOString(),
-      executionTimeMs: 150,
-    };
+  async getBacktestResult(@Param('id') id: string) {
+    const result = await this.prisma.backtestResult.findUnique({
+      where: { id },
+    });
+    if (!result) {
+      throw new HttpException(`BacktestResult '${id}' not found`, HttpStatus.NOT_FOUND);
+    }
+    return result;
   }
 
   @Get(':id/versions')
