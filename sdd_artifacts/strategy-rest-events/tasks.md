@@ -24,7 +24,7 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T001 [Foundation] Add `getVersionsByName(name: string)` method to `StrategyVersioningService` in `apps/backend/src/strategy/versioning/strategy-versioning.service.ts`
+- [x] T001 [Foundation] Add `getVersionsByName(name: string)` method to `StrategyVersioningService` in `apps/backend/src/strategy/versioning/strategy-versioning.service.ts`
 
 **Checkpoint**: Foundation ready — user story implementation can now begin in parallel
 
@@ -36,9 +36,9 @@
 
 ### Implementation for User Story
 
-- [ ] T002 [US] Implement `GET /api/strategies/:id` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts` to fetch a StrategyVersion by ID.
-- [ ] T003 [P] [US] Implement `GET /api/strategies/:name/versions` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts`.
-- [ ] T004 [P] [US] Implement `GET /api/strategies/backtest/:id` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts` returning mock `BacktestResult` data.
+- [x] T002 [US] Implement `GET /api/strategies/:id` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts` to fetch a StrategyVersion by ID.
+- [x] T003 [P] [US] Implement `GET /api/strategies/:name/versions` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts`.
+- [x] T004 [P] [US] Implement `GET /api/strategies/backtest/:id` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts` returning mock `BacktestResult` data.
 
 **Checkpoint**: User Story should be fully functional and testable independently
 
@@ -48,8 +48,8 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T005 [P] Update unit tests in `apps/backend/src/strategy/controllers/tests/strategy.controller.spec.ts` for the 3 new GET endpoints.
-- [ ] T006 Update file `.intent` của feature thành trạng thái hoàn thành.
+- [x] T005 [P] Update unit tests in `apps/backend/src/strategy/controllers/tests/strategy.controller.spec.ts` for the 3 new GET endpoints.
+- [x] T006 Update file `.intent` của feature thành trạng thái hoàn thành.
 
 ---
 
@@ -62,3 +62,16 @@
 ### Parallel Opportunities
 - T003 và T004 có thể code song song trong Controller.
 - T005 chạy sau cùng.
+
+---
+
+## Phase 5: Convergence
+
+**Purpose**: Close gaps between specification and implementation
+**Generated**: 2026-08-13 by /hoang-sdd-converge
+
+### Medium Gaps
+- [x] CV001 ⚠️ [contradicts] Fix Route Parameter Mismatch — `kb/contracts/strategy.yaml` requires `GET /api/strategies/:id/versions`, but `strategy.controller.ts` implemented it as `@Get(':name/versions')`. Update the controller and unit tests to use `@Get(':id/versions')` to ensure consistency.
+
+### Low Gaps
+- [ ] CV002 ℹ️ [partial] Hardcoded Mock Data — `GET /api/strategies/backtest/:id` uses mock data. Record technical debt for Prisma integration.

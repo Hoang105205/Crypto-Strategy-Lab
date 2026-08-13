@@ -112,4 +112,41 @@ export class StrategyController {
       status: 'QUEUED',
     };
   }
+
+  @Get('backtest/:id')
+  getBacktestResult(@Param('id') id: string) {
+    // For MVP, mock the BacktestResult since Prisma is not integrated yet.
+    return {
+      id,
+      strategyVersionId: 'mock-version-id',
+      pair: 'BTCUSDT',
+      timeframe: '1h',
+      startDate: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
+      endDate: new Date().toISOString(),
+      totalReturn: 5.4,
+      winRate: 0.65,
+      maxDrawdown: -2.1,
+      sharpeRatio: 1.2,
+      profitFactor: 1.5,
+      totalTrades: 20,
+      trades: [], // Mock empty trades
+      executedAt: new Date().toISOString(),
+      executionTimeMs: 150,
+    };
+  }
+
+  @Get(':id/versions')
+  getStrategyVersions(@Param('id') id: string) {
+    const versions = this.versioning.getVersionsByName(id);
+    return versions;
+  }
+
+  @Get(':id')
+  getStrategyById(@Param('id') id: string) {
+    const version = this.versioning.getVersion(id);
+    if (!version) {
+      throw new HttpException(`Strategy version '${id}' not found`, HttpStatus.NOT_FOUND);
+    }
+    return version;
+  }
 }

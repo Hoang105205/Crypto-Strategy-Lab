@@ -2,14 +2,14 @@ feature: strategy-rest-events
 description: |
   Triển khai REST Controllers và tích hợp Event Bus cho Strategy Engine (Endpoints + BacktestRequested Event)
 created: 2026-08-12T11:33:00+07:00
-status: analyze_completed
+status: complete
 phases:
   - specify: complete
   - plan: complete
   - tasks: complete
   - implement: complete
   - analyze: complete
-  - converge: pending
+  - converge: complete
 kb_snapshot:
   constitution_loaded: true
   architecture_loaded: true
