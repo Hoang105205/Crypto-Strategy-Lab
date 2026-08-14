@@ -13,8 +13,8 @@ It is for agent read-only reference — do not modify manually unless you are up
 | 2026-08-11 | strategy-registry | [lessons/strategy-registry-2026-08-11.md](lessons/strategy-registry-2026-08-11.md) | Enhanced StrategyRegistry with collision validation, delegation analyze method, and full unit test coverage. |
 | 2026-08-12 | strategy-engine | [lessons/strategy-engine-2026-08-12.md](lessons/strategy-engine-2026-08-12.md) | Fullstack Strategy Engine (Plugin Registry, Base Strategies, Composite & Combiners, Backtest & Evaluator, REST APIs, and Strategy Builder UI). |
 | 2026-08-13 | search-engine-coordinator | [lessons/search-engine-coordinator-2026-08-13.md](lessons/search-engine-coordinator-2026-08-13.md) | Facade pattern over Strategy Generators. |
-Catalog of architecture lessons and insights captured during SDD feature executions.
 | 2026-08-13 | news-pagination-multicoin | [lessons/news-pagination-multicoin-2026-08-13.md](lessons/news-pagination-multicoin-2026-08-13.md) | News Feed Offset Pagination & Multi-Coin Filter |
 | 2026-08-13 | sentiment-timeframe-selector | [lessons/sentiment-timeframe-selector-2026-08-13.md](lessons/sentiment-timeframe-selector-2026-08-13.md) | Aggregate Mood Timeframe Selector (`1h`, `24h`, `7d`) |
 | 2026-08-13 | fix-backtest-mock-data | [lessons/fix-backtest-mock-data-2026-08-13.md](lessons/fix-backtest-mock-data-2026-08-13.md) | Replaced mock backtest data with Prisma integration |
-- [domain-guided-search-enhancement-2026-08-14.md](./lessons/domain-guided-search-enhancement-2026-08-14.md)
+| 2026-08-14 | domain-guided-search-enhancement | [lessons/domain-guided-search-enhancement-2026-08-14.md](lessons/domain-guided-search-enhancement-2026-08-14.md) | technicalindicators library; Record mapping for StrategyType |
+| 2026-08-14 | fix-strategy-engine-bugs | [lessons/fix-strategy-engine-bugs-2026-08-14.md](lessons/fix-strategy-engine-bugs-2026-08-14.md) | Inject interfaces via tokens; avoid local implementations of shared event buses |
