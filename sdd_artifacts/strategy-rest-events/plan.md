@@ -1,32 +1,32 @@
-# Implementation Plan: Strategy REST API & Event Bus Integration
+# Implementation Plan: strategy-rest-events
 
-**Feature**: `strategy-rest-events` | **Date**: 2026-08-12 | **Spec**: spec.md
+**Feature**: `strategy-rest-events` | **Date**: 2026-08-13 | **Spec**: spec.md
 
 ## Summary
-Implement NestJS `StrategyController` to expose REST endpoints (`GET /api/strategies`, `POST /api/strategies/composite`, `POST /api/strategies/backtest`) and emit `BacktestRequested` events using an Event Bus service / `@nestjs/event-emitter`.
+Triển khai 3 GET endpoints còn thiếu (`GET /api/strategies/:id`, `GET /api/strategies/:name/versions`, `GET /api/strategies/backtest/:id`) để hoàn thiện StrategyController.
 
 ## Technical Context
-**Language/Version**: TypeScript (Node.js / NestJS)
-**Dependencies**: `@crypto-strategy-lab/shared`, NestJS `@Controller`, `@Get`, `@Post`, `@Body`, `@EventEmitter2` or EventBus service.
-**Testing**: Jest unit tests mocking services and event emitter.
-**Target Platform**: Backend Service (`StrategyModule`).
+**Language/Version**: NestJS 11.x (TypeScript)
+**Primary Dependencies**: `StrategyRegistry`, `StrategyVersioningService`
+**Storage**: In-memory Map (cho phiên bản hiện tại, Prisma sẽ tích hợp sau)
+**Testing**: Jest (Unit Tests)
+**Target Platform**: Backend API
+**Project Type**: Web App (Modular Monolith)
+
+## Constitution Check
+*GATE: Must pass before Phase 0 research.*
+
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| Controller - Service Segregation | ✅ PASS | Controller không chứa logic kinh doanh, chỉ uỷ quyền xuống service. |
+| Single Source of Truth | ✅ PASS | Payload và endpoints được thiết kế theo đúng `kb/contracts/strategy.yaml`. |
+
+## Architecture Decision
+**Approach**: Monolith addition.
+**Rationale**: Bổ sung thêm API endpoint vào controller hiện có.
+**Modules affected**: Strategy Engine
+**E2E flows affected**: strategy-backtest.md
 
 ## Source Code Structure
-```
-apps/backend/src/strategy/
-├── controllers/
-│   ├── strategy.controller.ts      # REST Controller
-│   ├── dtos/
-│   │   ├── create-composite.dto.ts
-│   │   └── request-backtest.dto.ts
-│   ├── index.ts
-│   └── tests/
-│       └── strategy.controller.spec.ts
-├── events/
-│   ├── backtest-requested.event.ts # Event payload definition
-│   ├── event-bus.service.ts        # Event publisher service
-│   ├── index.ts
-│   └── tests/
-│       └── event-bus.spec.ts
-└── strategy.module.ts              # Register Controller & EventBus in NestJS module
-```
+- `apps/backend/src/strategy/controllers/strategy.controller.ts` (Cập nhật)
+- `apps/backend/src/strategy/versioning/strategy-versioning.service.ts` (Cập nhật)

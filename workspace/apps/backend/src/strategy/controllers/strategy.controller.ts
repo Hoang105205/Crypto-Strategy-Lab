@@ -7,6 +7,7 @@ import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
 import { WeightedScoreCombiner } from '../combiners/weighted-score.combiner';
 import { StrategyVersioningService } from '../versioning/strategy-versioning.service';
 import { EventBusService } from '../events/event-bus.service';
+import { PrismaService } from '../../database/prisma.service';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
 
@@ -16,6 +17,7 @@ export class StrategyController {
     private readonly registry: StrategyRegistry,
     private readonly versioning: StrategyVersioningService,
     private readonly eventBus: EventBusService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -111,5 +113,31 @@ export class StrategyController {
       strategyVersionId: version.id,
       status: 'QUEUED',
     };
+  }
+
+  @Get('backtest/:id')
+  async getBacktestResult(@Param('id') id: string) {
+    const result = await this.prisma.backtestResult.findUnique({
+      where: { id },
+    });
+    if (!result) {
+      throw new HttpException(`BacktestResult '${id}' not found`, HttpStatus.NOT_FOUND);
+    }
+    return result;
+  }
+
+  @Get(':id/versions')
+  getStrategyVersions(@Param('id') id: string) {
+    const versions = this.versioning.getVersionsByName(id);
+    return versions;
+  }
+
+  @Get(':id')
+  getStrategyById(@Param('id') id: string) {
+    const version = this.versioning.getVersion(id);
+    if (!version) {
+      throw new HttpException(`Strategy version '${id}' not found`, HttpStatus.NOT_FOUND);
+    }
+    return version;
   }
 }

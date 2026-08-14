@@ -33,6 +33,10 @@ export class StrategyVersioningService {
     return Array.from(this.versions.values());
   }
 
+  getVersionsByName(name: string): StrategyVersion[] {
+    return Array.from(this.versions.values()).filter(v => v.name === name);
+  }
+
   private getNextVersionNumber(name: string): number {
     const existing = Array.from(this.versions.values()).filter((v) => v.name === name);
     return existing.length + 1;

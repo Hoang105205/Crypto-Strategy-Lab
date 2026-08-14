@@ -1,27 +1,77 @@
-# Implementation Tasks: Strategy REST API & Event Bus Integration
+# Tasks: strategy-rest-events
 
-**Feature**: `strategy-rest-events` | **Date**: 2026-08-12
+**Input**: Design documents from `sdd_artifacts/strategy-rest-events/`
+**Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/
 
-## Execution Rules
-- `[ ]` = Pending | `[x]` = Done | `[-]` = Blocked/Skipped
-- `[P]` = Can be executed in parallel with other `[P]` tasks in the same phase.
-- Do not proceed to the next phase until all tasks in the current phase are `[x]`.
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (US1, US2, etc.)
+- Include exact file paths in descriptions
 
 ---
 
-### Phase 1: DTOs & Event Definitions
-- [P] **T1.1**: Create `CreateCompositeDto` (`apps/backend/src/strategy/controllers/dtos/create-composite.dto.ts`).
-- [P] **T1.2**: Create `RequestBacktestDto` (`apps/backend/src/strategy/controllers/dtos/request-backtest.dto.ts`).
-- [P] **T1.3**: Create `BacktestRequestedEvent` (`apps/backend/src/strategy/events/backtest-requested.event.ts`).
+## Phase 1: Setup
 
-### Phase 2: Services & Controller Implementation
-- [P] **T2.1**: Implement `EventBusService` (`apps/backend/src/strategy/events/event-bus.service.ts`).
-- [ ] **T2.2**: Implement `StrategyController` (`apps/backend/src/strategy/controllers/strategy.controller.ts`). Must implement routes `GET /api/strategies`, `POST /api/strategies/composite`, `POST /api/strategies/backtest`.
-- [ ] **T2.3**: Create barrel exports for `controllers/index.ts` and `events/index.ts`.
+**Purpose**: Project initialization and basic structure
+*(Không có task setup nào do cấu trúc module đã tồn tại)*
 
-### Phase 3: Module Integration
-- [ ] **T3.1**: Update `apps/backend/src/strategy/strategy.module.ts` to register `StrategyController` in `controllers` and `EventBusService` in `providers`.
+---
 
-### Phase 4: Unit Testing
-- [P] **T4.1**: Write `apps/backend/src/strategy/controllers/tests/strategy.controller.spec.ts`.
-- [P] **T4.2**: Write `apps/backend/src/strategy/events/tests/event-bus.spec.ts`.
+## Phase 2: Foundation
+
+**Purpose**: Core infrastructure that MUST complete before ANY user story can start
+
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+
+- [x] T001 [Foundation] Add `getVersionsByName(name: string)` method to `StrategyVersioningService` in `apps/backend/src/strategy/versioning/strategy-versioning.service.ts`
+
+**Checkpoint**: Foundation ready — user story implementation can now begin in parallel
+
+---
+
+## Phase 3: User Story - 3 GET Endpoints (Priority: P1) 🎯 MVP
+
+**Goal**: Bổ sung 3 API GET endpoint còn thiếu cho hệ thống.
+
+### Implementation for User Story
+
+- [x] T002 [US] Implement `GET /api/strategies/:id` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts` to fetch a StrategyVersion by ID.
+- [x] T003 [P] [US] Implement `GET /api/strategies/:name/versions` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts`.
+- [x] T004 [P] [US] Implement `GET /api/strategies/backtest/:id` endpoint in `apps/backend/src/strategy/controllers/strategy.controller.ts` returning mock `BacktestResult` data.
+
+**Checkpoint**: User Story should be fully functional and testable independently
+
+---
+
+## Phase 4: Polish & Cross-Cutting
+
+**Purpose**: Improvements that affect multiple user stories
+
+- [x] T005 [P] Update unit tests in `apps/backend/src/strategy/controllers/tests/strategy.controller.spec.ts` for the 3 new GET endpoints.
+- [x] T006 Update file `.intent` của feature thành trạng thái hoàn thành.
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+- **Foundation (Phase 2)**: T001
+- **User Stories (Phase 3+)**: T002, T003, T004 phụ thuộc vào T001 (đặc biệt T003).
+
+### Parallel Opportunities
+- T003 và T004 có thể code song song trong Controller.
+- T005 chạy sau cùng.
+
+---
+
+## Phase 5: Convergence
+
+**Purpose**: Close gaps between specification and implementation
+**Generated**: 2026-08-13 by /hoang-sdd-converge
+
+### Medium Gaps
+- [x] CV001 ⚠️ [contradicts] Fix Route Parameter Mismatch — `kb/contracts/strategy.yaml` requires `GET /api/strategies/:id/versions`, but `strategy.controller.ts` implemented it as `@Get(':name/versions')`. Update the controller and unit tests to use `@Get(':id/versions')` to ensure consistency.
+
+### Low Gaps
+- [ ] CV002 ℹ️ [partial] Hardcoded Mock Data — `GET /api/strategies/backtest/:id` uses mock data. Record technical debt for Prisma integration.

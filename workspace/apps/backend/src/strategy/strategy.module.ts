@@ -10,16 +10,22 @@ import {
   RsiStrategy,
   BollingerBandsStrategy,
   SupportResistanceStrategy,
+  MacdStrategy,
+  StochasticStrategy,
+  AtrStrategy,
 } from './strategies';
 
 import { BacktesterService } from './backtester';
 import { EvaluatorService } from './evaluator';
-import { RandomGenerator, DomainGuidedGenerator } from './generators';
+import { RandomGenerator, DomainGuidedGenerator, SearchEngine } from './search';
 import { StrategyVersioningService } from './versioning';
 import { EventBusService } from './events';
 import { StrategyController } from './controllers';
 
+import { DatabaseModule } from '../database/database.module';
+
 @Module({
+  imports: [DatabaseModule],
   controllers: [StrategyController],
   providers: [
     StrategyRegistry,
@@ -27,10 +33,14 @@ import { StrategyController } from './controllers';
     RsiStrategy,
     BollingerBandsStrategy,
     SupportResistanceStrategy,
+    MacdStrategy,
+    StochasticStrategy,
+    AtrStrategy,
     BacktesterService,
     EvaluatorService,
     RandomGenerator,
     DomainGuidedGenerator,
+    SearchEngine,
     StrategyVersioningService,
     EventBusService,
   ],
@@ -40,6 +50,7 @@ import { StrategyController } from './controllers';
     EvaluatorService,
     RandomGenerator,
     DomainGuidedGenerator,
+    SearchEngine,
     StrategyVersioningService,
     EventBusService,
   ],
