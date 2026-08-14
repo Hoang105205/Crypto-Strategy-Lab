@@ -34,9 +34,8 @@ describe('CompositeStrategy', () => {
     };
   });
 
-  it('should register composite strategy on module init', () => {
+  it('should register composite strategy in constructor', () => {
     const composite = new CompositeStrategy('TestComposite', [], undefined, registry);
-    composite.onModuleInit();
     expect(registry.get('TestComposite')).toBeDefined();
   });
 
@@ -46,7 +45,7 @@ describe('CompositeStrategy', () => {
 
     const result = composite.analyze([]);
     expect(result.action).toBe(SignalAction.BUY);
-    expect(result.confidence).toBe(0.85); // (0.8 + 0.9)/2
+    expect(result.confidence).toBeCloseTo(0.85); // (0.8 + 0.9)/2
     expect(child1.analyze).toHaveBeenCalled();
     expect(child2.analyze).toHaveBeenCalled();
     expect(child3.analyze).toHaveBeenCalled();

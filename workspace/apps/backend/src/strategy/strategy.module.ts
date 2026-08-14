@@ -10,6 +10,9 @@ import {
   RsiStrategy,
   BollingerBandsStrategy,
   SupportResistanceStrategy,
+  MacdStrategy,
+  StochasticStrategy,
+  AtrStrategy,
 } from './strategies';
 
 import { BacktesterService } from './backtester';
@@ -30,6 +33,9 @@ import { DatabaseModule } from '../database/database.module';
     RsiStrategy,
     BollingerBandsStrategy,
     SupportResistanceStrategy,
+    MacdStrategy,
+    StochasticStrategy,
+    AtrStrategy,
     BacktesterService,
     EvaluatorService,
     RandomGenerator,

@@ -56,7 +56,8 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades }) => {
           </thead>
           <tbody className="text-gray-200">
             {trades.map((t, idx) => {
-              const isProfit = t.pnl >= 0;
+              const pnl = t.pnl ?? 0;
+              const isProfit = pnl >= 0;
               return (
                 <tr 
                   key={idx} 
@@ -78,16 +79,16 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades }) => {
                   </td>
                   <td className="px-6 py-4 text-gray-300" style={{ padding: '1rem 1.5rem' }}>{new Date(t.entryDate).toLocaleString()}</td>
                   <td className="px-6 py-4 text-gray-300" style={{ padding: '1rem 1.5rem' }}>{new Date(t.exitDate).toLocaleString()}</td>
-                  <td className="px-6 py-4 text-right text-gray-200 font-bold" style={{ padding: '1rem 1.5rem' }}>{t.entryPrice.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right text-gray-200 font-bold" style={{ padding: '1rem 1.5rem' }}>{t.exitPrice.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right text-gray-400" style={{ padding: '1rem 1.5rem' }}>{t.quantity.toFixed(4)}</td>
+                  <td className="px-6 py-4 text-right text-gray-200 font-bold" style={{ padding: '1rem 1.5rem' }}>{t.entryPrice?.toFixed(2) ?? '0.00'}</td>
+                  <td className="px-6 py-4 text-right text-gray-200 font-bold" style={{ padding: '1rem 1.5rem' }}>{t.exitPrice?.toFixed(2) ?? '0.00'}</td>
+                  <td className="px-6 py-4 text-right text-gray-400" style={{ padding: '1rem 1.5rem' }}>{t.quantity?.toFixed(4) ?? '0.0000'}</td>
                   <td
                     className={`px-6 py-4 text-right font-black text-base ${
                       isProfit ? 'text-[#0ecb81]' : 'text-[#f6465d]'
                     }`}
                     style={{ padding: '1rem 1.5rem' }}
                   >
-                    {isProfit ? `+${t.pnl.toFixed(2)}` : t.pnl.toFixed(2)}
+                    {isProfit ? `+${pnl.toFixed(2)}` : pnl.toFixed(2)}
                   </td>
                 </tr>
               );

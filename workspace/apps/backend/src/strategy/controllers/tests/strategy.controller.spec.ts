@@ -4,7 +4,7 @@ import { StrategyVersioningService } from '../../versioning/strategy-versioning.
 import { EventBusService } from '../../events/event-bus.service';
 import { MovingAverageStrategy } from '../../strategies/moving-average.strategy';
 import { RsiStrategy } from '../../strategies/rsi.strategy';
-import { PrismaService } from '../../database/prisma.service';
+import { PrismaService } from '../../../database/prisma.service';
 import { CombinerType } from '@crypto-strategy-lab/shared';
 
 describe('StrategyController', () => {
@@ -124,6 +124,6 @@ describe('StrategyController', () => {
     
     (prisma.backtestResult.findUnique as jest.Mock).mockResolvedValue(null);
 
-    await expect(controller.getBacktestResult(mockId)).rejects.toThrow('BacktestResult \\\'invalid_id\\\' not found');
+    await expect(controller.getBacktestResult(mockId)).rejects.toThrow("BacktestResult 'invalid_id' not found");
   });
 });

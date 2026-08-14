@@ -17,3 +17,4 @@ Catalog of architecture lessons and insights captured during SDD feature executi
 | 2026-08-13 | news-pagination-multicoin | [lessons/news-pagination-multicoin-2026-08-13.md](lessons/news-pagination-multicoin-2026-08-13.md) | News Feed Offset Pagination & Multi-Coin Filter |
 | 2026-08-13 | sentiment-timeframe-selector | [lessons/sentiment-timeframe-selector-2026-08-13.md](lessons/sentiment-timeframe-selector-2026-08-13.md) | Aggregate Mood Timeframe Selector (`1h`, `24h`, `7d`) |
 | 2026-08-13 | fix-backtest-mock-data | [lessons/fix-backtest-mock-data-2026-08-13.md](lessons/fix-backtest-mock-data-2026-08-13.md) | Replaced mock backtest data with Prisma integration |
+- [domain-guided-search-enhancement-2026-08-14.md](./lessons/domain-guided-search-enhancement-2026-08-14.md)
