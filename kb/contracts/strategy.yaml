@@ -70,7 +70,7 @@ entities:
       quantity: float
 
 enums:
-  StrategyType: ["MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite"]
+  StrategyType: ["MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite", "MACD", "STOCHASTIC", "ATR"]
   SignalAction: ["BUY", "SELL", "HOLD"]
   CombinerType: ["MajorityVote", "WeightedScore"]
 
@@ -131,6 +131,12 @@ endpoints:
     response:
       type: "StrategyVersion[]"
       example: '[{ id, strategyType, name, version, parameters, isComposite }]'
+
+  - method: DELETE
+    path: /api/strategies/:name
+    description: "Delete a specific strategy from the registry"
+    response:
+      type: "{ message: string }"
 
   - method: GET
     path: /api/strategies/:id

@@ -40,7 +40,7 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!compositeName || selectedChildren.length === 0) return;
+    if (!compositeName || selectedChildren.length < 2) return;
 
     if (onBuildComposite) {
       onBuildComposite({
@@ -162,7 +162,7 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
 
       <button
         type="submit"
-        disabled={!compositeName || selectedChildren.length === 0}
+        disabled={!compositeName || selectedChildren.length < 2}
         className="w-full py-5 rounded-xl bg-[#fcd535] hover:bg-[#f0b90b] text-[#0b0e11] font-black text-lg uppercase tracking-wider transition-all disabled:bg-[#1e2329] disabled:text-gray-500 disabled:border disabled:border-[#2b3139] disabled:cursor-not-allowed shadow-2xl disabled:shadow-none"
         style={{ padding: '1.25rem 2rem' }}
       >

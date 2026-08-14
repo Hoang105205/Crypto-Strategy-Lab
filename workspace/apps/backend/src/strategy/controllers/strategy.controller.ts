@@ -1,12 +1,11 @@
-import { Controller, Get, Post, Delete, Param, Body, HttpException, HttpStatus, HttpCode } from '@nestjs/common';
-import type { IStrategy } from '@crypto-strategy-lab/shared';
+import { Controller, Get, Post, Delete, Param, Body, HttpException, HttpStatus, HttpCode, Inject } from '@nestjs/common';
+import type { IStrategy, IJobQueue, IEventBus } from '@crypto-strategy-lab/shared';
 import { CombinerType } from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 import { CompositeStrategy } from '../composite/composite.strategy';
 import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
 import { WeightedScoreCombiner } from '../combiners/weighted-score.combiner';
 import { StrategyVersioningService } from '../versioning/strategy-versioning.service';
-import { EventBusService } from '../events/event-bus.service';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
@@ -16,7 +15,8 @@ export class StrategyController {
   constructor(
     private readonly registry: StrategyRegistry,
     private readonly versioning: StrategyVersioningService,
-    private readonly eventBus: EventBusService,
+    @Inject('IJobQueue') private readonly jobQueue: IJobQueue,
+    @Inject('IEventBus') private readonly eventBus: IEventBus,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -40,7 +40,7 @@ export class StrategyController {
   }
 
   @Post('composite')
-  createComposite(@Body() dto: CreateCompositeDto) {
+  async createComposite(@Body() dto: CreateCompositeDto) {
     if (!dto || !dto.name || !dto.childStrategyNames || dto.childStrategyNames.length === 0) {
       throw new HttpException('Invalid composite configuration payload', HttpStatus.BAD_REQUEST);
     }
@@ -49,7 +49,7 @@ export class StrategyController {
     for (const name of dto.childStrategyNames) {
       const child = this.registry.get(name);
       if (!child) {
-        throw new HttpException(`Child strategy '${name}' not found in registry`, HttpStatus.BAD_REQUEST);
+        throw new HttpException(`Child strategy '${name}' not found in registry`, HttpStatus.NOT_FOUND);
       }
       children.push(child);
     }
@@ -67,7 +67,7 @@ export class StrategyController {
 
     const composite = new CompositeStrategy(dto.name, children, combiner, this.registry);
 
-    const version = this.versioning.createVersion(composite);
+    const version = await this.versioning.createVersion(composite);
 
     return {
       message: 'Composite strategy registered successfully',
@@ -81,7 +81,7 @@ export class StrategyController {
 
   @Post('backtest')
   @HttpCode(HttpStatus.ACCEPTED)
-  requestBacktest(@Body() dto: RequestBacktestDto) {
+  async requestBacktest(@Body() dto: RequestBacktestDto) {
     if (!dto || !dto.strategyName || !dto.pair || !dto.timeframe) {
       throw new HttpException('Missing required backtest parameters', HttpStatus.BAD_REQUEST);
     }
@@ -92,12 +92,10 @@ export class StrategyController {
     }
 
     // Persist immutable snapshot version
-    const version = this.versioning.createVersion(strategy);
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const version = await this.versioning.createVersion(strategy);
+    const correlationId = `corr_${Date.now()}`;
 
-    // Emit event for queue worker
-    this.eventBus.emitBacktestRequested({
-      jobId,
+    const payload = {
       strategyVersionId: version.id,
       pair: dto.pair,
       timeframe: dto.timeframe,
@@ -106,7 +104,20 @@ export class StrategyController {
       initialCapital: dto.initialCapital || 10000,
       positionSizePercent: dto.positionSizePercent || 100,
       executedAt: new Date(),
-    });
+      source: 'USER',
+      loopRunId: null,
+    };
+
+    let jobId: string;
+    try {
+      const result = await this.jobQueue.enqueue('BACKTEST', payload, correlationId);
+      jobId = result.jobId;
+    } catch (error) {
+      throw new HttpException('QUEUE_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    // Emit event for observability
+    this.eventBus.publish('BacktestRequested', { jobId, ...payload }, correlationId);
 
     return {
       jobId,
@@ -127,14 +138,14 @@ export class StrategyController {
   }
 
   @Get(':id/versions')
-  getStrategyVersions(@Param('id') id: string) {
-    const versions = this.versioning.getVersionsByName(id);
+  async getStrategyVersions(@Param('id') id: string) {
+    const versions = await this.versioning.getVersionsByName(id);
     return versions;
   }
 
   @Get(':id')
-  getStrategyById(@Param('id') id: string) {
-    const version = this.versioning.getVersion(id);
+  async getStrategyById(@Param('id') id: string) {
+    const version = await this.versioning.getVersion(id);
     if (!version) {
       throw new HttpException(`Strategy version '${id}' not found`, HttpStatus.NOT_FOUND);
     }

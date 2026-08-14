@@ -19,7 +19,6 @@ import { BacktesterService } from './backtester';
 import { EvaluatorService } from './evaluator';
 import { RandomGenerator, DomainGuidedGenerator, SearchEngine } from './search';
 import { StrategyVersioningService } from './versioning';
-import { EventBusService } from './events';
 import { StrategyController } from './controllers';
 
 import { DatabaseModule } from '../database/database.module';
@@ -42,7 +41,6 @@ import { DatabaseModule } from '../database/database.module';
     DomainGuidedGenerator,
     SearchEngine,
     StrategyVersioningService,
-    EventBusService,
   ],
   exports: [
     StrategyRegistry,
@@ -52,7 +50,6 @@ import { DatabaseModule } from '../database/database.module';
     DomainGuidedGenerator,
     SearchEngine,
     StrategyVersioningService,
-    EventBusService,
   ],
 })
 export class StrategyModule {}
