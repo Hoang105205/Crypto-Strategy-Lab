@@ -24,6 +24,9 @@ export enum StrategyType {
   SR = 'SR',
   SENTIMENT = 'Sentiment',
   COMPOSITE = 'Composite',
+  MACD = 'MACD',
+  STOCHASTIC = 'Stochastic',
+  ATR = 'ATR',
 }
 
 export enum SignalAction {

@@ -25,14 +25,15 @@ export interface AggregateSentiment {
   updatedAt: string;
 }
 
-interface NewsFeedProps {
+export type TimeframeOption = '1h' | '24h' | '7d';
+
+export interface NewsFeedProps {
   selectedCoin?: string;
   onCoinChange?: (coin: string) => void;
 }
 
 const AVAILABLE_COINS = ['ALL', 'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA'];
-const INITIAL_ARTICLE_LIMIT = 20;
-const PAGE_SIZE_INCREMENT = 10;
+const DEFAULT_PAGE_SIZE = 10;
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
   selectedCoin = 'ALL',
@@ -42,8 +43,21 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [aggregate, setAggregate] = useState<AggregateSentiment | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
+
+  // Coin Filter States (Single & Multi-coin)
   const [activeTab, setActiveTab] = useState<string>(selectedCoin);
-  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_ARTICLE_LIMIT);
+  const [isMultiCoinMode, setIsMultiCoinMode] = useState<boolean>(false);
+  const [selectedCoins, setSelectedCoins] = useState<string[]>([]);
+
+  // Timeframe Selector State
+  const [selectedTimeframe, setSelectedTimeframe] = useState<TimeframeOption>('24h');
+
+  // Offset Pagination States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [totalArticles, setTotalArticles] = useState<number>(0);
+  const [hasMore, setHasMore] = useState<boolean>(false);
+  const [paginationMode, setPaginationMode] = useState<'pages' | 'loadMore'>('pages');
 
   // Mouse Drag-to-Scroll refs & state
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -52,33 +66,85 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [scrollLeft, setScrollLeft] = useState(0);
 
   useEffect(() => {
-    setVisibleCount(INITIAL_ARTICLE_LIMIT);
-    fetchNewsData(activeTab, INITIAL_ARTICLE_LIMIT);
-  }, [activeTab]);
+    setCurrentPage(1);
+    fetchNewsData(1, pageSize, activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, 'replace');
+  }, [activeTab, selectedCoins, isMultiCoinMode, pageSize]);
 
-  const fetchNewsData = async (coinFilter: string, fetchLimit: number) => {
-    setLoading(true);
+  useEffect(() => {
+    fetchAggregateSentiment(activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe);
+  }, [selectedTimeframe]);
+
+  const fetchAggregateSentiment = async (
+    singleCoin: string,
+    multiCoins: string[],
+    isMulti: boolean,
+    tf: TimeframeOption
+  ) => {
     try {
-      const coinParam = coinFilter === 'ALL' ? '' : `coin=${coinFilter}`;
-      const limitParam = `limit=${Math.max(fetchLimit, 50)}`;
-      const queryStr = [coinParam, limitParam].filter(Boolean).join('&');
-      const newsRes = await fetch(`http://localhost:3001/api/news?${queryStr}`);
-
-      if (newsRes.ok) {
-        const newsJson = await newsRes.json();
-        setArticles(newsJson.data || []);
+      let coinParams = '';
+      if (isMulti && multiCoins.length > 0) {
+        coinParams = `coins=${multiCoins.join(',')}`;
+      } else if (singleCoin && singleCoin !== 'ALL') {
+        coinParams = `coin=${singleCoin}`;
       }
-
-      const aggParam = coinFilter === 'ALL' ? '' : `?coin=${coinFilter}`;
-      const aggRes = await fetch(`http://localhost:3001/api/sentiment/aggregate${aggParam}`);
+      const aggParams = [coinParams, `timeframe=${tf}`].filter(Boolean).join('&');
+      const aggQueryStr = aggParams ? `?${aggParams}` : '';
+      const aggRes = await fetch(`http://localhost:3001/api/sentiment/aggregate${aggQueryStr}`);
       if (aggRes.ok) {
         const aggJson = await aggRes.json();
         setAggregate(aggJson);
       }
     } catch (error) {
+      console.warn('Failed to fetch aggregate sentiment:', error);
+    }
+  };
+
+  const fetchNewsData = async (
+    page: number,
+    size: number,
+    singleCoin: string,
+    multiCoins: string[],
+    isMulti: boolean,
+    timeframeParam: TimeframeOption = selectedTimeframe,
+    mode: 'replace' | 'append' = 'replace'
+  ) => {
+    if (mode === 'append') setLoadingMore(true);
+    else setLoading(true);
+
+    try {
+      const offset = (page - 1) * size;
+      const limitParam = `limit=${size}`;
+      const offsetParam = `offset=${offset}`;
+
+      let coinParams = '';
+      if (isMulti && multiCoins.length > 0) {
+        coinParams = `coins=${multiCoins.join(',')}`;
+      } else if (singleCoin && singleCoin !== 'ALL') {
+        coinParams = `coin=${singleCoin}`;
+      }
+
+      const queryStr = [limitParam, offsetParam, coinParams].filter(Boolean).join('&');
+      const newsRes = await fetch(`http://localhost:3001/api/news?${queryStr}`);
+
+      if (newsRes.ok) {
+        const newsJson = await newsRes.json();
+        const fetchedData: NewsArticle[] = newsJson.data || [];
+        const pagMeta = newsJson.pagination || { total: fetchedData.length, limit: size, offset, hasMore: false };
+
+        if (mode === 'append') {
+          setArticles((prev) => [...prev, ...fetchedData]);
+        } else {
+          setArticles(fetchedData);
+        }
+
+        setTotalArticles(pagMeta.total);
+        setHasMore(pagMeta.hasMore);
+      }
+
+      await fetchAggregateSentiment(singleCoin, multiCoins, isMulti, timeframeParam);
+    } catch (error) {
       console.warn('Backend API unavailable, displaying mock news feed.');
-      // Robust mock fallback
-      setArticles([
+      const mockList: NewsArticle[] = [
         {
           id: 'mock-1',
           source: 'CoinDesk RSS',
@@ -115,7 +181,10 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
           sentimentScore: -0.15,
           sentimentLabel: 'NEGATIVE',
         },
-      ]);
+      ];
+      setArticles(mockList);
+      setTotalArticles(mockList.length);
+      setHasMore(false);
       setAggregate({
         score: 0.44,
         label: 'POSITIVE',
@@ -124,22 +193,39 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
       });
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   const handleTabClick = (coin: string) => {
-    setActiveTab(coin);
-    onCoinChange?.(coin);
+    if (isMultiCoinMode) {
+      if (coin === 'ALL') {
+        setSelectedCoins([]);
+      } else {
+        setSelectedCoins((prev) =>
+          prev.includes(coin) ? prev.filter((c) => c !== coin) : [...prev, coin]
+        );
+      }
+    } else {
+      setActiveTab(coin);
+      onCoinChange?.(coin);
+    }
+  };
+
+  const handleTimeframeClick = (tf: TimeframeOption) => {
+    setSelectedTimeframe(tf);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    fetchNewsData(newPage, pageSize, activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, 'replace');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleLoadMore = async () => {
-    setLoadingMore(true);
-    const newCount = visibleCount + PAGE_SIZE_INCREMENT;
-    if (newCount > articles.length) {
-      await fetchNewsData(activeTab, newCount);
-    }
-    setVisibleCount(newCount);
-    setLoadingMore(false);
+    const nextPage = currentPage + 1;
+    setCurrentPage(nextPage);
+    await fetchNewsData(nextPage, pageSize, activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, 'append');
   };
 
   // Mouse Drag-to-Scroll Handlers
@@ -229,7 +315,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     }
   };
 
-  const displayedArticles = articles.slice(0, visibleCount);
+  const totalPages = Math.max(1, Math.ceil(totalArticles / pageSize));
 
   return (
     <div
@@ -252,15 +338,35 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
         {aggregate && (
           <div
-            className="flex items-center gap-6 rounded-2xl bg-slate-800/90 border border-slate-700/80 shadow-2xl shrink-0"
+            className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 rounded-2xl bg-slate-800/90 border border-slate-700/80 shadow-2xl shrink-0"
             style={{ padding: '20px 32px' }}
           >
-            <div className="text-right">
+            <div className="text-center sm:text-right">
               <div className="text-xs text-slate-400 uppercase tracking-widest font-bold">
-                Aggregate Mood ({activeTab})
+                Aggregate Mood ({isMultiCoinMode && selectedCoins.length > 0 ? selectedCoins.join(', ') : activeTab} · {selectedTimeframe})
               </div>
               <div className="text-2xl font-black text-slate-100 mt-1">
                 Score: {aggregate.score > 0 ? `+${aggregate.score}` : aggregate.score}
+              </div>
+              {/* Timeframe Selector Pills */}
+              <div className="flex items-center gap-3 mt-3 justify-center sm:justify-end flex-wrap">
+                {(['1h', '24h', '7d'] as TimeframeOption[]).map((tf) => {
+                  const isActive = selectedTimeframe === tf;
+                  return (
+                    <button
+                      key={tf}
+                      onClick={() => handleTimeframeClick(tf)}
+                      className={`text-xs font-extrabold rounded-full transition-all duration-200 cursor-pointer flex items-center gap-1.5 border shadow-sm ${isActive
+                        ? 'bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 text-white border-cyan-400/50 shadow-cyan-500/20 scale-105'
+                        : 'bg-slate-900/90 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border-slate-700/60'
+                        }`}
+                      style={{ padding: '6px 16px' }}
+                    >
+                      <span>⏱️</span>
+                      <span>{tf}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {getSentimentBadge(aggregate.label)}
@@ -268,29 +374,81 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
         )}
       </div>
 
-      {/* 2. Coin Filter Tabs — Guaranteed 50px vertical margin & explicit button padding */}
-      <div
-        ref={tabsRef}
-        onMouseDown={handleMouseDown}
-        onMouseLeave={handleMouseLeaveOrUp}
-        onMouseUp={handleMouseLeaveOrUp}
-        onMouseMove={handleMouseMove}
-        className="w-full flex items-center justify-center gap-4 overflow-x-auto overflow-y-hidden select-none cursor-grab active:cursor-grabbing [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-        style={{ marginTop: '50px', marginBottom: '50px', paddingTop: '10px', paddingBottom: '10px' }}
-      >
-        {AVAILABLE_COINS.map((coin) => (
-          <button
-            key={coin}
-            onClick={() => handleTabClick(coin)}
-            className={`rounded-2xl text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer ${activeTab === coin
-                ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-xl shadow-indigo-500/25 border border-indigo-400/40 scale-105'
-                : 'bg-slate-900/70 text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 border border-slate-800/60'
-              }`}
-            style={{ padding: '14px 28px' }}
-          >
-            {coin === 'ALL' ? '🌐 All Markets' : `🪙 ${coin}`}
-          </button>
-        ))}
+      {/* 2. Coin Filter Tabs & Multi-Coin / Pagination Mode Controls */}
+      <div className="w-full flex flex-col gap-4" style={{ marginTop: '50px', marginBottom: '50px' }}>
+        <div className="w-full flex items-center justify-between gap-4 flex-wrap px-2">
+          <div className="text-sm font-bold text-slate-300 flex items-center gap-2">
+            <span>🪙 Filter Asset Markets:</span>
+            {isMultiCoinMode && selectedCoins.length > 0 && (
+              <span className="text-xs font-semibold text-cyan-400 bg-cyan-950 border border-cyan-800 px-3 py-0.5 rounded-full">
+                Selected ({selectedCoins.join(', ')})
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsMultiCoinMode(!isMultiCoinMode)}
+              className={`text-sm font-bold whitespace-nowrap rounded-full border transition-all cursor-pointer ${isMultiCoinMode
+                ? 'bg-cyan-950 text-cyan-300 border-cyan-500 shadow-md shadow-cyan-950'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              style={{ padding: '12px 28px' }}
+            >
+              {isMultiCoinMode ? '✓ Multi-Select Active' : '⚡ Enable Multi-Select'}
+            </button>
+
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-full p-1">
+              <button
+                onClick={() => setPaginationMode('pages')}
+                className={`text-sm font-extrabold whitespace-nowrap rounded-full transition-colors cursor-pointer shrink-0 ${paginationMode === 'pages' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                style={{ paddingLeft: '24px', paddingRight: '24px', paddingTop: '10px', paddingBottom: '10px' }}
+              >
+                Page Bar
+              </button>
+              <button
+                onClick={() => setPaginationMode('loadMore')}
+                className={`text-sm font-extrabold whitespace-nowrap rounded-full transition-colors cursor-pointer shrink-0 ${paginationMode === 'loadMore' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                style={{ paddingLeft: '24px', paddingRight: '24px', paddingTop: '10px', paddingBottom: '10px' }}
+              >
+                Load More
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Drag-to-Scroll Coin Tabs */}
+        <div
+          ref={tabsRef}
+          onMouseDown={handleMouseDown}
+          onMouseLeave={handleMouseLeaveOrUp}
+          onMouseUp={handleMouseLeaveOrUp}
+          onMouseMove={handleMouseMove}
+          className="w-full flex items-center justify-center gap-4 overflow-x-auto overflow-y-hidden select-none cursor-grab active:cursor-grabbing [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          style={{ paddingTop: '10px', paddingBottom: '10px' }}
+        >
+          {AVAILABLE_COINS.map((coin) => {
+            const isSelected = isMultiCoinMode
+              ? selectedCoins.includes(coin)
+              : activeTab === coin;
+
+            return (
+              <button
+                key={coin}
+                onClick={() => handleTabClick(coin)}
+                className={`rounded-2xl text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer ${isSelected
+                  ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-xl shadow-indigo-500/25 border border-indigo-400/40 scale-105'
+                  : 'bg-slate-900/70 text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 border border-slate-800/60'
+                  }`}
+                style={{ padding: '14px 28px' }}
+              >
+                {coin === 'ALL' ? '🌐 All Markets' : `🪙 ${coin}`}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 3. Articles Feed Grid — 2 COLUMNS layout with relative time & full datetime */}
@@ -299,14 +457,14 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
           <span className="text-base font-semibold">Analyzing live market feeds...</span>
         </div>
-      ) : displayedArticles.length === 0 ? (
+      ) : articles.length === 0 ? (
         <div className="text-center py-24 bg-slate-900/40 rounded-3xl border border-slate-800/80 text-slate-400 text-lg w-full">
-          No news articles found for <span className="font-bold text-cyan-400">{activeTab}</span>.
+          No news articles found for selected market filter.
         </div>
       ) : (
         <div className="w-full flex flex-col items-center">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
-            {displayedArticles.map((article) => (
+            {articles.map((article) => (
               <div
                 key={article.id}
                 className="flex flex-col justify-between rounded-3xl bg-slate-900/80 border border-slate-800/90 hover:border-indigo-500/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-cyan-500/10 group min-h-[270px] w-full box-border"
@@ -370,22 +528,57 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
             ))}
           </div>
 
-          {/* 4. More Stories Button — Guaranteed 50px top & 80px bottom margin with generous button padding */}
-          {articles.length > visibleCount && (
-            <div
-              className="flex justify-center w-full"
-              style={{ marginTop: '50px', marginBottom: '80px' }}
-            >
+          {/* 4. News Pagination / Load More Selector Bar */}
+          {paginationMode === 'pages' ? (
+            <div className="flex items-center justify-center gap-2 w-full flex-wrap" style={{ marginTop: '50px', marginBottom: '80px' }}>
               <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="w-full max-w-md text-base font-extrabold text-white bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 rounded-2xl shadow-2xl shadow-indigo-500/30 border border-indigo-400/40 transition-all duration-300 transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 cursor-pointer"
-                style={{ padding: '18px 40px' }}
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className="flex items-center justify-center whitespace-nowrap rounded-full text-sm font-extrabold bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                style={{ height: '48px', minWidth: '100px', paddingLeft: '24px', paddingRight: '24px' }}
               >
-                <span className="text-xl">📰</span>
-                <span>{loadingMore ? 'Loading more stories...' : 'More stories'}</span>
+                ‹ Prev
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={`w-12 h-12 rounded-2xl text-base font-black transition-all cursor-pointer ${pageNum === currentPage
+                    ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 scale-105'
+                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
+
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+                className="flex items-center justify-center whitespace-nowrap rounded-full text-sm font-extrabold bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                style={{ height: '48px', minWidth: '100px', paddingLeft: '24px', paddingRight: '24px' }}
+              >
+                Next ›
               </button>
             </div>
+          ) : (
+            (hasMore || articles.length === pageSize) && (
+              <div
+                className="flex justify-center w-full"
+                style={{ marginTop: '50px', marginBottom: '80px' }}
+              >
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="w-full max-w-md text-base font-extrabold text-white bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 rounded-full shadow-2xl shadow-indigo-500/30 border border-indigo-400/40 transition-all duration-300 transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 cursor-pointer"
+                  style={{ padding: '18px 40px' }}
+                >
+                  <span className="text-xl">📰</span>
+                  <span>{loadingMore ? 'Loading more stories...' : 'More stories'}</span>
+                </button>
+              </div>
+            )
           )}
         </div>
       )}

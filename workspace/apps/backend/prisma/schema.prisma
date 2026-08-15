@@ -106,6 +106,7 @@ model NewsArticle {
 
   @@index([publishedAt])
   @@index([source])
+  @@index([relatedCoins])
 }
 
 model SentimentScore {

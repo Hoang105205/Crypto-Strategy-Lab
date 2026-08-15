@@ -1,0 +1,17 @@
+feature: strategy-registry
+description: |
+  Xây dựng Strategy Registry (Plugin System) cho module Strategy Engine. Tích hợp và cập nhật file `apps/backend/src/strategy/registry/strategy.registry.ts` hiện có để thêm phương thức `analyze()` và xử lý lỗi trùng tên khi `register()` theo như ADR-0003 quy định.
+created: 2026-08-11T17:15:00Z
+status: analyze_completed
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Strategy Engine

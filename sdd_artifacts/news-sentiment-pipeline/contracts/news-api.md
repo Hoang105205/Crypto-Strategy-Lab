@@ -9,7 +9,9 @@ Fetch latest news articles with sentiment classifications.
 
 **Query Parameters**:
 - `limit` (number, optional, default: 10, max: 50): Number of articles to return.
-- `coin` (string, optional, e.g. `'BTC'`): Filter articles related to specific coin.
+- `offset` (number, optional, default: 0): Offset for pagination / Load More.
+- `coin` (string, optional, e.g. `'BTC'`): Single coin filter.
+- `coins` (string, optional, e.g. `'BTC,ETH'`): Comma-separated multi-coin filter.
 
 **Response (200 OK)**:
 ```json
@@ -29,7 +31,13 @@ Fetch latest news articles with sentiment classifications.
       "sentimentLabel": "POSITIVE",
       "createdAt": "2026-08-10T08:05:01.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "total": 42,
+    "limit": 10,
+    "offset": 0,
+    "hasMore": true
+  }
 }
 ```
 

@@ -28,8 +28,8 @@
 | CompositeStrategy | Combines N child strategies via a combiner | Composite | `strategy/composite/composite.strategy.ts` |
 | MajorityVoteCombiner | Majority-vote signal aggregation | Composite Combiner | `strategy/composite/majority-vote.combiner.ts` |
 | WeightedScoreCombiner | Weighted-score signal aggregation | Composite Combiner | `strategy/composite/weighted-score.combiner.ts` |
-| Backtester | Replay historical candles → simulate trades → compute raw results | Execution | `strategy/backtest/backtester.ts` |
-| Evaluator | Compute Return, WinRate, MDD, Sharpe, ProfitFactor from trades | Evaluation | `strategy/evaluation/evaluator.ts` |
+| Backtester | Replay historical candles → simulate trades → compute raw results | Execution | `strategy/backtester/backtester.ts` |
+| Evaluator | Compute Return, WinRate, MDD, Sharpe, ProfitFactor from trades | Evaluation | `strategy/evaluator/evaluator.ts` |
 | SearchEngine | Orchestrate candidate generation for the strategy search loop | Search Orchestration | `strategy/search/search-engine.ts` |
 | RandomGenerator | Generate random strategy + param combinations | Generator | `strategy/search/random.generator.ts` |
 | DomainGuidedGenerator | Generate diverse composites by strategy group (Trend, Momentum, Volatility, Structure, Sentiment) | Generator | `strategy/search/domain-guided.generator.ts` |
