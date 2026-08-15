@@ -22,9 +22,11 @@ import { StrategyVersioningService } from './versioning';
 import { StrategyController } from './controllers';
 
 import { DatabaseModule } from '../database/database.module';
+import { EventsModule } from '../events/events.module';
+import { QueueModule } from '../queue/queue.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, EventsModule, QueueModule],
   controllers: [StrategyController],
   providers: [
     StrategyRegistry,

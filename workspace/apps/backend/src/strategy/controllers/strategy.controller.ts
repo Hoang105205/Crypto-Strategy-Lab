@@ -1,6 +1,12 @@
 import { Controller, Get, Post, Delete, Param, Body, HttpException, HttpStatus, HttpCode, Inject } from '@nestjs/common';
-import type { IStrategy, IJobQueue, IEventBus } from '@crypto-strategy-lab/shared';
-import { CombinerType } from '@crypto-strategy-lab/shared';
+import { randomUUID } from 'node:crypto';
+import type {
+  IStrategy,
+  IJobQueue,
+  IEventBus,
+  UserBacktestRequestedPayload,
+} from '@crypto-strategy-lab/shared';
+import { BacktestSource, CombinerType, JobType } from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 import { CompositeStrategy } from '../composite/composite.strategy';
 import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
@@ -93,31 +99,32 @@ export class StrategyController {
 
     // Persist immutable snapshot version
     const version = await this.versioning.createVersion(strategy);
-    const correlationId = `corr_${Date.now()}`;
+    const correlationId = randomUUID();
+    const jobId = randomUUID();
 
-    const payload = {
+    const payload: UserBacktestRequestedPayload = {
+      jobId,
       strategyVersionId: version.id,
       pair: dto.pair,
       timeframe: dto.timeframe,
       startDate: new Date(dto.startDate || Date.now() - 30 * 24 * 3600 * 1000),
       endDate: new Date(dto.endDate || Date.now()),
-      initialCapital: dto.initialCapital || 10000,
-      positionSizePercent: dto.positionSizePercent || 100,
-      executedAt: new Date(),
-      source: 'USER',
+      backtestConfig: {
+        initialCapital: dto.initialCapital ?? 10000,
+        positionSizePercent: dto.positionSizePercent ?? 100,
+      },
+      source: BacktestSource.USER,
       loopRunId: null,
     };
 
-    let jobId: string;
     try {
-      const result = await this.jobQueue.enqueue('BACKTEST', payload, correlationId);
-      jobId = result.jobId;
+      await this.jobQueue.enqueue(JobType.BACKTEST, payload, correlationId);
     } catch (error) {
       throw new HttpException('QUEUE_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
     }
 
     // Emit event for observability
-    this.eventBus.publish('BacktestRequested', { jobId, ...payload }, correlationId);
+    this.eventBus.publish('BacktestRequested', payload, correlationId);
 
     return {
       jobId,
