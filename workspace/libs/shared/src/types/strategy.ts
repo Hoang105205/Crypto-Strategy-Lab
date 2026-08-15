@@ -66,3 +66,10 @@ export interface BacktestResult {
   executedAt: Date;
   executionTimeMs: number;
 }
+
+export interface StrategyExecutionResult<TStrategy = unknown> {
+  version: StrategyVersion;
+  strategy: TStrategy;
+}
+
+export type BacktestResultCreateInput = Omit<BacktestResult, 'id'>;

@@ -2,7 +2,15 @@
 // Owner: Huy | Status: Active
 
 import { Candle } from '../types/market-data';
-import { Signal, Trade, EvaluationMetrics, BacktestConfig, StrategyVersion } from '../types/strategy';
+import type {
+  BacktestConfig,
+  BacktestResult,
+  BacktestResultCreateInput,
+  EvaluationMetrics,
+  Signal,
+  StrategyExecutionResult,
+  Trade,
+} from '../types/strategy';
 import { StrategyType } from '../types/enums';
 
 export interface IStrategy {
@@ -22,6 +30,15 @@ export interface IEvaluator {
 
 export interface IStrategyGenerator {
   generate(count: number): IStrategy[];
+}
+
+export interface IStrategyExecutionPort {
+  resolveVersion(strategyVersionId: string): Promise<StrategyExecutionResult<IStrategy> | null>;
+}
+
+export interface IBacktestResultPort {
+  save(input: BacktestResultCreateInput): Promise<BacktestResult>;
+  getById(id: string): Promise<BacktestResult | null>;
 }
 
 export interface ICombiner {

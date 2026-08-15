@@ -1,10 +1,25 @@
-// Event Infrastructure types — sourced from kb/contracts/events.yaml
+// Event Infrastructure types - sourced from kb/contracts/events.yaml
 // Owner: Phuong | Status: Active
 
-export interface EventEnvelope<T = unknown> {
+import type { BacktestConfig } from './strategy';
+import type {
+  JobStatusValue,
+  JobType,
+  LoopStatus,
+  RankingCriterion,
+  SearchLoopCandidateStatus,
+  StrategyGeneratorType,
+} from './enums';
+
+declare const normalizedRateBrand: unique symbol;
+
+/** A rate validated at a public boundary to be between 0 and 1 inclusive. */
+export type NormalizedRate = number & { readonly [normalizedRateBrand]: true };
+
+export interface EventEnvelope<T = unknown, TEventType extends string = string> {
   eventId: string;
-  eventType: string;
-  eventVersion: number;
+  eventType: TEventType;
+  eventVersion: 1;
   occurredAt: Date;
   correlationId: string;
   payload: T;
@@ -12,7 +27,7 @@ export interface EventEnvelope<T = unknown> {
 
 export interface JobRequest {
   jobId: string;
-  jobType: string;
+  jobType: JobType;
   payload: Record<string, unknown>;
   attempt: number;
   maxAttempts: number;
@@ -23,9 +38,9 @@ export interface JobRequest {
 
 export interface JobStatus {
   jobId: string;
-  status: string; // JobStatusValue
+  status: JobStatusValue;
   attempt: number;
-  lastError?: string;
+  lastError: string | null;
   updatedAt: Date;
 }
 
@@ -34,6 +49,19 @@ export interface QueueStats {
   processing: number;
   completedLast24h: number;
   deadLettered: number;
+  delayed: number;
+  redisConnected: boolean;
+}
+
+export interface DeadLetterJob {
+  id: string;
+  jobId: string;
+  jobType: JobType;
+  payload: Record<string, unknown>;
+  attempts: number;
+  lastError: string;
+  deadLetteredAt: Date;
+  resolvedAt: Date | null;
 }
 
 export interface LeaderboardEntryPayload {
@@ -45,8 +73,57 @@ export interface LeaderboardEntryPayload {
   backtestResultId: string;
   score: number;
   totalReturn: number;
-  winRate: number;
+  winRate: NormalizedRate;
   maxDrawdown: number;
   sharpeRatio: number;
   totalTrades: number;
+}
+
+export interface SearchLoopConfig {
+  generatorType: StrategyGeneratorType;
+  pair: string;
+  timeframe: string;
+  startDate: Date;
+  endDate: Date;
+  backtestConfig: BacktestConfig;
+  maxCandidates: number | null;
+  maxDurationMs: number | null;
+  stopOnNoImprovementIterations: number;
+}
+
+export interface SearchLoopRun {
+  id: string;
+  status: LoopStatus;
+  generatorType: StrategyGeneratorType;
+  iteration: number;
+  testedCandidates: number;
+  maxCandidates: number | null;
+  maxDurationMs: number | null;
+  stopOnNoImprovementIterations: number;
+  currentCandidateStrategyVersionId: string | null;
+  bestStrategyVersionId: string | null;
+  bestScore: number | null;
+  stopReason: string | null;
+  startedAt: Date;
+  pausedAt: Date | null;
+  stoppedAt: Date | null;
+}
+
+export interface SearchLoopCandidate {
+  id: string;
+  loopRunId: string;
+  jobId: string;
+  strategyVersionId: string;
+  backtestResultId: string | null;
+  iteration: number;
+  score: number | null;
+  status: SearchLoopCandidateStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LeaderboardSnapshot {
+  rankingCriterion: RankingCriterion;
+  updatedAt: Date;
+  entries: LeaderboardEntryPayload[];
 }

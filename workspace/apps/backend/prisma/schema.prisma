@@ -141,6 +141,7 @@ model LeaderboardEntry {
   maxDrawdown         Float
   sharpeRatio         Float
   totalTrades         Int
+  executedAt          DateTime
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -156,7 +157,7 @@ model SearchLoopRun {
   testedCandidates            Int       @default(0)
   maxCandidates               Int?
   maxDurationMs               Int?
-  stopOnNoImprovementIterations Int?    @default(50)
+  stopOnNoImprovementIterations Int     @default(50)
   currentCandidateStrategyVersionId String?
   bestStrategyVersionId       String?
   bestScore                   Float?
@@ -173,12 +174,14 @@ model SearchLoopRun {
 model SearchLoopCandidate {
   id                  String   @id @default(uuid())
   loopRunId           String
+  jobId               String   @unique
   strategyVersionId   String   // ID-only reference to StrategyVersion (no FK join)
   backtestResultId    String?  // ID-only reference to BacktestResult; nullable until backtest completes
   iteration           Int
   score               Float?
   status              String   // GENERATING | BACKTESTING | EVALUATED | FAILED
   createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   loopRun             SearchLoopRun @relation(fields: [loopRunId], references: [id])
 
