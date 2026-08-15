@@ -4,14 +4,10 @@
 
 import { Module } from '@nestjs/common';
 import { IEVENT_BUS } from '../shared/tokens';
-import { InMemoryEventBus } from './in-memory-event-bus';
+import { EventBus } from './event-bus';
 
 @Module({
-  providers: [
-    InMemoryEventBus,
-    { provide: IEVENT_BUS, useExisting: InMemoryEventBus },
-    { provide: 'IEventBus', useExisting: InMemoryEventBus },
-  ],
-  exports: [IEVENT_BUS, 'IEventBus'],
+  providers: [EventBus, { provide: IEVENT_BUS, useExisting: EventBus }],
+  exports: [IEVENT_BUS],
 })
 export class EventsModule {}

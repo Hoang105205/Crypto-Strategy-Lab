@@ -160,3 +160,67 @@ Dependency installation reported five audit findings (three moderate, one high, 
 ## Phase 0 Checkpoint
 
 **PASS** — T001–T006 have evidence and are marked complete. Hoang approved the T004 migration, and it was applied successfully to the project Supabase database on 2026-08-15. Execution stops here as requested; T007 and all later phases remain untouched.
+
+## Phase 1 — Typed Event Bus (T007–T011)
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### Commands and results
+
+```powershell
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand events/event-bus.spec.ts events/events.module.spec.ts
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand market-data
+npm.cmd run build -w @crypto-strategy-lab/backend
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit -p tsconfig.build.json
+git diff --check
+rg -n -g '*.ts' -g '!*.spec.ts' 'EventEmitterModule\.forRoot|provide: IEVENT_BUS|@Inject\(IEVENT_BUS\)' apps/backend/src
+$auditResult = rg -n -g '*.ts' -g '!*.spec.ts' '@Optional|IEventBus \| null|subscribe\(EventType\.MarketDataUpdated' apps/backend/src/events apps/backend/src/market-data; if ($LASTEXITCODE -eq 1) { Write-Output 'PASS: no optional/null Event Bus dependency or MarketDataUpdated subscriber in Events/Market Data'; exit 0 }; $auditResult; exit $LASTEXITCODE
+$auditResult = rg -n -g '*.ts' -g '!*.spec.ts' "provide: 'IEventBus'|@Inject\('IEventBus'\)" apps/backend/src; if ($LASTEXITCODE -eq 1) { Write-Output 'PASS: no legacy IEventBus string provider/injection token'; exit 0 }; $auditResult; exit $LASTEXITCODE
+```
+
+| Check | Result | Evidence |
+|---|---|---|
+| Event Bus unit/module suites | PASS | 2/2 suites, 12/12 tests |
+| Targeted Market Data suites | PASS | 5/5 suites, 35/35 tests |
+| Backend Nest build | PASS | `nest build`, exit 0 |
+| Backend source type-check | PASS | `tsc --noEmit -p tsconfig.build.json`, exit 0 |
+| Full backend type-check including legacy specs | FAIL (pre-existing, outside Phase 1) | Strategy test errors listed below |
+| Diff whitespace check | PASS | `git diff --check`, exit 0; line-ending conversion warnings only |
+| Registration/token audit | PASS | One composition-root `EventEmitterModule.forRoot()`, one `IEVENT_BUS -> useExisting: EventBus` binding, centralized-token injection, no legacy string token |
+| Market Data dependency audit | PASS | No optional/null Event Bus dependency and no `MarketDataUpdated` subscriber |
+
+### Demonstrated behavior
+
+- T007/T008 unit coverage proves all 10 active event definitions remain publishable with typed fixtures; every publication has a fresh UUID `eventId`, generated or preserved UUID `correlationId`, literal `eventVersion: 1`, UTC-capable `Date` `occurredAt`, and the original payload reference.
+- Publication is fire-and-forget and does not throw. Multiple subscribers receive the event; synchronous throws and asynchronous rejections are isolated from the publisher and sibling subscribers, async failures are logged with structured `eventType`, `eventId`, and `correlationId` context, and no unhandled rejection escapes.
+- Cleanup and `unsubscribe` prevent later delivery, are safe when called repeatedly, and do not remove sibling subscriptions.
+- The module suite boots `EventsModule`, resolves the public `IEVENT_BUS` token, exercises publish/subscribe and failure isolation through `IEventBus`, and verifies deterministic cleanup without accessing the private EventEmitter2 instance.
+- The adapter-swap test overrides only the `IEVENT_BUS` provider with a contract-compatible fake. The same token resolves the replacement and publish/subscribe succeeds without changing the consumer, demonstrating that consumers depend on the DI seam rather than `EventBus` or EventEmitter2.
+- Market Data now requires `IEVENT_BUS` through `EventsModule` and still publishes the canonical `MarketDataUpdated` payload. The 35 targeted regression tests preserve `/market-data` REST behavior, WebSocket namespace/rooms/channel names, cache/persistence, subscription lifecycle, reconnect, and gap-recovery semantics.
+
+### Full type-check blocker outside Phase 1
+
+The unrestricted `tsc --noEmit` includes stale Strategy specs and fails before a repository-wide clean type-check can be claimed. Exact diagnostics are:
+
+```text
+src/strategy/controllers/tests/strategy.controller.spec.ts(4,33): TS2307 Cannot find module '../../events/event-bus.service'.
+src/strategy/controllers/tests/strategy.controller.spec.ts(19,18): TS2554 Expected 1 arguments, but got 0.
+src/strategy/controllers/tests/strategy.controller.spec.ts(34,18): TS2554 Expected 5 arguments, but got 4.
+src/strategy/controllers/tests/strategy.controller.spec.ts(50,16): TS2339 Property 'strategy' does not exist on type Promise<...>.
+src/strategy/controllers/tests/strategy.controller.spec.ts(55,47): TS7006 Parameter 'event' implicitly has an 'any' type.
+src/strategy/controllers/tests/strategy.controller.spec.ts(69,16): TS2339 Property 'status' does not exist on type Promise<...>.
+src/strategy/controllers/tests/strategy.controller.spec.ts(79,27): TS2339 Property 'strategy' does not exist on type Promise<...>.
+src/strategy/controllers/tests/strategy.controller.spec.ts(83,20): TS2339 Property 'id' does not exist on type Promise<StrategyVersion>.
+src/strategy/controllers/tests/strategy.controller.spec.ts(84,20): TS2339 Property 'name' does not exist on type Promise<StrategyVersion>.
+src/strategy/controllers/tests/strategy.controller.spec.ts(100,28): TS2339 Property 'length' does not exist on type Promise<StrategyVersion[]>.
+src/strategy/controllers/tests/strategy.controller.spec.ts(101,12): TS7053 Promise<StrategyVersion[]> cannot be indexed with 0.
+src/strategy/events/tests/event-bus.spec.ts(1,33): TS2307 Cannot find module '../event-bus.service'.
+src/strategy/events/tests/event-bus.spec.ts(24,46): TS7006 Parameter 'event' implicitly has an 'any' type.
+```
+
+These files are outside T007–T010. The passing Nest build and `tsconfig.build.json` source type-check, together with 47 passing targeted tests, distinguish the legacy test debt from the Phase 1 implementation. No out-of-scope Strategy test was changed.
+
+## Phase 1 Checkpoint
+
+**PASS — US1**. T007–T011 are complete, every Phase 1 requirement has executable evidence, and no error attributable to Phase 1 remains. Publishers and subscribers can use the typed, isolated Event Bus exclusively through `IEVENT_BUS`; Phase 2 may depend on this seam.

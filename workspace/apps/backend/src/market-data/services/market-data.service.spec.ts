@@ -274,25 +274,6 @@ describe('MarketDataService', () => {
       expect(eventBus.publish).toHaveBeenCalledTimes(1);
     });
 
-    it('survives a missing IEventBus (optional injection, spec.md §9)', async () => {
-      const noBusService = new MarketDataService(
-        adapter,
-        prisma as never,
-        gateway,
-        null,
-      );
-      const candleCalls = adapter.onCandle.mock.calls as unknown as Array<
-        [(candle: Candle) => void]
-      >;
-      const handler = candleCalls.at(-1)?.[0];
-      expect(handler).toBeDefined();
-
-      expect(() => handler?.(makeCandle({ isClosed: true }))).not.toThrow();
-      await flush();
-      expect(gateway.emitCandle).toHaveBeenCalled();
-      expect(noBusService).toBeDefined();
-    });
-
     it('relays adapter disconnect/reconnect to gateway status', () => {
       const disconnectCalls = adapter.onDisconnect.mock
         .calls as unknown as Array<[() => void]>;

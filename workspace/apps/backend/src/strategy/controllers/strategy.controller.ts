@@ -13,6 +13,7 @@ import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
 import { WeightedScoreCombiner } from '../combiners/weighted-score.combiner';
 import { StrategyVersioningService } from '../versioning/strategy-versioning.service';
 import { PrismaService } from '../../database/prisma.service';
+import { IEVENT_BUS } from '../../shared/tokens';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
 
@@ -22,7 +23,7 @@ export class StrategyController {
     private readonly registry: StrategyRegistry,
     private readonly versioning: StrategyVersioningService,
     @Inject('IJobQueue') private readonly jobQueue: IJobQueue,
-    @Inject('IEventBus') private readonly eventBus: IEventBus,
+    @Inject(IEVENT_BUS) private readonly eventBus: IEventBus,
     private readonly prisma: PrismaService,
   ) {}
 

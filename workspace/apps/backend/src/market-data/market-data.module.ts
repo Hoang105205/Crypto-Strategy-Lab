@@ -5,8 +5,7 @@
 // DI: concrete BinanceAdapter bound behind the IMARKET_DATA_ADAPTER token (ADR-0004 seam).
 // IMARKET_DATA_SERVICE is exported so Huy (Strategy Engine) and Phuong (Job Queue Worker)
 // inject IMarketDataService without ever depending on BinanceAdapter (Constitution II).
-// IEVENT_BUS is provided by Phuong's EventsModule; until then MarketDataService injects
-// it optionally and degrades gracefully (spec.md §9, note.md §7).
+// IEVENT_BUS is provided by EventsModule as the required event-publication seam.
 
 import { Module } from '@nestjs/common';
 

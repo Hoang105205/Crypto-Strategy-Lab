@@ -2,6 +2,7 @@
 // PrismaService (no DB) and verifies the exported IMARKET_DATA_SERVICE token resolves.
 
 import { Test } from '@nestjs/testing';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 import { MarketDataModule } from './market-data.module';
 import { PrismaService } from '../database/prisma.service';
@@ -11,7 +12,7 @@ import { IMarketDataService } from '@crypto-strategy-lab/shared';
 describe('MarketDataModule wiring (T1.8)', () => {
   it('boots without DI errors and exports IMarketDataService', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [MarketDataModule],
+      imports: [EventEmitterModule.forRoot(), MarketDataModule],
     })
       .overrideProvider(PrismaService)
       .useValue({ candle: {}, tradingPair: {} })
