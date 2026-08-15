@@ -13,10 +13,11 @@ import { QueueModule } from './queue/queue.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { LoopModule } from './loop/loop.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { validateEnvironment } from './config/environment';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment }),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     DatabaseModule,

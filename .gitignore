@@ -53,5 +53,4 @@ npm-debug.log*
 .turbo
 *.tsbuildinfo
 
-docs/member-d-study-guide.md
-plans
+docs

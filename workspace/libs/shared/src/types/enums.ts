@@ -48,6 +48,10 @@ export enum JobStatusValue {
   DEAD_LETTER = 'DEAD_LETTER',
 }
 
+export enum JobType {
+  BACKTEST = 'BACKTEST',
+}
+
 export enum BacktestSource {
   USER = 'USER',
   SEARCH_LOOP = 'SEARCH_LOOP',
@@ -59,6 +63,32 @@ export enum LoopStatus {
   COMPLETED = 'COMPLETED',
   STOPPED_BY_USER = 'STOPPED_BY_USER',
   FAILED = 'FAILED',
+}
+
+export enum RankingCriterion {
+  SCORE = 'score',
+  TOTAL_RETURN = 'totalReturn',
+  WIN_RATE = 'winRate',
+  MAX_DRAWDOWN = 'maxDrawdown',
+  SHARPE_RATIO = 'sharpeRatio',
+}
+
+export enum StrategyGeneratorType {
+  RANDOM = 'RANDOM',
+  DOMAIN_GUIDED = 'DOMAIN_GUIDED',
+}
+
+export enum SearchLoopCandidateStatus {
+  GENERATING = 'GENERATING',
+  BACKTESTING = 'BACKTESTING',
+  EVALUATED = 'EVALUATED',
+  FAILED = 'FAILED',
+}
+
+export enum SearchLoopProgressStatus {
+  GENERATING = 'GENERATING',
+  BACKTESTING = 'BACKTESTING',
+  EVALUATING = 'EVALUATING',
 }
 
 export enum SentimentLabel {

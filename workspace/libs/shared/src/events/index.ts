@@ -1,10 +1,16 @@
-// Event types & payloads — sourced from kb/contracts/events.yaml
+// Event types and payloads - sourced from kb/contracts/events.yaml
 // Owner: Phuong | Status: Active
 
-import { Candle } from '../types/market-data';
-import { BacktestConfig, EvaluationMetrics } from '../types/strategy';
-import { BacktestSource } from '../types/enums';
-import { LeaderboardEntryPayload } from '../types/infrastructure';
+import type { Candle } from '../types/market-data';
+import type { BacktestConfig, EvaluationMetrics } from '../types/strategy';
+import type {
+  BacktestSource,
+  LoopStatus,
+  RankingCriterion,
+  SearchLoopProgressStatus,
+  StrategyGeneratorType,
+} from '../types/enums';
+import type { LeaderboardEntryPayload, NormalizedRate } from '../types/infrastructure';
 
 export const EventType = {
   MarketDataUpdated: 'MarketDataUpdated',
@@ -19,13 +25,15 @@ export const EventType = {
   NewsCollected: 'NewsCollected',
 } as const;
 
+export type EventTypeValue = (typeof EventType)[keyof typeof EventType];
+
 export interface MarketDataUpdatedPayload {
   symbol: string;
   timeframe: string;
   candle: Candle;
 }
 
-export interface BacktestRequestedPayload {
+interface BacktestRequestedPayloadBase {
   jobId: string;
   strategyVersionId: string;
   pair: string;
@@ -33,14 +41,30 @@ export interface BacktestRequestedPayload {
   startDate: Date;
   endDate: Date;
   backtestConfig: BacktestConfig;
-  source: BacktestSource;
-  loopRunId?: string;
 }
+
+export interface UserBacktestRequestedPayload extends BacktestRequestedPayloadBase {
+  source: BacktestSource.USER;
+  loopRunId: null;
+}
+
+export interface SearchLoopBacktestRequestedPayload extends BacktestRequestedPayloadBase {
+  source: BacktestSource.SEARCH_LOOP;
+  loopRunId: string;
+}
+
+export type BacktestRequestedPayload =
+  | UserBacktestRequestedPayload
+  | SearchLoopBacktestRequestedPayload;
+
+export type BacktestEvaluationMetrics = Omit<EvaluationMetrics, 'winRate'> & {
+  winRate: NormalizedRate;
+};
 
 export interface BacktestCompletedPayload {
   jobId: string;
   correlationId: string;
-  loopRunId?: string;
+  loopRunId: string | null;
   backtestResultId: string;
   strategyVersionId: string;
   strategyName: string;
@@ -48,8 +72,8 @@ export interface BacktestCompletedPayload {
   isComposite: boolean;
   pair: string;
   timeframe: string;
-  status: string;
-  metrics: EvaluationMetrics;
+  status: 'SUCCESS';
+  metrics: BacktestEvaluationMetrics;
   executedAt: Date;
   executionTimeMs: number;
 }
@@ -57,11 +81,10 @@ export interface BacktestCompletedPayload {
 export interface BacktestFailedPayload {
   jobId: string;
   correlationId: string;
-  loopRunId?: string;
+  loopRunId: string | null;
   strategyVersionId: string;
   error: string;
   attempt: number;
-  willRetry: boolean;
 }
 
 export interface BacktestDeadLetteredPayload {
@@ -76,16 +99,16 @@ export interface BacktestDeadLetteredPayload {
 export interface LeaderboardUpdatedPayload {
   updatedAt: Date;
   triggeredByBacktestResultId: string;
-  rankingCriterion: string;
+  rankingCriterion: RankingCriterion;
   topK: LeaderboardEntryPayload[];
 }
 
 export interface SearchLoopStartedPayload {
   loopRunId: string;
   config: {
-    generatorType: string;
-    maxCandidates?: number;
-    maxDurationMs?: number;
+    generatorType: StrategyGeneratorType;
+    maxCandidates: number | null;
+    maxDurationMs: number | null;
     stopOnNoImprovementIterations: number;
   };
   startedAt: Date;
@@ -96,21 +119,21 @@ export interface SearchLoopProgressPayload {
   iteration: number;
   testedCandidates: number;
   currentCandidate: {
-    strategyVersionId?: string;
-    strategyName?: string;
-    status: string;
+    strategyVersionId: string | null;
+    strategyName: string | null;
+    status: SearchLoopProgressStatus;
   };
-  bestScoreSoFar?: number;
-  bestStrategyVersionId?: string;
+  bestScoreSoFar: number | null;
+  bestStrategyVersionId: string | null;
 }
 
 export interface SearchLoopStoppedPayload {
   loopRunId: string;
-  status: string;
+  status: LoopStatus.COMPLETED | LoopStatus.STOPPED_BY_USER | LoopStatus.FAILED;
   stopReason: string;
   testedCandidates: number;
-  bestStrategyVersionId?: string;
-  bestScore?: number;
+  bestStrategyVersionId: string | null;
+  bestScore: number | null;
   startedAt: Date;
   stoppedAt: Date;
 }
@@ -121,4 +144,17 @@ export interface NewsCollectedPayload {
   sentimentScore: number;
   sentimentLabel: string;
   publishedAt: Date;
+}
+
+export interface EventPayloadMap {
+  MarketDataUpdated: MarketDataUpdatedPayload;
+  BacktestRequested: BacktestRequestedPayload;
+  BacktestCompleted: BacktestCompletedPayload;
+  BacktestFailed: BacktestFailedPayload;
+  BacktestDeadLettered: BacktestDeadLetteredPayload;
+  LeaderboardUpdated: LeaderboardUpdatedPayload;
+  SearchLoopStarted: SearchLoopStartedPayload;
+  SearchLoopProgress: SearchLoopProgressPayload;
+  SearchLoopStopped: SearchLoopStoppedPayload;
+  NewsCollected: NewsCollectedPayload;
 }
