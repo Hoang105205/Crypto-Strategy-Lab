@@ -11,7 +11,6 @@ import {
   Inject,
   Injectable,
   Logger,
-  Optional,
   forwardRef,
 } from '@nestjs/common';
 import {
@@ -70,19 +69,13 @@ export class MarketDataService implements IMarketDataApiService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => IMARKET_DATA_GATEWAY))
     private readonly gateway: IMarketDataGateway,
-    @Optional() @Inject(IEVENT_BUS) private readonly eventBus: IEventBus | null,
+    @Inject(IEVENT_BUS) private readonly eventBus: IEventBus,
   ) {
     // Wire adapter callbacks once — the adapter invokes these for every stream.
     this.adapter.onCandle((candle) => void this.handleCandle(candle));
     this.adapter.onDisconnect(() => this.gateway.emitStatus('disconnected'));
     this.adapter.onReconnect(() => this.gateway.emitStatus('reconnected'));
 
-    if (!this.eventBus) {
-      // Temporary stub until Phuong's EventsModule provides the IEVENT_BUS token (spec.md §9).
-      this.logger.warn(
-        'IEventBus not available — MarketDataUpdated publication disabled (optional injection; startup unaffected).',
-      );
-    }
   }
 
   // ──────────────────────────────────────────────
@@ -305,7 +298,6 @@ export class MarketDataService implements IMarketDataApiService {
 
   /** Fire-and-forget publication — no bus subscribers in MVP (events.yaml). */
   private publishMarketDataUpdated(candle: Candle): void {
-    if (!this.eventBus) return; // absence already warned at init
     const payload: MarketDataUpdatedPayload = {
       symbol: candle.symbol,
       timeframe: candle.timeframe,
