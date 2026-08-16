@@ -64,6 +64,7 @@ model StrategyVersion {
 
 model BacktestResult {
   id                String   @id @default(uuid())
+  jobId             String   @unique
   strategyVersionId String
   pair              String
   timeframe         String

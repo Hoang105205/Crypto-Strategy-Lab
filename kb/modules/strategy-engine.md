@@ -252,7 +252,7 @@ sequenceDiagram
 | Entity | Fields | Relationships |
 |--------|--------|---------------|
 | StrategyVersion | id (UUID PK), strategyType, name, version, parameters (JSONB), parentVersionId (FK?), isComposite, childVersionIds (UUID[]?), combinerType?, combinerWeights (JSONB?), createdAt | 1:N → BacktestResult |
-| BacktestResult | id (UUID PK), strategyVersionId (FK), pair, timeframe, startDate, endDate, totalReturn, winRate, maxDrawdown, sharpeRatio, profitFactor, totalTrades, trades (JSONB), executedAt, executionTimeMs | N:1 → StrategyVersion |
+| BacktestResult | id (UUID PK), jobId (UUID unique, producer idempotency key), strategyVersionId (FK), pair, timeframe, startDate, endDate, totalReturn, winRate, maxDrawdown, sharpeRatio, profitFactor, totalTrades, trades (JSONB), executedAt, executionTimeMs | N:1 → StrategyVersion |
 | Trade (embedded in JSONB) | entryDate, exitDate, entryPrice, exitPrice, side ("LONG"/"SHORT"), pnl, quantity | Embedded in BacktestResult.trades |
 
 > See ADR-0008 for versioning rules and immutability constraints.

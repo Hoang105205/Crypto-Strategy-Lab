@@ -51,6 +51,8 @@ export interface Trade {
 
 export interface BacktestResult {
   id: string;
+  /** Producer job identity used to make result persistence idempotent. */
+  jobId: string;
   strategyVersionId: string;
   pair: string;
   timeframe: string;

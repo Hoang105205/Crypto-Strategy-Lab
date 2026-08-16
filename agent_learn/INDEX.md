@@ -1,5 +1,12 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T020 — 2026-08-16](lessons/event-infrastructure-dashboard-t020-2026-08-16.md): Redis-isolated acceptance harness, real stalled recovery, fail-fast/persistent connection evidence, Redis date rehydration, and honest AOF scope.
+- [Event Infrastructure Dashboard T019 — 2026-08-16](lessons/event-infrastructure-dashboard-t019-2026-08-16.md): acyclic runtime-module wiring, one BullMQ provider behind `IJOB_QUEUE`, split Redis ownership, producer ordering, and clean Nest teardown.
+
+- [Event Infrastructure Dashboard T018 — 2026-08-16](lessons/event-infrastructure-dashboard-t018-2026-08-16.md): stable Queue REST responses, explicit UUID pipe validation, port-only controller coordination, and Supertest mapping evidence.
+- [Event Infrastructure Dashboard T017 — 2026-08-16](lessons/event-infrastructure-dashboard-t017-2026-08-16.md): unique-key DLQ mirroring, conditional transactional retry claims, rollback on Redis rejection, and stable sanitized repository errors.
+- [Event Infrastructure Dashboard T016 — 2026-08-16](lessons/event-infrastructure-dashboard-t016-2026-08-16.md): shared-port worker pipeline, result-before-event ordering, stable failure taxonomy, and stalled-delivery coalescing.
+
 - [Event Infrastructure Dashboard T015 — 2026-08-15](lessons/event-infrastructure-dashboard-t015-2026-08-15.md): explicit BullMQ duplicate detection, queue-state projection, retry reset, and Redis-backed teardown evidence.
 - [Event Infrastructure Dashboard T014 — 2026-08-15](lessons/event-infrastructure-dashboard-t014-2026-08-15.md): BullMQ config, split Redis outage policies, idempotent connection ownership, and sanitized stable errors.
 

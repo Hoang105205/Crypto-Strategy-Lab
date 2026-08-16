@@ -60,6 +60,10 @@ interface IBacktestResultPort {
 }
 ```
 
+`BacktestResultCreateInput` carries the producer `jobId`. `save` is create-once
+for that ID: an idempotent replay returns the immutable stored result, while
+reuse of the ID for a different backtest request returns `JOB_CONFLICT`.
+
 These ports are owned/provided by Strategy Engine. Event Infrastructure does not query Strategy-owned tables.
 
 ## Terminal Events

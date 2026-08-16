@@ -6,14 +6,20 @@ import type {
   IEventBus,
   UserBacktestRequestedPayload,
 } from '@crypto-strategy-lab/shared';
-import { BacktestSource, CombinerType, JobType } from '@crypto-strategy-lab/shared';
+import {
+  BacktestSource,
+  CombinerType,
+  EventType,
+  JobStatusValue,
+  JobType,
+} from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 import { CompositeStrategy } from '../composite/composite.strategy';
 import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
 import { WeightedScoreCombiner } from '../combiners/weighted-score.combiner';
 import { StrategyVersioningService } from '../versioning/strategy-versioning.service';
 import { PrismaService } from '../../database/prisma.service';
-import { IEVENT_BUS } from '../../shared/tokens';
+import { IEVENT_BUS, IJOB_QUEUE } from '../../shared/tokens';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
 
@@ -22,7 +28,7 @@ export class StrategyController {
   constructor(
     private readonly registry: StrategyRegistry,
     private readonly versioning: StrategyVersioningService,
-    @Inject('IJobQueue') private readonly jobQueue: IJobQueue,
+    @Inject(IJOB_QUEUE) private readonly jobQueue: IJobQueue,
     @Inject(IEVENT_BUS) private readonly eventBus: IEventBus,
     private readonly prisma: PrismaService,
   ) {}
@@ -120,17 +126,23 @@ export class StrategyController {
 
     try {
       await this.jobQueue.enqueue(JobType.BACKTEST, payload, correlationId);
-    } catch (error) {
-      throw new HttpException('QUEUE_UNAVAILABLE', HttpStatus.SERVICE_UNAVAILABLE);
+    } catch {
+      throw new HttpException(
+        {
+          error: 'Queue service is unavailable',
+          code: 'QUEUE_UNAVAILABLE',
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
 
     // Emit event for observability
-    this.eventBus.publish('BacktestRequested', payload, correlationId);
+    this.eventBus.publish(EventType.BacktestRequested, payload, correlationId);
 
     return {
       jobId,
       strategyVersionId: version.id,
-      status: 'QUEUED',
+      status: JobStatusValue.QUEUED,
     };
   }
 
