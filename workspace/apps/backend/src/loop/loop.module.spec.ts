@@ -3,6 +3,7 @@ import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import {
   BacktestSource,
   EventType,
+  JobType,
   JobStatusValue,
   LoopStatus,
   SearchLoopCandidateStatus,
@@ -258,7 +259,7 @@ describe('LoopModule wiring and lifecycle', () => {
       StrategyGeneratorType.RANDOM,
     );
     expect(jobQueue.enqueue).toHaveBeenCalledWith(
-      'BACKTEST',
+      JobType.BACKTEST,
       expect.objectContaining({
         source: BacktestSource.SEARCH_LOOP,
         strategyVersionId: STRATEGY_VERSION_ID,
@@ -340,7 +341,9 @@ function loopConfig(): SearchLoopConfig {
 function orchestrationRepository() {
   const activeRun = run();
   return {
-    createRun: jest.fn().mockResolvedValue(activeRun),
+    createRun: jest
+      .fn<LoopRepository['createRun']>()
+      .mockResolvedValue(activeRun),
     createCandidate: jest.fn(
       async (input: {
         jobId: string;
@@ -348,7 +351,9 @@ function orchestrationRepository() {
       }): Promise<SearchLoopCandidate> =>
         candidate(input.jobId, input.iteration),
     ),
-    transitionRun: jest.fn().mockResolvedValue(activeRun),
+    transitionRun: jest
+      .fn<LoopRepository['transitionRun']>()
+      .mockResolvedValue(activeRun),
     recordCandidateCompleted: jest.fn(),
     recordCandidateFailed: jest.fn(),
   };
@@ -356,8 +361,12 @@ function orchestrationRepository() {
 
 function orchestrationStatus() {
   return {
-    reconcileAfterRestart: jest.fn().mockResolvedValue(null),
-    getCurrent: jest.fn().mockResolvedValue(run()),
+    reconcileAfterRestart: jest
+      .fn<LoopStatusService['reconcileAfterRestart']>()
+      .mockResolvedValue(null),
+    getCurrent: jest
+      .fn<LoopStatusService['getCurrent']>()
+      .mockResolvedValue(run()),
     pause: jest.fn(),
     resume: jest.fn(),
     stop: jest.fn(),

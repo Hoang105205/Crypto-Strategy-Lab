@@ -36,6 +36,20 @@ instead of returning stale counts as healthy.
 
 No stack traces or raw dependency errors are returned.
 
+### Error Vocabulary
+
+| Code | HTTP status | Public message | Use |
+|------|-------------|----------------|-----|
+| `QUEUE_UNAVAILABLE` | `503` | `Queue service is unavailable` | A queue read fails with the established Queue dependency code. |
+| `STRATEGY_ENGINE_UNAVAILABLE` | `503` | `Strategy Engine is unavailable` | A dependency read fails with the established Strategy Engine dependency code. |
+| `INTERNAL_ERROR` | `500` | `Internal server error` | An unknown or unclassified failure reaches the Dashboard boundary. |
+
+An application-created `HttpException` is preserved only when its response is already the exact
+stable `{ error: string, code: string }` shape. Framework-default or malformed exception bodies are
+not reflected. Non-HTTP errors are mapped by the known dependency codes above; every other error is
+sanitized to `INTERNAL_ERROR`. The reusable filter is applied only to the Dashboard controller in
+this phase, so Queue, Loop, Leaderboard, and Market Data endpoint behavior remains unchanged.
+
 ## Socket.IO Namespace
 
 `/infrastructure`

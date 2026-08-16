@@ -16,6 +16,7 @@ import {
   type NormalizedRate,
 } from '@crypto-strategy-lab/shared';
 import type { LeaderboardEntry as PrismaLeaderboardEntry } from '@prisma/client';
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import { PrismaService } from '../database/prisma.service';
 import { IEVENT_BUS, IBACKTEST_RESULT_PORT } from '../shared/tokens';
@@ -113,10 +114,11 @@ class InMemoryLeaderboardPrisma {
     ),
   };
 
-  readonly $transaction = jest.fn(
-    async <T>(operation: (transaction: this) => Promise<T>): Promise<T> =>
-      operation(this),
-  );
+  $transaction<T>(
+    operation: (transaction: InMemoryLeaderboardPrisma) => Promise<T>,
+  ): Promise<T> {
+    return operation(this);
+  }
 
   constructor() {
     Object.defineProperties(this, {

@@ -782,10 +782,11 @@ class InMemoryLoopPrisma {
     ),
   };
 
-  readonly $transaction = jest.fn(
-    async <T>(operation: (transaction: this) => Promise<T>): Promise<T> =>
-      operation(this),
-  );
+  $transaction<T>(
+    operation: (transaction: InMemoryLoopPrisma) => Promise<T>,
+  ): Promise<T> {
+    return operation(this);
+  }
 
   run(id: string): PrismaRun | undefined {
     return this.runs.find((run) => run.id === id);
