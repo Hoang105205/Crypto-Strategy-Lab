@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest assertions intentionally inspect typed port mocks. */
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import {
@@ -187,6 +187,7 @@ const completedMetrics: BacktestCompletedPayload['metrics'] = {
 };
 const savedResult = {
   id: RESULT_ID,
+  jobId: JOB_ID,
   strategyVersionId: STRATEGY_VERSION_ID,
   pair: 'BTCUSDT',
   timeframe: '1h',
@@ -268,6 +269,13 @@ describe('BacktestWorker contract (T013)', () => {
       );
     }
     expect(loadTarget()).toBeDefined();
+  });
+
+  it('keeps Queue behind shared ports without Prisma or Strategy implementation imports', () => {
+    if (!TARGET_EXISTS) return;
+    const source = readFileSync(TARGET_FILE, 'utf8');
+    expect(source).not.toMatch(/@prisma\/client|PrismaService/);
+    expect(source).not.toMatch(/from ['"]\.\.\/strategy\//);
   });
 
   const describeWithTarget = TARGET_EXISTS ? describe : describe.skip;
@@ -377,6 +385,13 @@ describe('BacktestWorker contract (T013)', () => {
         userPayload().backtestConfig,
       );
       expect(evaluator.evaluate).toHaveBeenCalledWith(trades, 10_000);
+      expect(resultPort.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: JOB_ID,
+          strategyVersionId: STRATEGY_VERSION_ID,
+          winRate: 0.6,
+        }),
+      );
       expect(eventBus.publish).toHaveBeenCalledWith(
         EventType.BacktestCompleted,
         {
@@ -401,6 +416,27 @@ describe('BacktestWorker contract (T013)', () => {
         eventBus.publish.mock.invocationCallOrder[0],
       );
       expect(deadLetterRepository.mirror).not.toHaveBeenCalled();
+    });
+
+    it('normalizes evaluator percentage winRate before persistence and publication', async () => {
+      evaluator.evaluate.mockReturnValue({ ...metrics, winRate: 60 });
+      resultPort.save.mockImplementation(async (input) => ({
+        id: RESULT_ID,
+        ...input,
+      }));
+
+      await createWorker().process(jobFixture());
+
+      expect(resultPort.save).toHaveBeenCalledWith(
+        expect.objectContaining({ winRate: 0.6 }),
+      );
+      expect(eventBus.publish).toHaveBeenCalledWith(
+        EventType.BacktestCompleted,
+        expect.objectContaining({
+          metrics: expect.objectContaining({ winRate: 0.6 }),
+        }),
+        CORRELATION_ID,
+      );
     });
 
     it('coalesces stalled duplicate processing by jobId into one result and completion effect', async () => {
@@ -530,7 +566,8 @@ describe('BacktestWorker contract (T013)', () => {
             `${expectedError} job to become terminal`,
           );
 
-          expect(stored.attemptsMade).toBe(1);
+          const terminal = await queue?.getJob(payload.jobId);
+          expect(terminal?.attemptsMade).toBe(1);
           expect(deadLetterRepository.mirror).toHaveBeenCalledTimes(1);
           expect(eventBus.publish).toHaveBeenCalledTimes(2);
           expect(eventBus.publish).toHaveBeenNthCalledWith(
@@ -599,7 +636,7 @@ describe('BacktestWorker contract (T013)', () => {
         expect(
           deadLetterRepository.mirror.mock.invocationCallOrder[0],
         ).toBeLessThan(eventBus.publish.mock.invocationCallOrder[0]);
-      });
+      }, TEST_TIMEOUT_MS);
     });
   });
 });

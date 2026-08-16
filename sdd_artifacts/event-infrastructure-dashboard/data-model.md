@@ -10,6 +10,11 @@ erDiagram
     STRATEGY_VERSION ||--o{ SEARCH_LOOP_CANDIDATE : referenced_by_id
     BACKTEST_RESULT ||--o| SEARCH_LOOP_CANDIDATE : referenced_by_id
 
+    BACKTEST_RESULT {
+      uuid id PK
+      uuid jobId UK
+      uuid strategyVersionId FK
+    }
     LEADERBOARD_ENTRY {
       uuid id PK
       uuid strategyVersionId

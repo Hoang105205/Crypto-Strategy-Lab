@@ -224,3 +224,75 @@ These files are outside T007–T010. The passing Nest build and `tsconfig.build.
 ## Phase 1 Checkpoint
 
 **PASS — US1**. T007–T011 are complete, every Phase 1 requirement has executable evidence, and no error attributable to Phase 1 remains. Publishers and subscribers can use the typed, isolated Event Bus exclusively through `IEVENT_BUS`; Phase 2 may depend on this seam.
+
+## Phase 2 — BullMQ/Redis Backtest Queue Checkpoint (T012–T020)
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### Redis fixture and scope
+
+- Tests use Redis 7 at `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB` (defaults `127.0.0.1:6379/0`) with a unique queue name `csl-t020-${process.pid}-${randomUUID()}` per scenario.
+- Cleanup calls BullMQ `obliterate({ force: true })` only on that unique queue. The suite contains no `FLUSHDB` and does not remove keys belonging to another suite/application.
+- Production `BullMqJobQueue`, `BacktestWorker`, `BullMqWorkerHost`, config, backoff and connection ownership are used. Market Data, Strategy execution, Backtester, Evaluator, Backtest Result and Event Bus are approved port fakes; no live Binance or sentiment dependency is used.
+- The restart scenario closes and reconstructs the Nest-owned queue/producer/worker resources while the Redis process remains running. This proves Nest/application restart recovery, not Redis server restart.
+- The outage scenarios use an unavailable producer endpoint (`127.0.0.1:1`) and an unexpected socket destruction on the isolated worker client. The worker test observes `reconnecting` then `ready`; it does not stop the shared Redis server.
+- The real stalled fixture uses `lockDuration=200ms`, `stalledInterval=200ms`, `skipLockRenewal=true`, and `maxStalledCount=1` only on the deliberately stalling test worker. The recovery worker renews normally. These shortened lock values are test fixture configuration, not production defaults.
+
+### Acceptance evidence
+
+| US2 behavior | Result | Executable evidence |
+|---|---|---|
+| USER priority and FIFO at equal priority | PASS | Four jobs enqueued before a concurrency-1 worker complete as USER-1, USER-2, SEARCH_LOOP-1, SEARCH_LOOP-2. |
+| Peak concurrency exactly three | PASS | Five blocked jobs reach `processing=3`, leave `queued=2`, observe peak 3, and never exceed 3. |
+| Successful pipeline ordering | PASS | Redis ISO dates are rehydrated to `Date`; one immutable result save occurs before one `BacktestCompleted` publication. |
+| Waiting and delayed restart survival | PASS | Queue/worker resources are closed and recreated while Redis stays running; both jobs retain the same BullMQ `jobId`, and the delayed job completes on attempt 2. |
+| Retry/backoff and terminal effects | PASS | Permanent retryable failure executes exactly 3 times; measured gaps are at least 850ms and 3800ms for configured 1s/4s waits; one DLQ mirror, one `BacktestFailed`, and one `BacktestDeadLettered` result. |
+| Non-retryable skip | PASS | Zero candles invokes Market Data once, never invokes Backtester, consumes one attempt, and produces one DLQ mirror plus one terminal Event pair. Missing-version behavior remains covered by the Redis-backed T013 worker matrix. |
+| Duplicate/stalled idempotency | PASS | Direct duplicate delivery and a real expired BullMQ lock/recovery claim each produce one Backtest Result and one completion Event; duplicate terminal delivery produces one mirror and one terminal Event pair. |
+| Producer outage and worker recovery | PASS | Producer rejects with stable `QUEUE_UNAVAILABLE` in under 3 seconds; isolated worker transport reconnects and then completes a newly enqueued job. |
+| Graceful shutdown | PASS | `Worker.close()` waits for the active job, does not claim the second job, closes after the barrier is released, and the waiting job completes after worker recreation. |
+| REST DLQ inspection/manual retry | PASS | Production controller lists the terminal record, returns `{jobId,status:'QUEUED'}`, retains the same payload/identity, resets `attemptsMade` to 0, and the recovered job completes. |
+| Bounded retention | PASS | Five completions with `{age:60,count:2}` converge to exactly two retained completed jobs; both completed/failed options carry the same age/count bound. |
+
+### Production gaps exposed and corrected by T020
+
+1. BullMQ JSON storage converts `Date` values to ISO strings. `BacktestWorker` now rehydrates request dates once at the Redis-to-domain boundary before calling `IMarketDataService` or saving a result.
+2. Terminal persistence/events previously left BullMQ metadata as ordinary `FAILED`. The worker now marks the authoritative Redis job `deadLettered=true` with the terminal reason before mirroring and publishing, so status/stats/manual retry project `DEAD_LETTER` consistently.
+
+### Commands and results
+
+```powershell
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles queue/queue.integration.spec.ts
+# Test Suites: 1 passed, 1 total
+# Tests:       14 passed, 14 total
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles queue strategy/controllers/strategy.controller.queue.spec.ts strategy/strategy-runtime.module.spec.ts
+# Test Suites: 11 passed, 11 total
+# Tests:       79 passed, 79 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit -p tsconfig.build.json
+# exit 0
+
+npm.cmd run build -w @crypto-strategy-lab/backend
+# nest build, exit 0
+
+git diff --check
+# exit 0; line-ending conversion warnings only
+```
+
+The developer machine does not have `rg`, so the requested read-only audits were executed with PowerShell `Get-ChildItem`, `Where-Object`, and `Select-String` instead. Results:
+
+```text
+PASS boundary: processor uses shared ports; Queue has no Strategy-table Prisma access
+PASS token: no active legacy IJobQueue string binding/injection
+PASS event: no BacktestRequested enqueue subscriber
+PASS isolation: T020 suite contains no FLUSHDB
+```
+
+### Persistence claim and known out-of-scope gap
+
+The current `workspace/docker-compose.yml` mounts `/data` but does **not** explicitly configure Redis `appendonly yes`/`appendfsync`. Therefore this checkpoint does not claim a Redis process restart or AOF survival test, despite older ADR/KB prose describing AOF as the target policy. Enabling and documenting Compose AOF/healthcheck remains the explicitly scheduled T049 operational handoff. No shared Redis instance was restarted or reconfigured during T020.
+
+## Phase 2 Checkpoint
+
+**PASS — US2 runtime acceptance**. T012–T020 are complete (9/9). The production BullMQ adapter and in-process worker demonstrate scheduling, bounded concurrency, persistence-before-event ordering, retry/DLQ behavior, real stalled recovery, stable outage behavior, graceful lifecycle, operator recovery, and bounded retention without live external domain services. T021/Leaderboard was not started. The Compose AOF delivery gap above remains explicitly unclaimed and assigned to T049.

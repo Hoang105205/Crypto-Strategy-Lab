@@ -173,6 +173,47 @@ describe('DeadLetterRepository contract (T013)', () => {
       expect(Object.hasOwn(prisma, 'backtestResult')).toBe(false);
     });
 
+    it('preserves terminal audit fields while sanitizing secrets in lastError', async () => {
+      const input = mirrorInput({
+        lastError:
+          'Redis redis://worker:secret@redis.internal:6379 failed\npassword=hunter2',
+      });
+      createMock.mockResolvedValue(record({
+        lastError:
+          'Redis redis://[REDACTED]@redis.internal:6379 failed password=[REDACTED]',
+      }));
+      const repository = new Repository(prisma);
+
+      await repository.mirror(input);
+
+      expect(createMock).toHaveBeenCalledWith({
+        data: {
+          jobId: input.jobId,
+          jobType: input.jobType,
+          payload: input.payload,
+          attempts: input.attempts,
+          lastError:
+            'Redis redis://[REDACTED]@redis.internal:6379 failed password=[REDACTED]',
+          deadLetteredAt: input.deadLetteredAt,
+        },
+      });
+    });
+
+    it('rejects a duplicate jobId that belongs to a different original payload', async () => {
+      createMock.mockRejectedValue(knownUniqueError());
+      findUniqueMock.mockResolvedValue(record());
+      const repository = new Repository(prisma);
+
+      await expectRejectedCode(
+        repository.mirror(
+          mirrorInput({
+            payload: { jobId: JOB_ID, strategyVersionId: randomUUID() },
+          }),
+        ),
+        'JOB_CONFLICT',
+      );
+    });
+
     it('lists the durable audit mirror newest-first', async () => {
       const newest = record({
         deadLetteredAt: new Date('2026-08-15T03:00:00.000Z'),
@@ -250,9 +291,10 @@ describe('DeadLetterRepository contract (T013)', () => {
         .fn<() => Promise<void>>()
         .mockRejectedValue(new Error('Redis unavailable'));
 
-      await expect(
+      await expectRejectedCode(
         repository.resolveAndRequeue(JOB_ID, requeue),
-      ).rejects.toThrow('Redis unavailable');
+        'QUEUE_UNAVAILABLE',
+      );
       expect(resolvedAt).toBeNull();
       await expect(repository.findUnresolved(JOB_ID)).resolves.toEqual(stored);
     });

@@ -9,6 +9,10 @@ import {
   type QueueStats,
 } from '@crypto-strategy-lab/shared';
 import { Queue, type ConnectionOptions, type Job, type JobState } from 'bullmq';
+import type {
+  OnApplicationShutdown,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import type Redis from 'ioredis';
 import {
   BACKTEST_BACKOFF_TYPE,
@@ -47,7 +51,9 @@ export interface BullMqJobQueueOptions {
   connectionOwner?: OwnedRedisConnection<Redis>;
 }
 
-export class BullMqJobQueue implements IJobQueue {
+export class BullMqJobQueue
+  implements IJobQueue, OnModuleDestroy, OnApplicationShutdown
+{
   private readonly queue: Queue<StoredBacktestJob>;
   private closePromise?: Promise<void>;
 
@@ -212,6 +218,14 @@ export class BullMqJobQueue implements IJobQueue {
   close(): Promise<void> {
     this.closePromise ??= this.closeOnce();
     return this.closePromise;
+  }
+
+  onModuleDestroy(): Promise<void> {
+    return this.close();
+  }
+
+  onApplicationShutdown(): Promise<void> {
+    return this.close();
   }
 
   private async closeOnce(): Promise<void> {
