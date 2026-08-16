@@ -1,5 +1,19 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T034 - 2026-08-16](lessons/event-infrastructure-dashboard-t034-2026-08-16.md): production Loop/EventBus integration with isolated stateful Prisma, public generator/version/queue fakes, exact bounded completion, command/race/restart proofs, and honest external-prerequisite reporting.
+
+- [Event Infrastructure Dashboard T033 — 2026-08-16](lessons/event-infrastructure-dashboard-t033-2026-08-16.md): public-module/token wiring, single-registration terminal subscriptions, queue-aware startup reconciliation, idempotent shutdown, circular-DI audit, and generator provider replacement proof.
+
+- [Event Infrastructure Dashboard T032 — 2026-08-16](lessons/event-infrastructure-dashboard-t032-2026-08-16.md): DTO normalization, ISO/date/backtest validation, stable HTTP error mapping, literal-route precedence, ordered detail projection, and explicit JSON null responses.
+
+- [Event Infrastructure Dashboard T031 — 2026-08-16](lessons/event-infrastructure-dashboard-t031-2026-08-16.md): Strategy-owned immutable candidate port, shared scoring token, enqueue-before-event flow, generation epoch race guard, ordered stop checks, and idempotent terminal lifecycle.
+
+- [Event Infrastructure Dashboard T030 — 2026-08-16](lessons/event-infrastructure-dashboard-t030-2026-08-16.md): single-process start mutex with transactional re-check, conditional terminal candidate claims, late-result preservation, explicit Loop transitions, and queue-aware restart reconciliation.
+
+- [Event Infrastructure Dashboard T029 — 2026-08-16](lessons/event-infrastructure-dashboard-t029-2026-08-16.md): RED-first Loop orchestration/REST contracts, durable enqueue-before-event ordering, terminal race rules, and three explicit Strategy integration gates before T031.
+
+- [Event Infrastructure Dashboard T028 — 2026-08-16](lessons/event-infrastructure-dashboard-t028-2026-08-16.md): RED-first Loop persistence/state contracts, executable Prisma ownership, concurrent-start race fixture, idempotent terminal accounting, and restart error discrimination.
+
 - [Event Infrastructure Dashboard T027 — 2026-08-16](lessons/event-infrastructure-dashboard-t027-2026-08-16.md): production Nest/EventBus integration harness, executable Prisma ownership tripwires, REST/event acceptance, cleanup, and scoring-provider swap proof.
 
 - [Event Infrastructure Dashboard T026 — 2026-08-16](lessons/event-infrastructure-dashboard-t026-2026-08-16.md): Strategy-owned full detail read reconciliation, stable Leaderboard DTO errors, ConfigService Top-K wiring, module exports, and ownership audits.

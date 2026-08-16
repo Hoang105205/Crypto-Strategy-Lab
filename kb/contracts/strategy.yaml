@@ -117,6 +117,19 @@ interfaces:
         returns: "IStrategy[]"
         description: "Generate N candidate strategies (Random or Domain-Guided)"
 
+  IStrategyCandidatePort:
+    description: >
+      Strategy-owned public boundary used by the Search Loop. It selects the
+      requested generator, materializes exactly one generated IStrategy as an
+      immutable StrategyVersion, and returns only its stable reference.
+    methods:
+      - name: generateCandidate
+        args: "(generatorType: 'RANDOM' | 'DOMAIN_GUIDED')"
+        returns: "Promise<{ strategyVersionId: UUID, strategyName: string }>"
+        description: >
+          The returned ID is the persisted StrategyVersion.id. Callers must not
+          synthesize an ID or access StrategyVersion persistence directly.
+
   ICombiner:
     description: "Combines multiple strategy signals into a single signal"
     methods:

@@ -10,5 +10,7 @@ export const IJOB_QUEUE = Symbol('IJobQueue');
 export const IBACKTESTER = Symbol('IBacktester');
 export const IEVALUATOR = Symbol('IEvaluator');
 export const ISTRATEGY_GENERATOR = Symbol('IStrategyGenerator');
+export const ISTRATEGY_CANDIDATE_PORT = Symbol('IStrategyCandidatePort');
 export const ISTRATEGY_EXECUTION_PORT = Symbol('IStrategyExecutionPort');
 export const IBACKTEST_RESULT_PORT = Symbol('IBacktestResultPort');
+export const ISCORING_POLICY = Symbol('IScoringPolicy');

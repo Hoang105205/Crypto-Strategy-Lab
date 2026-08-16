@@ -21,7 +21,8 @@ import {
 } from '@crypto-strategy-lab/shared';
 import { IBACKTEST_RESULT_PORT, IEVENT_BUS } from '../shared/tokens';
 import { LeaderboardRepository } from './leaderboard.repository';
-import { ScoringPolicy } from './scoring-policy';
+import { ISCORING_POLICY } from '../shared/tokens';
+import type { IScoringPolicy } from './scoring-policy';
 
 export interface LeaderboardDetail extends LeaderboardEntryPayload {
   strategyVersion: StrategyVersion;
@@ -43,7 +44,8 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(IEVENT_BUS) private readonly eventBus: IEventBus,
     private readonly repository: LeaderboardRepository,
-    private readonly scoringPolicy: ScoringPolicy,
+    @Inject(ISCORING_POLICY)
+    private readonly scoringPolicy: IScoringPolicy,
     @Inject(IBACKTEST_RESULT_PORT)
     private readonly resultPort: IBacktestResultPort,
   ) {}

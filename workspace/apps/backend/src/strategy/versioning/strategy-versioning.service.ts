@@ -19,19 +19,37 @@ export class StrategyVersioningService {
    * Create an immutable StrategyVersion snapshot and persist it to PostgreSQL.
    * Once created, the version record is never modified (ADR-0008).
    */
-  async createVersion(strategy: IStrategy, parentVersionId?: string): Promise<StrategyVersion> {
+  createVersion(
+    strategy: IStrategy,
+    parentVersionId?: string,
+  ): Promise<StrategyVersion> {
+    return this.createSnapshot(strategy, parentVersionId, new Set());
+  }
+
+  private async createSnapshot(
+    strategy: IStrategy,
+    parentVersionId: string | undefined,
+    ancestors: Set<IStrategy>,
+  ): Promise<StrategyVersion> {
+    if (ancestors.has(strategy)) {
+      throw new Error('Cyclic composite strategy cannot be materialized');
+    }
     const isComposite = strategy.getType() === StrategyType.COMPOSITE;
     const params = strategy.getParameters();
 
-    // Resolve child version IDs for composite strategies
+    // Materialize children first so the parent always points to real,
+    // immutable and independently resolvable StrategyVersion records.
     let childVersionIds: string[] = [];
-    if (isComposite && (strategy as any).children) {
-      const children = (strategy as any).children as IStrategy[];
+    const children = isComposite ? getCompositeChildren(strategy) : [];
+    if (isComposite && children.length > 0) {
+      const nextAncestors = new Set(ancestors).add(strategy);
       for (const child of children) {
-        const versions = await this.getVersionsByName(child.getName());
-        if (versions.length > 0) {
-          childVersionIds.push(versions[versions.length - 1].id);
-        }
+        const childVersion = await this.createSnapshot(
+          child,
+          undefined,
+          nextAncestors,
+        );
+        childVersionIds.push(childVersion.id);
       }
     }
 
@@ -48,8 +66,11 @@ export class StrategyVersioningService {
         parentVersionId: parentVersionId ?? null,
         isComposite,
         childVersionIds: isComposite ? childVersionIds : [],
-        combinerType: isComposite ? (params.combinerType as string) ?? null : null,
-        combinerWeights: isComposite && params.weights ? (params.weights as any) : undefined,
+        combinerType: isComposite
+          ? ((params.combinerType as string) ?? null)
+          : null,
+        combinerWeights:
+          isComposite && params.weights ? (params.weights as any) : undefined,
       },
     });
 
@@ -64,13 +85,16 @@ export class StrategyVersioningService {
       isComposite: dbRecord.isComposite,
       childVersionIds: dbRecord.childVersionIds,
       combinerType: dbRecord.combinerType as CombinerType | undefined,
-      combinerWeights: dbRecord.combinerWeights as Record<string, number> | undefined,
+      combinerWeights: dbRecord.combinerWeights as
+        Record<string, number> | undefined,
       createdAt: dbRecord.createdAt,
     };
 
     // Cache for fast subsequent reads
     this.cache.set(version.id, version);
-    this.logger.log(`Created immutable StrategyVersion snapshot [${version.id}] for '${strategy.getName()}' v${nextVersion}`);
+    this.logger.log(
+      `Created immutable StrategyVersion snapshot [${version.id}] for '${strategy.getName()}' v${nextVersion}`,
+    );
     return version;
   }
 
@@ -84,7 +108,9 @@ export class StrategyVersioningService {
     }
 
     // Fallback to database
-    const dbRecord = await this.prisma.strategyVersion.findUnique({ where: { id } });
+    const dbRecord = await this.prisma.strategyVersion.findUnique({
+      where: { id },
+    });
     if (!dbRecord) return undefined;
 
     const version = this.mapDbToVersion(dbRecord);
@@ -139,8 +165,16 @@ export class StrategyVersioningService {
       isComposite: dbRecord.isComposite,
       childVersionIds: dbRecord.childVersionIds,
       combinerType: dbRecord.combinerType as CombinerType | undefined,
-      combinerWeights: dbRecord.combinerWeights as Record<string, number> | undefined,
+      combinerWeights: dbRecord.combinerWeights as
+        Record<string, number> | undefined,
       createdAt: dbRecord.createdAt,
     };
   }
+}
+
+function getCompositeChildren(strategy: IStrategy): readonly IStrategy[] {
+  const candidate = strategy as IStrategy & {
+    getChildren?: () => readonly IStrategy[];
+  };
+  return candidate.getChildren?.() ?? [];
 }

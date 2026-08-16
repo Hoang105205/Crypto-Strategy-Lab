@@ -9,10 +9,12 @@ import type {
   BacktestResultCreateInput,
   EvaluationMetrics,
   Signal,
+  StrategyCandidateReference,
   StrategyExecutionResult,
   Trade,
 } from "../types/strategy";
 import { StrategyType } from "../types/enums";
+import type { StrategyGeneratorType } from "../types/enums";
 
 export interface IStrategy {
   analyze(candles: Candle[]): Signal;
@@ -31,6 +33,16 @@ export interface IEvaluator {
 
 export interface IStrategyGenerator {
   generate(count: number): IStrategy[];
+}
+
+/**
+ * Strategy-owned boundary that selects a generator and materializes its output
+ * as a real immutable StrategyVersion before returning control to the caller.
+ */
+export interface IStrategyCandidatePort {
+  generateCandidate(
+    generatorType: StrategyGeneratorType,
+  ): Promise<StrategyCandidateReference>;
 }
 
 export interface IStrategyExecutionPort {

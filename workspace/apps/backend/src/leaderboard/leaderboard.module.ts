@@ -6,6 +6,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DatabaseModule } from '../database/database.module';
 import { PrismaService } from '../database/prisma.service';
+import { ISCORING_POLICY } from '../shared/tokens';
 import { EventsModule } from '../events/events.module';
 import { StrategyRuntimeModule } from '../strategy/strategy-runtime.module';
 import { LeaderboardController } from './leaderboard.controller';
@@ -21,6 +22,7 @@ import { ScoringPolicy } from './scoring-policy';
   controllers: [LeaderboardController],
   providers: [
     ScoringPolicy,
+    { provide: ISCORING_POLICY, useExisting: ScoringPolicy },
     {
       provide: LeaderboardRepository,
       inject: [PrismaService, ConfigService],
@@ -35,6 +37,6 @@ import { ScoringPolicy } from './scoring-policy';
     },
     LeaderboardService,
   ],
-  exports: [LeaderboardService],
+  exports: [LeaderboardService, ISCORING_POLICY],
 })
 export class LeaderboardModule {}

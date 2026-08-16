@@ -1,4 +1,9 @@
-import type { Candle, Signal, IStrategy, ICombiner } from '@crypto-strategy-lab/shared';
+import type {
+  Candle,
+  Signal,
+  IStrategy,
+  ICombiner,
+} from '@crypto-strategy-lab/shared';
 import { StrategyType, SignalAction } from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 
@@ -16,7 +21,8 @@ export class CompositeStrategy implements IStrategy {
     this.name = name;
     this.children = children;
     this.combiner = combiner || {
-      combine: (signals: Signal[]) => signals[0] || { action: SignalAction.HOLD, confidence: 0 },
+      combine: (signals: Signal[]) =>
+        signals[0] || { action: SignalAction.HOLD, confidence: 0 },
     };
     if (registry && !registry.has(this.name)) {
       registry.register(this);
@@ -42,6 +48,11 @@ export class CompositeStrategy implements IStrategy {
       combinerType,
       ...(weights && Object.keys(weights).length > 0 ? { weights } : {}),
     };
+  }
+
+  /** Read-only composition boundary used when creating immutable snapshots. */
+  getChildren(): readonly IStrategy[] {
+    return [...this.children];
   }
 
   addChild(strategy: IStrategy): void {
