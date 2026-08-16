@@ -1,5 +1,15 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T027 — 2026-08-16](lessons/event-infrastructure-dashboard-t027-2026-08-16.md): production Nest/EventBus integration harness, executable Prisma ownership tripwires, REST/event acceptance, cleanup, and scoring-provider swap proof.
+
+- [Event Infrastructure Dashboard T026 — 2026-08-16](lessons/event-infrastructure-dashboard-t026-2026-08-16.md): Strategy-owned full detail read reconciliation, stable Leaderboard DTO errors, ConfigService Top-K wiring, module exports, and ownership audits.
+
+- [Event Infrastructure Dashboard T025 — 2026-08-16](lessons/event-infrastructure-dashboard-t025-2026-08-16.md): Idempotent Observer lifecycle, runtime metric validation, ordered persistence/ranking publication, duplicate-race suppression, and port-only detail composition.
+
+- [Event Infrastructure Dashboard T024 — 2026-08-16](lessons/event-infrastructure-dashboard-t024-2026-08-16.md): Transactional full reranking, criterion-specific best-per-version projections, P2002 duplicate no-op, explicit payload mapping, and strict LeaderboardEntry ownership.
+
+- [Event Infrastructure Dashboard T022 — 2026-08-16](lessons/event-infrastructure-dashboard-t022-2026-08-16.md): RED-first mocked-Prisma repository contract, deterministic full ranking, best-per-version Top-K, and executable Strategy-table boundary protection.
+
 - [Event Infrastructure Dashboard T020 — 2026-08-16](lessons/event-infrastructure-dashboard-t020-2026-08-16.md): Redis-isolated acceptance harness, real stalled recovery, fail-fast/persistent connection evidence, Redis date rehydration, and honest AOF scope.
 - [Event Infrastructure Dashboard T019 — 2026-08-16](lessons/event-infrastructure-dashboard-t019-2026-08-16.md): acyclic runtime-module wiring, one BullMQ provider behind `IJOB_QUEUE`, split Redis ownership, producer ordering, and clean Nest teardown.
 
