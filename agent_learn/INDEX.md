@@ -1,5 +1,8 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T015 — 2026-08-15](lessons/event-infrastructure-dashboard-t015-2026-08-15.md): explicit BullMQ duplicate detection, queue-state projection, retry reset, and Redis-backed teardown evidence.
+- [Event Infrastructure Dashboard T014 — 2026-08-15](lessons/event-infrastructure-dashboard-t014-2026-08-15.md): BullMQ config, split Redis outage policies, idempotent connection ownership, and sanitized stable errors.
+
 This directory stores what the agent has learned during SDD workflow execution.
 It is for agent read-only reference — do not modify manually unless you are updating lessons.
 
