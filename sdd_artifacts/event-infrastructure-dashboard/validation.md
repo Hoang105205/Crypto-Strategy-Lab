@@ -432,3 +432,76 @@ PASS: AppModule imports LoopModule exactly once.
 ## Phase 4 Checkpoint
 
 **PASS — US4 runtime acceptance**. T028–T034 are complete (7/7). The production bounded search Loop is demonstrated across completion bounds, failed/duplicate/late terminal outcomes, lifecycle commands, concurrent start, generator fatal handling, restart reconciliation, dependency discrimination, and generator replaceability without direct Strategy or Queue implementation coupling.
+
+## Phase 5 — Dashboard BFF and Infrastructure Realtime Backend Checkpoint (T035–T038)
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### T038 integration scope
+
+- The Nest test application imports production `DashboardModule` plus production `EventsModule`/`EventBus` behavior. It replaces Leaderboard, Loop, and Queue modules with test contract modules exporting the same public `LeaderboardService`, `LoopStatusService`, and `IJOB_QUEUE` boundaries; no repository, Prisma, BullMQ worker, Binance, or external service is booted.
+- Module boot resolves `DashboardService`, `DashboardController`, `PushGateway`, `InfrastructureErrorFilter`, and all four public dependencies without `forwardRef`.
+- HTTP integration covers active/null Loop summaries, SCORE Top-5 slice projection with original rank/order, complete QueueStats, ISO timestamps, all three dependency failure paths, sanitized public bodies, and preservation of a stable application `HttpException`.
+- A real Socket.IO client connects to the ephemeral `/infrastructure` namespace and receives `leaderboard:update`, `loop:started`, `loop:progress`, and `loop:stopped` with the exact serialized source payloads.
+- Production EventBus integration proves a socket emit failure does not escape to the publisher or block sibling delivery. Listener-count assertions prove one subscription for each relay event, no reserved Market Data/News subscriptions, and zero relay listeners after shutdown.
+- Existing Market Data namespace metadata, candle rooms, candle/status channels, and client lifecycle remain unchanged and pass their original regression suite.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand dashboard/dashboard.service.spec.ts dashboard/push.gateway.spec.ts events/event-bus.spec.ts market-data/websocket/market-data.gateway.spec.ts
+# Baseline before T038 wiring: Test Suites: 4 passed, 4 total
+# Baseline before T038 wiring: Tests:       33 passed, 33 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- jest --runInBand --forceExit --testNamePattern="boots and resolves" dashboard/dashboard.integration.spec.ts
+# Expected RED: 1 failed, 9 skipped; Nest could not find LeaderboardReaderFake because DashboardModule was empty.
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles dashboard/dashboard.integration.spec.ts
+# Test Suites: 1 passed, 1 total
+# Tests:       10 passed, 10 total
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand dashboard/dashboard.service.spec.ts dashboard/push.gateway.spec.ts dashboard/dashboard.integration.spec.ts market-data/websocket/market-data.gateway.spec.ts
+# Test Suites: 4 passed, 4 total
+# Tests:       36 passed, 36 total
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles dashboard events queue leaderboard loop market-data/websocket/market-data.gateway.spec.ts
+# Test Suites: 28 passed, 28 total
+# Tests:       315 passed, 315 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit -p tsconfig.build.json
+# exit 0
+
+npm.cmd run build -w @crypto-strategy-lab/backend
+# nest build, exit 0
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles
+# Test Suites: 55 passed, 55 total
+# Tests:       442 passed, 442 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit -p tsconfig.json --pretty false
+# Initial T038 run: exit 1 with 16 pre-existing test-only typing errors in Leaderboard, Loop, Queue, and Strategy.
+# Phase 5 completion cleanup rerun: exit 0 after test-only mock/fake/fixture typing reconciliation; production behavior unchanged.
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles dashboard/dashboard.service.spec.ts dashboard/push.gateway.spec.ts dashboard/dashboard.integration.spec.ts events/event-bus.spec.ts market-data/websocket/market-data.gateway.spec.ts leaderboard/leaderboard.integration.spec.ts loop/loop.integration.spec.ts loop/loop.module.spec.ts queue/queue.integration.spec.ts strategy/ports/strategy-candidate.port.spec.ts
+# Phase 5 completion cleanup: Test Suites: 10 passed, 10 total
+# Phase 5 completion cleanup: Tests:       87 passed, 87 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- eslint src/dashboard/dashboard.module.ts src/dashboard/dashboard.service.ts src/dashboard/dashboard.controller.ts src/dashboard/push.gateway.ts src/dashboard/dashboard.service.spec.ts src/dashboard/push.gateway.spec.ts src/dashboard/dashboard.integration.spec.ts src/shared/infrastructure-error.filter.ts
+# Phase 5 production/unit/integration lint: exit 0
+```
+
+### Boundary audit and limitations
+
+```text
+PASS: AppModule already imports DashboardModule exactly once; T038 does not modify AppModule.
+PASS: DashboardModule has no forwardRef and wires only public module/provider boundaries.
+PASS: Dashboard/Gateway production source has no repository, Prisma, BullMqJobQueue, MarketDataGateway, MarketDataUpdated, or NewsCollected dependency.
+PASS: no sorting, score calculation, reranking, or Loop-state orchestration is introduced in Dashboard/Gateway.
+PASS: full backend Jest exits cleanly under --detectOpenHandles after 55 suites / 442 tests.
+PASS: full backend test TypeScript, source TypeScript, shared build, backend build, and all Phase 5 lint targets are green after test-only typing/lint cleanup.
+PASS: Event Infrastructure KB paths, BFF public calls, summary wire shape, infrastructure namespace, and integration evidence match the implementation.
+```
+
+## Phase 5 Checkpoint
+
+**PASS — US5 backend runtime acceptance**. T035–T038 are complete (4/4). The backend now exposes an authoritative, failure-safe Dashboard summary and isolated four-channel infrastructure realtime delivery with deterministic cleanup while preserving the existing Market Data transport contract.

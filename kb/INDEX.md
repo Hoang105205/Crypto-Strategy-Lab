@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-13
-> **Status**: Active — News API Pagination (offset/limit) & Multi-Coin Filter added to contracts, flows, and modules
+> **Last Updated**: 2026-08-16
+> **Status**: Active — Dashboard BFF and Infrastructure Realtime backend paths, public calls, wire shape, namespace, and integration evidence reconciled
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

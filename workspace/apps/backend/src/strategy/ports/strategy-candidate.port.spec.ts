@@ -38,10 +38,14 @@ describe('StrategyCandidatePort', () => {
 
   beforeEach(() => {
     searchEngine = {
-      generateCandidates: jest.fn().mockReturnValue([generated]),
+      generateCandidates: jest.fn<
+        (count: number, type: StrategyGeneratorType) => IStrategy[]
+      >(() => [generated]),
     };
     versions = {
-      createVersion: jest.fn().mockResolvedValue(version),
+      createVersion: jest.fn<(strategy: IStrategy) => Promise<StrategyVersion>>(
+        () => Promise.resolve(version),
+      ),
     };
     port = new StrategyCandidatePort(searchEngine as never, versions as never);
   });

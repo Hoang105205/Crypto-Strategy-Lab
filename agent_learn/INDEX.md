@@ -1,5 +1,13 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T038 - 2026-08-16](lessons/event-infrastructure-dashboard-t038-2026-08-16.md): public-boundary DashboardModule wiring, production Nest REST/Socket.IO integration, listener cleanup evidence, Market Data preservation, strict IDE/lint cleanup, full backend TypeScript reconciliation, and aligned KB paths/contracts.
+
+- [Event Infrastructure Dashboard T037 - 2026-08-16](lessons/event-infrastructure-dashboard-t037-2026-08-16.md): typed four-channel payload relay, bootstrap-time default/custom namespace metadata, idempotent gateway-scoped subscriptions, failure-safe cleanup/delivery, and preserved Market Data boundaries.
+
+- [Event Infrastructure Dashboard T036 - 2026-08-16](lessons/event-infrastructure-dashboard-t036-2026-08-16.md): contract-reconciled Dashboard composition, coherent SCORE Top-5/Loop/Queue snapshot, controller-local stable error filtering, source/build GREEN, and honest isolation of pre-existing test type errors.
+
+- [Event Infrastructure Dashboard T035 - 2026-08-16](lessons/event-infrastructure-dashboard-t035-2026-08-16.md): RED-first typed BFF/gateway contracts for SCORE Top-5 slice projection, complete snapshot failure, exact payload relay, lifecycle isolation, namespace separation, and explicitly deferred error-code/config semantics.
+
 - [Event Infrastructure Dashboard T034 - 2026-08-16](lessons/event-infrastructure-dashboard-t034-2026-08-16.md): production Loop/EventBus integration with isolated stateful Prisma, public generator/version/queue fakes, exact bounded completion, command/race/restart proofs, and honest external-prerequisite reporting.
 
 - [Event Infrastructure Dashboard T033 — 2026-08-16](lessons/event-infrastructure-dashboard-t033-2026-08-16.md): public-module/token wiring, single-registration terminal subscriptions, queue-aware startup reconciliation, idempotent shutdown, circular-DI audit, and generator provider replacement proof.

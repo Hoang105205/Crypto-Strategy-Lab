@@ -10,7 +10,7 @@
 - **Depends on**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` (shared interfaces only — no direct imports of another module's implementation), BullMQ, Redis
 - **Depended by**: All modules (publish/subscribe via `IEventBus`), Frontend (dashboard BFF, WebSocket)
 - **Contracts**: `kb/contracts/events.yaml`
-- **Source files**: `apps/backend/src/events/`, `queue/`, `leaderboard/`, `loop/`, `dashboard/`, `websocket/`
+- **Source files**: `apps/backend/src/events/`, `queue/`, `leaderboard/`, `loop/`, `dashboard/`
 - **Related ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0011 (Leaderboard as Observer), ADR-0013 (BullMQ/Redis Queue; supersedes ADR-0012)
 
 ## 2. Component Architecture
@@ -19,17 +19,17 @@
 | Component | Responsibility | Pattern | File(s) |
 |-----------|---------------|---------|---------|
 | EventBus | Typed wrapper around EventEmitter2 — `publish()` / `subscribe()`, wraps payloads in `EventEnvelope` | Event-Driven / Mediator | `apps/backend/src/events/event-bus.ts` |
-| Event Types | All typed event name + payload definitions (mirrors `kb/contracts/events.yaml`) | n/a | `apps/backend/src/events/event-types.ts` |
+| Event Types | All typed event name + payload definitions (mirrors `kb/contracts/events.yaml`) | n/a | `libs/shared/src/events/index.ts` |
 | BullMqJobQueue | `IJobQueue` adapter over BullMQ; Redis-backed priority/FIFO state, stats, retry, retention, and recovery | Job Queue/Worker | `apps/backend/src/queue/bullmq-job.queue.ts` |
 | RedisConnection | Validates and owns BullMQ producer/worker Redis connections and shutdown lifecycle | Infrastructure Adapter | `apps/backend/src/queue/redis.connection.ts` |
 | BacktestWorker | Consumes BullMQ jobs from Redis, calls `IMarketDataService` + `IBacktester` + `IEvaluator`, persists result, publishes `BacktestCompleted`/`BacktestFailed` | Worker | `apps/backend/src/queue/backtest.worker.ts` |
 | DeadLetterRepository | Mirrors terminal BullMQ failures to PostgreSQL for stable audit/REST inspection and recovery | Repository | `apps/backend/src/queue/dead-letter.repository.ts` |
 | LeaderboardService | Subscribes to `BacktestCompleted`, computes score, maintains Top-K, publishes `LeaderboardUpdated` | Observer | `apps/backend/src/leaderboard/leaderboard.service.ts` |
 | LeaderboardRepository | Persists/queries `LeaderboardEntry` rows | Repository | `apps/backend/src/leaderboard/leaderboard.repository.ts` |
-| LoopController | Orchestrates the search loop: generate → enqueue → collect → decide next step, entirely through events/interfaces | Orchestrator / State Machine | `apps/backend/src/loop/strategy-loop.ts` |
-| LoopStatusService | Tracks `SearchLoopRun` state, exposes progress for REST + WebSocket | State Store | `apps/backend/src/loop/loop-status.ts` |
-| DashboardController / DashboardService | REST API composition for the frontend (leaderboard, loop status, queue stats) | BFF | `apps/backend/src/dashboard/controllers/dashboard.controller.ts`, `dashboard/services/dashboard.service.ts` |
-| PushGateway | WebSocket gateway pushing `LeaderboardUpdated`, `SearchLoopProgress`, `SearchLoopStarted/Stopped` to the frontend | Gateway / Observer | `apps/backend/src/websocket/push.gateway.ts` |
+| StrategyLoopService | Orchestrates the search loop: generate → enqueue → collect → decide next step, entirely through events/interfaces | Orchestrator / State Machine | `apps/backend/src/loop/strategy-loop.service.ts` |
+| LoopStatusService | Tracks `SearchLoopRun` state, exposes progress for REST + WebSocket | State Store | `apps/backend/src/loop/loop-status.service.ts` |
+| DashboardController / DashboardService | REST API composition for the frontend (leaderboard, loop status, queue stats) | BFF | `apps/backend/src/dashboard/dashboard.controller.ts`, `apps/backend/src/dashboard/dashboard.service.ts` |
+| PushGateway | WebSocket gateway pushing `LeaderboardUpdated`, `SearchLoopProgress`, `SearchLoopStarted/Stopped` to the frontend | Gateway / Observer | `apps/backend/src/dashboard/push.gateway.ts` |
 
 ### Component Diagram
 
@@ -123,7 +123,7 @@ flowchart TD
 ### BFF (Backend-for-Frontend)
 - **Where**: `DashboardService` / `DashboardController`
 - **Why**: The frontend dashboard needs leaderboard + loop status + queue health in shapes convenient for rendering, without knowing that they come from three internal services owned by the same module.
-- **How**: `DashboardService` composes `LeaderboardService.getTopK()`, `LoopStatusService.getCurrentRun()`, and `JobQueue.getStats()` into single REST responses (Section 7).
+- **How**: `DashboardService` composes `LeaderboardService.getLeaderboard(RankingCriterion.SCORE)`, `LoopStatusService.getCurrent()`, and `IJobQueue.getStats()` into one coherent response. It preserves authoritative metadata and order, projects the first five Leaderboard entries with `slice(0, 5)`, and fails the whole snapshot when any dependency read fails (Section 7).
 - **Trade-offs**: Positive — frontend makes one call instead of three; Negative — `DashboardService` has a small amount of coupling to the shape of all three sub-services, acceptable since all four live in the same module.
 
 ## 4. Internal Data Flow
@@ -293,9 +293,11 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 | GET | `/api/queue/stats` | Queue depth, in-flight, dead-letter counts | `QueueStats` (see `kb/contracts/events.yaml`) |
 | GET | `/api/queue/dead-letter` | List dead-lettered jobs for operator inspection | `DeadLetterJob[]` |
 | POST | `/api/queue/dead-letter/:jobId/retry` | Re-enqueue a dead-lettered job | `{ jobId, status: "QUEUED" }` |
-| GET | `/api/dashboard/summary` | BFF composite: leaderboard Top-5 + current loop status + queue health in one call | `{ leaderboard, loop, queue }` |
+| GET | `/api/dashboard/summary` | BFF composite: leaderboard Top-5 + current loop status + queue health in one call | `{ leaderboard, loop, queue, generatedAt }`; dependency failures use stable `{ error, code }` bodies from `sdd_artifacts/event-infrastructure-dashboard/contracts/dashboard-realtime.md` |
 
 ### WebSocket (channels pushed by `PushGateway`)
+Namespace: `/infrastructure` by default, configurable at process/module bootstrap with `INFRASTRUCTURE_WS_NAMESPACE`. This namespace is independent from the existing `market-data` namespace.
+
 | Channel | Event payload | Trigger |
 |---------|---------------|---------|
 | `leaderboard:update` | `LeaderboardUpdated` payload | Every `LeaderboardUpdated` bus event |
@@ -321,7 +323,7 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
   - Redis-backed queue flow: await `IJobQueue.enqueue` with Redis and Strategy/Market Data test doubles, publish the notification, and assert the BullMQ job is consumed and `BacktestCompleted` is correct.
   - Restart recovery: enqueue waiting/delayed jobs, restart NestJS without stopping Redis, and assert jobs resume without changing identity.
   - Stalled/idempotency path: simulate worker loss and prove recovered execution does not duplicate `BacktestResult`, terminal events, or dead-letter records.
-  - Completion → Leaderboard → WebSocket: publish `BacktestCompleted` → assert `LeaderboardUpdated` is published and a connected mock WebSocket client receives `leaderboard:update`.
+  - Dashboard/Infrastructure realtime: boot production Dashboard/EventBus behavior with public dependency-module replacements, call `GET /api/dashboard/summary`, connect a real Socket.IO client to `/infrastructure`, assert all four exact relay channels/payloads, and verify listener cleanup on application shutdown.
   - Full search loop: start a loop with `maxCandidates: 5` against test doubles → assert exactly 5 `BacktestRequested` events are published and the loop reaches `COMPLETED` with `stopReason: "max_candidates_reached"`.
   - Dead-letter path: force `IBacktester.run()` to throw on every attempt → assert the job ends in `DEAD_LETTER` status and both `BacktestFailed` and `BacktestDeadLettered` are published exactly once.
 - **Manual/demo verification**: enqueue jobs, restart NestJS while Redis stays up, and show waiting work resumes; demonstrate USER priority, retry/backoff, DLQ recovery, Redis outage/recovery, and WebSocket reconnection.

@@ -40,10 +40,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { IJOB_QUEUE } from '../shared/tokens';
 import { BacktestWorker } from './backtest.worker';
-import {
-  BullMqJobQueue,
-  type StoredBacktestJob,
-} from './bullmq-job.queue';
+import { BullMqJobQueue, type StoredBacktestJob } from './bullmq-job.queue';
 import { createBullMqConfig } from './bullmq.config';
 import { BullMqWorkerHost } from './bullmq-worker.host';
 import { DeadLetterRepository } from './dead-letter.repository';
@@ -212,9 +209,16 @@ class ApprovedPortFakes {
     this.evaluator = { evaluate: jest.fn(() => metrics) };
     this.resultPort = {
       save: jest.fn((input) => this.saveResult(input)),
-      getById: jest.fn(async (id) =>
-        [...this.results.values()].find((result) => result.id === id) ?? null,
-      ),
+      getById: jest.fn((id) => {
+        const result = [...this.results.values()].find(
+          (candidate) => candidate.id === id,
+        );
+        return Promise.resolve(
+          result
+            ? { ...result, strategyVersion: resolvedStrategy.version }
+            : null,
+        );
+      }),
     };
     this.eventBus = {
       publish,
@@ -272,6 +276,7 @@ class RedisQueueHarness {
       BACKTEST_MAX_ATTEMPTS: 3,
       BACKTEST_JOB_RETENTION_AGE_SECONDS: 60,
       BACKTEST_JOB_RETENTION_COUNT: retentionCount,
+      LEADERBOARD_TOP_K: 10,
     };
     this.inspector = new Queue<StoredBacktestJob>(this.queueName, {
       connection: redisConnection(),
@@ -306,8 +311,7 @@ class RedisQueueHarness {
         slippage: 0.05,
       },
       source,
-      loopRunId:
-        source === BacktestSource.SEARCH_LOOP ? randomUUID() : null,
+      loopRunId: source === BacktestSource.SEARCH_LOOP ? randomUUID() : null,
     } as BacktestRequestedPayload;
   }
 
@@ -386,7 +390,9 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
   });
 
   afterEach(async () => {
-    await Promise.allSettled(harnesses.splice(0).map((harness) => harness.close()));
+    await Promise.allSettled(
+      harnesses.splice(0).map((harness) => harness.close()),
+    );
   });
 
   const createHarness = (retentionCount = 100): RedisQueueHarness => {
@@ -476,76 +482,94 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
         `event:${EventType.BacktestCompleted}:${payload.jobId}`,
       ),
     );
-    await expect(harness.adapter.getStatus(payload.jobId)).resolves.toMatchObject({
+    await expect(
+      harness.adapter.getStatus(payload.jobId),
+    ).resolves.toMatchObject({
       status: JobStatusValue.COMPLETED,
     });
   });
 
-  it('survives application-resource restart for waiting and delayed jobs with the same jobId', async () => {
-    const harness = createHarness();
-    const waiting = harness.payload();
-    await harness.enqueue(waiting);
-    await harness.restartApplicationResources();
-    harness.startWorker(1);
-    await waitFor(
-      async () => (await harness.inspector.getJobState(waiting.jobId)) === 'completed',
-      'waiting job after application restart',
-    );
+  it(
+    'survives application-resource restart for waiting and delayed jobs with the same jobId',
+    async () => {
+      const harness = createHarness();
+      const waiting = harness.payload();
+      await harness.enqueue(waiting);
+      await harness.restartApplicationResources();
+      harness.startWorker(1);
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(waiting.jobId)) === 'completed',
+        'waiting job after application restart',
+      );
 
-    const delayed = harness.payload();
-    let attempts = 0;
-    harness.ports.backtester.run.mockImplementation(() => {
-      attempts += 1;
-      if (attempts === 1) throw new Error('transient restart fixture');
-      return trades;
-    });
-    await harness.enqueue(delayed);
-    await waitFor(
-      async () => (await harness.inspector.getJobState(delayed.jobId)) === 'delayed',
-      'job to enter delayed retry',
-    );
-    await harness.restartApplicationResources();
-    harness.startWorker(1);
-    await waitFor(
-      async () => (await harness.inspector.getJobState(delayed.jobId)) === 'completed',
-      'delayed job after application restart',
-    );
+      const delayed = harness.payload();
+      let attempts = 0;
+      harness.ports.backtester.run.mockImplementation(() => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('transient restart fixture');
+        return trades;
+      });
+      await harness.enqueue(delayed);
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(delayed.jobId)) === 'delayed',
+        'job to enter delayed retry',
+      );
+      await harness.restartApplicationResources();
+      harness.startWorker(1);
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(delayed.jobId)) === 'completed',
+        'delayed job after application restart',
+      );
 
-    const stored = await harness.inspector.getJob(delayed.jobId);
-    expect(stored?.id).toBe(delayed.jobId);
-    expect(stored?.attemptsMade).toBe(2);
-  }, RETRY_TIMEOUT_MS);
+      const stored = await harness.inspector.getJob(delayed.jobId);
+      expect(stored?.id).toBe(delayed.jobId);
+      expect(stored?.attemptsMade).toBe(2);
+    },
+    RETRY_TIMEOUT_MS,
+  );
 
-  it('executes three attempts with 1s/4s waits and emits one terminal pair plus one DLQ mirror', async () => {
-    const harness = createHarness();
-    const payload = harness.payload();
-    const executionTimes: number[] = [];
-    harness.ports.backtester.run.mockImplementation(() => {
-      executionTimes.push(Date.now());
-      throw new Error('permanent algorithm failure');
-    });
-    await harness.enqueue(payload);
-    harness.startWorker(1);
+  it(
+    'executes three attempts with 1s/4s waits and emits one terminal pair plus one DLQ mirror',
+    async () => {
+      const harness = createHarness();
+      const payload = harness.payload();
+      const executionTimes: number[] = [];
+      harness.ports.backtester.run.mockImplementation(() => {
+        executionTimes.push(Date.now());
+        throw new Error('permanent algorithm failure');
+      });
+      await harness.enqueue(payload);
+      harness.startWorker(1);
 
-    await waitFor(
-      async () => (await harness.inspector.getJobState(payload.jobId)) === 'failed',
-      'terminal failed job',
-      RETRY_TIMEOUT_MS,
-    );
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(payload.jobId)) === 'failed',
+        'terminal failed job',
+        RETRY_TIMEOUT_MS,
+      );
 
-    expect(executionTimes).toHaveLength(3);
-    expect(executionTimes[1] - executionTimes[0]).toBeGreaterThanOrEqual(850);
-    expect(executionTimes[2] - executionTimes[1]).toBeGreaterThanOrEqual(3_800);
-    expect(harness.ports.terminalEvents().map(({ type }) => type)).toEqual([
-      EventType.BacktestFailed,
-      EventType.BacktestDeadLettered,
-    ]);
-    await expect(harness.ports.deadLetters.list()).resolves.toHaveLength(1);
-    await expect(harness.adapter.getStatus(payload.jobId)).resolves.toMatchObject({
-      status: JobStatusValue.DEAD_LETTER,
-      attempt: 3,
-    });
-  }, RETRY_TIMEOUT_MS);
+      expect(executionTimes).toHaveLength(3);
+      expect(executionTimes[1] - executionTimes[0]).toBeGreaterThanOrEqual(850);
+      expect(executionTimes[2] - executionTimes[1]).toBeGreaterThanOrEqual(
+        3_800,
+      );
+      expect(harness.ports.terminalEvents().map(({ type }) => type)).toEqual([
+        EventType.BacktestFailed,
+        EventType.BacktestDeadLettered,
+      ]);
+      await expect(harness.ports.deadLetters.list()).resolves.toHaveLength(1);
+      await expect(
+        harness.adapter.getStatus(payload.jobId),
+      ).resolves.toMatchObject({
+        status: JobStatusValue.DEAD_LETTER,
+        attempt: 3,
+      });
+    },
+    RETRY_TIMEOUT_MS,
+  );
 
   it('skips retries for zero candles and creates terminal effects exactly once', async () => {
     const harness = createHarness();
@@ -555,7 +579,8 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     harness.startWorker(1);
 
     await waitFor(
-      async () => (await harness.inspector.getJobState(payload.jobId)) === 'failed',
+      async () =>
+        (await harness.inspector.getJobState(payload.jobId)) === 'failed',
       'non-retryable terminal job',
     );
 
@@ -563,7 +588,9 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     expect(harness.ports.backtester.run).not.toHaveBeenCalled();
     expect(harness.ports.terminalEvents()).toHaveLength(2);
     await expect(harness.ports.deadLetters.list()).resolves.toHaveLength(1);
-    await expect(harness.adapter.getStatus(payload.jobId)).resolves.toMatchObject({
+    await expect(
+      harness.adapter.getStatus(payload.jobId),
+    ).resolves.toMatchObject({
       status: JobStatusValue.DEAD_LETTER,
       attempt: 1,
     });
@@ -598,54 +625,25 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     expect(harness.ports.completionEvents()).toHaveLength(1);
   });
 
-  it('recovers a real BullMQ stalled lock without duplicate result or completion effects', async () => {
-    const harness = createHarness();
-    const payload = harness.payload();
-    const gate = deferred<void>();
-    harness.ports.resultPort.save.mockImplementation(async (input) => {
-      harness.ports.trace.push(`save:${input.jobId}`);
-      await gate.promise;
-      const result = { id: randomUUID(), ...input };
-      harness.ports.results.set(input.jobId, result);
-      return result;
-    });
-    await harness.enqueue(payload);
+  it(
+    'recovers a real BullMQ stalled lock without duplicate result or completion effects',
+    async () => {
+      const harness = createHarness();
+      const payload = harness.payload();
+      const gate = deferred<void>();
+      harness.ports.resultPort.save.mockImplementation(async (input) => {
+        harness.ports.trace.push(`save:${input.jobId}`);
+        await gate.promise;
+        const result = { id: randomUUID(), ...input };
+        harness.ports.results.set(input.jobId, result);
+        return result;
+      });
+      await harness.enqueue(payload);
 
-    let stalled = false;
-    let recoveryClaimed = false;
-    let recoveryWorker: BullWorker<StoredBacktestJob> | undefined;
-    const stallingWorker = new BullWorker<StoredBacktestJob>(
-      harness.queueName,
-      (job) => harness.process(job),
-      {
-        connection: {
-          host: REDIS_HOST,
-          port: REDIS_PORT,
-          db: REDIS_DB,
-          maxRetriesPerRequest: null,
-        },
-        concurrency: 1,
-        lockDuration: 200,
-        stalledInterval: 200,
-        skipLockRenewal: true,
-        maxStalledCount: 1,
-      },
-    );
-    stallingWorker.on('error', () => undefined);
-    stallingWorker.on('stalled', (jobId) => {
-      if (jobId === payload.jobId) stalled = true;
-    });
-
-    try {
-      await waitFor(
-        () => harness.ports.resultPort.save.mock.calls.length === 1,
-        'initial stalled execution to reach result persistence',
-      );
-      // Prevent the deliberately stalling worker from reclaiming its own job.
-      // Starting the recovery worker only after this barrier makes worker
-      // ownership deterministic even when the whole backend suite is busy.
-      await stallingWorker.pause(true);
-      recoveryWorker = new BullWorker<StoredBacktestJob>(
+      let stalled = false;
+      let recoveryClaimed = false;
+      let recoveryWorker: BullWorker<StoredBacktestJob> | undefined;
+      const stallingWorker = new BullWorker<StoredBacktestJob>(
         harness.queueName,
         (job) => harness.process(job),
         {
@@ -656,39 +654,73 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
             maxRetriesPerRequest: null,
           },
           concurrency: 1,
-          lockDuration: 2_000,
+          lockDuration: 200,
           stalledInterval: 200,
+          skipLockRenewal: true,
+          maxStalledCount: 1,
         },
       );
-      recoveryWorker.on('error', () => undefined);
-      recoveryWorker.on('stalled', (jobId) => {
+      stallingWorker.on('error', () => undefined);
+      stallingWorker.on('stalled', (jobId) => {
         if (jobId === payload.jobId) stalled = true;
       });
-      recoveryWorker.on('active', (job) => {
-        if (job.id === payload.jobId && stalled) recoveryClaimed = true;
-      });
-      await waitFor(
-        () => stalled && recoveryClaimed,
-        'BullMQ stalled event and recovered claim',
-      );
-      gate.resolve();
-      await waitFor(
-        async () =>
-          (await harness.inspector.getJobState(payload.jobId)) === 'completed',
-        'recovered stalled job completion',
-      );
 
-      expect(harness.ports.resultPort.save).toHaveBeenCalledTimes(1);
-      expect(harness.ports.results.size).toBe(1);
-      expect(harness.ports.completionEvents()).toHaveLength(1);
-    } finally {
-      gate.resolve();
-      await Promise.allSettled([
-        stallingWorker.close(true),
-        recoveryWorker?.close(true) ?? Promise.resolve(),
-      ]);
-    }
-  }, DEFAULT_TIMEOUT_MS);
+      try {
+        await waitFor(
+          () => harness.ports.resultPort.save.mock.calls.length === 1,
+          'initial stalled execution to reach result persistence',
+        );
+        // Prevent the deliberately stalling worker from reclaiming its own job.
+        // Starting the recovery worker only after this barrier makes worker
+        // ownership deterministic even when the whole backend suite is busy.
+        await stallingWorker.pause(true);
+        recoveryWorker = new BullWorker<StoredBacktestJob>(
+          harness.queueName,
+          (job) => harness.process(job),
+          {
+            connection: {
+              host: REDIS_HOST,
+              port: REDIS_PORT,
+              db: REDIS_DB,
+              maxRetriesPerRequest: null,
+            },
+            concurrency: 1,
+            lockDuration: 2_000,
+            stalledInterval: 200,
+          },
+        );
+        recoveryWorker.on('error', () => undefined);
+        recoveryWorker.on('stalled', (jobId) => {
+          if (jobId === payload.jobId) stalled = true;
+        });
+        recoveryWorker.on('active', (job) => {
+          if (job.id === payload.jobId && stalled) recoveryClaimed = true;
+        });
+        await waitFor(
+          () => stalled && recoveryClaimed,
+          'BullMQ stalled event and recovered claim',
+        );
+        gate.resolve();
+        await waitFor(
+          async () =>
+            (await harness.inspector.getJobState(payload.jobId)) ===
+            'completed',
+          'recovered stalled job completion',
+        );
+
+        expect(harness.ports.resultPort.save).toHaveBeenCalledTimes(1);
+        expect(harness.ports.results.size).toBe(1);
+        expect(harness.ports.completionEvents()).toHaveLength(1);
+      } finally {
+        gate.resolve();
+        await Promise.allSettled([
+          stallingWorker.close(true),
+          recoveryWorker?.close(true) ?? Promise.resolve(),
+        ]);
+      }
+    },
+    DEFAULT_TIMEOUT_MS,
+  );
 
   it('coalesces a Redis-backed terminal redelivery into one mirror and one terminal event pair', async () => {
     const harness = createHarness();
@@ -721,6 +753,7 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
       BACKTEST_MAX_ATTEMPTS: 3,
       BACKTEST_JOB_RETENTION_AGE_SECONDS: 60,
       BACKTEST_JOB_RETENTION_COUNT: 10,
+      LEADERBOARD_TOP_K: 10,
     };
     const unavailableOwner = createProducerRedisConnection(
       unavailableEnvironment,
@@ -742,37 +775,42 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     await unavailable.close();
   });
 
-  it('recovers the persistent worker connection after a transport interruption', async () => {
-    const harness = createHarness();
-    harness.startWorker(1);
-    const workerClient = harness.workerOwner?.client;
-    if (!workerClient) throw new Error('Worker Redis owner was not created');
-    await waitFor(
-      () => workerClient.status === 'ready',
-      'initial worker Redis readiness',
-    );
-    let reconnectObserved = false;
-    workerClient.once('reconnecting', () => {
-      reconnectObserved = true;
-    });
-    const transport = (
-      workerClient as unknown as {
-        connector: { stream?: { destroy(): void } };
-      }
-    ).connector.stream;
-    if (!transport) throw new Error('Worker Redis transport is unavailable');
-    transport.destroy();
-    await waitFor(
-      () => reconnectObserved && workerClient.status === 'ready',
-      'persistent worker Redis reconnect',
-    );
-    const payload = harness.payload();
-    await harness.enqueue(payload);
-    await waitFor(
-      async () => (await harness.inspector.getJobState(payload.jobId)) === 'completed',
-      'job after worker reconnect',
-    );
-  }, DEFAULT_TIMEOUT_MS);
+  it(
+    'recovers the persistent worker connection after a transport interruption',
+    async () => {
+      const harness = createHarness();
+      harness.startWorker(1);
+      const workerClient = harness.workerOwner?.client;
+      if (!workerClient) throw new Error('Worker Redis owner was not created');
+      await waitFor(
+        () => workerClient.status === 'ready',
+        'initial worker Redis readiness',
+      );
+      let reconnectObserved = false;
+      workerClient.once('reconnecting', () => {
+        reconnectObserved = true;
+      });
+      const transport = (
+        workerClient as unknown as {
+          connector: { stream?: { destroy(): void } };
+        }
+      ).connector.stream;
+      if (!transport) throw new Error('Worker Redis transport is unavailable');
+      transport.destroy();
+      await waitFor(
+        () => reconnectObserved && workerClient.status === 'ready',
+        'persistent worker Redis reconnect',
+      );
+      const payload = harness.payload();
+      await harness.enqueue(payload);
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(payload.jobId)) === 'completed',
+        'job after worker reconnect',
+      );
+    },
+    DEFAULT_TIMEOUT_MS,
+  );
 
   it('graceful shutdown finishes active work, takes no new job, and leaves waiting work recoverable', async () => {
     const harness = createHarness();
@@ -795,9 +833,10 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
       closed = true;
     });
     await waitFor(
-      async () => ['waiting', 'prioritized'].includes(
-        await harness.inspector.getJobState(second.jobId),
-      ),
+      async () =>
+        ['waiting', 'prioritized'].includes(
+          await harness.inspector.getJobState(second.jobId),
+        ),
       'second job to remain waiting during shutdown',
     );
     expect(closed).toBe(false);
@@ -807,7 +846,8 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
 
     harness.startWorker(1);
     await waitFor(
-      async () => (await harness.inspector.getJobState(second.jobId)) === 'completed',
+      async () =>
+        (await harness.inspector.getJobState(second.jobId)) === 'completed',
       'waiting job after graceful restart',
     );
   });
@@ -819,7 +859,8 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     await harness.enqueue(payload);
     harness.startWorker(1);
     await waitFor(
-      async () => (await harness.inspector.getJobState(payload.jobId)) === 'failed',
+      async () =>
+        (await harness.inspector.getJobState(payload.jobId)) === 'failed',
       'DLQ job before REST recovery',
     );
     await harness.stopWorker();
@@ -869,7 +910,8 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     harness.ports.marketData.getCandlesRange.mockResolvedValue([candle]);
     harness.startWorker(1);
     await waitFor(
-      async () => (await harness.inspector.getJobState(payload.jobId)) === 'completed',
+      async () =>
+        (await harness.inspector.getJobState(payload.jobId)) === 'completed',
       'manually retried job to complete',
     );
   });
@@ -884,7 +926,8 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
       'five retained-policy completions',
     );
     await waitFor(
-      async () => (await harness.inspector.getJobCountByTypes('completed')) === 2,
+      async () =>
+        (await harness.inspector.getJobCountByTypes('completed')) === 2,
       'completed retention count to converge',
     );
 
