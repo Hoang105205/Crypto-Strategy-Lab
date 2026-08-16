@@ -351,3 +351,84 @@ Prisma emitted only its existing package.json configuration deprecation warning;
 ## Phase 3 Checkpoint
 
 **PASS — US3 runtime acceptance**. T021–T027 are complete (7/7). The production Observer path is demonstrated from `BacktestCompleted` through persistent deterministic ranking, exact update publication, and sortable/detail REST reads while preserving Strategy ownership boundaries and scoring-policy replaceability.
+
+## Phase 4 — Bounded Strategy Search Loop Checkpoint (T028–T034)
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### Integration harness and scope
+
+- `loop.integration.spec.ts` boots production `LoopModule`, `LoopRepository`, `LoopStatusService`, `StrategyLoopService`, and production `EventsModule`/`EventBus` behavior.
+- It replaces only external boundaries: `PrismaService` with a stateful isolated Loop persistence fake, `IJOB_QUEUE` with a contract queue fake, and `ISTRATEGY_CANDIDATE_PORT` with a contract generator/version fake. Production `ScoringPolicy` remains behind `ISCORING_POLICY`.
+- No live Binance, sentiment, frontend, Redis, or PostgreSQL dependency is used by the T034 integration suite. Redis is used only by the separately requested pre-existing Queue regression suites.
+- Terminal outcomes are published through `IEVENT_BUS`, so production Loop subscriptions, lifecycle cleanup, persistence, next-candidate scheduling, and observational Loop events are exercised together.
+
+### Scenario evidence
+
+| T034 behavior | Result | Executable evidence |
+|---|---|---|
+| Natural completion / candidate bound | PASS | With `maxCandidates=5`, exactly five candidates become terminal, five queue requests and five `BacktestRequested` events are observed, `testedCandidates=5`, stop reason is `max_candidates_reached`, and no sixth request is created. |
+| Duration bound | PASS | An elapsed run stops with `max_duration_reached` before another candidate is generated. |
+| No-improvement bound | PASS | One improving result followed by the configured consecutive non-improvements stops with `no_improvement_limit_reached` and creates no successor. |
+| Failed candidate continues | PASS | A failed candidate is persisted/accounted once and the run schedules the next candidate instead of stopping. |
+| Pause/resume | PASS | An in-flight result received while paused is persisted without progress/successor; resume continues the same run with one next request. |
+| User stop plus late result | PASS | User stop emits one terminal lifecycle outcome; the late result is still persisted, but creates no progress event or successor request. |
+| Duplicate terminal event | PASS | Re-delivering the same terminal completion leaves one terminal candidate/accounting update and one successor/progress effect. |
+| Concurrent start | PASS | Two concurrent starts yield one active run and one initial request; the loser receives stable `LOOP_ALREADY_ACTIVE`. |
+| Generator fatal | PASS | Three consecutive generation failures transition the run to `FAILED` with `generator_error` and enqueue no backtest. |
+| Recoverable restart | PASS | Startup reconciliation preserves active runs whose in-flight jobs report `QUEUED` or `PROCESSING`. |
+| Orphan restart | PASS | `JOB_NOT_FOUND` reconciles the run to `FAILED` with `orphaned_after_restart`. |
+| Dependency outage | PASS | `QUEUE_UNAVAILABLE` is deferred and the run remains active; it is not mislabeled as orphaned. |
+| Generator swap | PASS | Overriding only `ISTRATEGY_CANDIDATE_PORT` changes the materialized Strategy Version used by persistence/queue while production `StrategyLoopService` remains unchanged. |
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand loop/loop.integration.spec.ts
+# Test Suites: 1 passed, 1 total
+# Tests:       14 passed, 14 total
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand loop
+# Test Suites: 6 passed, 6 total
+# Tests:       128 passed, 128 total
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles events queue leaderboard
+# First attempt: 14 suites / 117 tests passed; 4 Queue suites / 34 tests failed at their explicit Redis prerequisite because Redis was not running.
+
+docker compose up -d redis
+# Container csl-redis Running (after Docker Desktop was started).
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles events queue leaderboard
+# Clean rerun: Test Suites: 18 passed, 18 total
+# Clean rerun: Tests:       151 passed, 151 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit -p tsconfig.build.json
+# exit 0
+
+npm.cmd run build -w @crypto-strategy-lab/backend
+# nest build, exit 0
+
+$env:DATABASE_URL='postgresql://validation:validation@localhost:5432/validation'
+npm.cmd exec -w @crypto-strategy-lab/backend -- prisma validate --schema prisma/schema.prisma
+# The schema at prisma\schema.prisma is valid; existing Prisma 7 configuration deprecation warning only.
+
+git diff --check
+# exit 0; line-ending conversion warnings only
+```
+
+The integration suite was also run by scenario group before its full run: completion/configured bounds 3/3, terminal failure/idempotency 2/2, commands/races 4/4, restart reconciliation 4/4, and generator replacement 1/1.
+
+### Boundary audit
+
+```text
+PASS: T034 changes no production source; it adds the Loop integration specification and checkpoint/lesson metadata only.
+PASS: Loop production contains no StrategyVersioningService, SearchEngine, strategyVersion/backtestResult Prisma delegate, or forwardRef access.
+PASS: Prisma access remains owned by LoopRepository; the integration fake models only Loop-owned delegates and transaction behavior.
+PASS: no live Binance, sentiment, frontend, HTTP client, or external URL appears in loop.integration.spec.ts.
+PASS: public Symbol tokens are used for generator/version, queue, scoring, and event boundaries; no string-token workaround was introduced.
+PASS: AppModule imports LoopModule exactly once.
+```
+
+## Phase 4 Checkpoint
+
+**PASS — US4 runtime acceptance**. T028–T034 are complete (7/7). The production bounded search Loop is demonstrated across completion bounds, failed/duplicate/late terminal outcomes, lifecycle commands, concurrent start, generator fatal handling, restart reconciliation, dependency discrimination, and generator replaceability without direct Strategy or Queue implementation coupling.

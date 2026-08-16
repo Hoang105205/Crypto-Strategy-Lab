@@ -39,6 +39,12 @@ export interface StrategyVersion {
   createdAt: Date;
 }
 
+/** Strategy-owned immutable reference returned to search-loop consumers. */
+export interface StrategyCandidateReference {
+  strategyVersionId: string;
+  strategyName: string;
+}
+
 export interface Trade {
   entryDate: Date;
   exitDate: Date;

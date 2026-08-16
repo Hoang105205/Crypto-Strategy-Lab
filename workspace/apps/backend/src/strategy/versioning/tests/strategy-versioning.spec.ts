@@ -51,6 +51,44 @@ describe('StrategyVersioningService', () => {
     expect(mockPrisma.strategyVersion.create).toHaveBeenCalledTimes(1);
   });
 
+  it('materializes composite children before persisting the parent reference', async () => {
+    const child: IStrategy = {
+      getName: () => 'ChildMA',
+      getType: () => StrategyType.MA,
+      getParameters: () => ({ period: 14 }),
+      analyze: jest.fn(),
+    };
+    const composite: IStrategy & { getChildren: () => readonly IStrategy[] } = {
+      getName: () => 'GeneratedComposite',
+      getType: () => StrategyType.COMPOSITE,
+      getParameters: () => ({ combinerType: 'MajorityVote' }),
+      getChildren: () => [child],
+      analyze: jest.fn(),
+    };
+    mockPrisma.strategyVersion.findFirst.mockResolvedValue(null);
+    mockPrisma.strategyVersion.create.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => ({
+        ...data,
+        id: data.name === 'ChildMA' ? 'version-child' : 'version-composite',
+        parentVersionId: data.parentVersionId ?? null,
+        combinerType: data.combinerType ?? null,
+        combinerWeights: data.combinerWeights ?? null,
+        createdAt: new Date('2026-08-16T03:00:00.000Z'),
+      }),
+    );
+
+    const saved = await service.createVersion(composite);
+
+    expect(saved.id).toBe('version-composite');
+    expect(mockPrisma.strategyVersion.create).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.strategyVersion.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        name: 'GeneratedComposite',
+        childVersionIds: ['version-child'],
+      }),
+    });
+  });
+
   it('should retrieve a version by ID with DB fallback', async () => {
     const dbRecord = {
       id: 'uuid-002',
@@ -70,7 +108,9 @@ describe('StrategyVersioningService', () => {
     const version = await service.getVersion('uuid-002');
     expect(version).toBeDefined();
     expect(version!.name).toBe('TestRSI');
-    expect(mockPrisma.strategyVersion.findUnique).toHaveBeenCalledWith({ where: { id: 'uuid-002' } });
+    expect(mockPrisma.strategyVersion.findUnique).toHaveBeenCalledWith({
+      where: { id: 'uuid-002' },
+    });
   });
 
   it('should return undefined for non-existent version', async () => {
@@ -82,8 +122,26 @@ describe('StrategyVersioningService', () => {
 
   it('should retrieve all versions by strategy name', async () => {
     mockPrisma.strategyVersion.findMany.mockResolvedValue([
-      { id: 'v1', name: 'MA', version: 1, strategyType: 'MA', parameters: {}, isComposite: false, childVersionIds: [], createdAt: new Date() },
-      { id: 'v2', name: 'MA', version: 2, strategyType: 'MA', parameters: {}, isComposite: false, childVersionIds: [], createdAt: new Date() },
+      {
+        id: 'v1',
+        name: 'MA',
+        version: 1,
+        strategyType: 'MA',
+        parameters: {},
+        isComposite: false,
+        childVersionIds: [],
+        createdAt: new Date(),
+      },
+      {
+        id: 'v2',
+        name: 'MA',
+        version: 2,
+        strategyType: 'MA',
+        parameters: {},
+        isComposite: false,
+        childVersionIds: [],
+        createdAt: new Date(),
+      },
     ]);
 
     const versions = await service.getVersionsByName('MA');
