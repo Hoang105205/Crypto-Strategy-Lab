@@ -11,6 +11,7 @@ describe('validateEnvironment', () => {
       BACKTEST_MAX_ATTEMPTS: 3,
       BACKTEST_JOB_RETENTION_AGE_SECONDS: 86_400,
       BACKTEST_JOB_RETENTION_COUNT: 1_000,
+      LEADERBOARD_TOP_K: 10,
     });
   });
 
@@ -19,8 +20,13 @@ describe('validateEnvironment', () => {
     [{ REDIS_DB: -1 }, 'REDIS_DB'],
     [{ BACKTEST_WORKER_CONCURRENCY: 33 }, 'BACKTEST_WORKER_CONCURRENCY'],
     [{ BACKTEST_MAX_ATTEMPTS: 4 }, 'BACKTEST_MAX_ATTEMPTS'],
-    [{ BACKTEST_JOB_RETENTION_AGE_SECONDS: 0 }, 'BACKTEST_JOB_RETENTION_AGE_SECONDS'],
+    [
+      { BACKTEST_JOB_RETENTION_AGE_SECONDS: 0 },
+      'BACKTEST_JOB_RETENTION_AGE_SECONDS',
+    ],
     [{ BACKTEST_JOB_RETENTION_COUNT: 0 }, 'BACKTEST_JOB_RETENTION_COUNT'],
+    [{ LEADERBOARD_TOP_K: 0 }, 'LEADERBOARD_TOP_K'],
+    [{ LEADERBOARD_TOP_K: 101 }, 'LEADERBOARD_TOP_K'],
   ])('rejects invalid queue configuration %#', (input, field) => {
     expect(() => validateEnvironment(input)).toThrow(field);
   });

@@ -1,17 +1,18 @@
 // Strategy Engine interfaces — sourced from kb/contracts/strategy.yaml
 // Owner: Huy | Status: Active
 
-import { Candle } from '../types/market-data';
+import { Candle } from "../types/market-data";
 import type {
   BacktestConfig,
   BacktestResult,
+  BacktestResultDetail,
   BacktestResultCreateInput,
   EvaluationMetrics,
   Signal,
   StrategyExecutionResult,
   Trade,
-} from '../types/strategy';
-import { StrategyType } from '../types/enums';
+} from "../types/strategy";
+import { StrategyType } from "../types/enums";
 
 export interface IStrategy {
   analyze(candles: Candle[]): Signal;
@@ -33,12 +34,14 @@ export interface IStrategyGenerator {
 }
 
 export interface IStrategyExecutionPort {
-  resolveVersion(strategyVersionId: string): Promise<StrategyExecutionResult<IStrategy> | null>;
+  resolveVersion(
+    strategyVersionId: string,
+  ): Promise<StrategyExecutionResult<IStrategy> | null>;
 }
 
 export interface IBacktestResultPort {
   save(input: BacktestResultCreateInput): Promise<BacktestResult>;
-  getById(id: string): Promise<BacktestResult | null>;
+  getById(id: string): Promise<BacktestResultDetail | null>;
 }
 
 export interface ICombiner {

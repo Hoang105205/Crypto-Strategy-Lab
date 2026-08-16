@@ -1,4 +1,7 @@
-import type { BacktestResultCreateInput } from '@crypto-strategy-lab/shared';
+import {
+  StrategyType,
+  type BacktestResultCreateInput,
+} from '@crypto-strategy-lab/shared';
 import { BacktestResultPort } from './backtest-result.port';
 
 const input: BacktestResultCreateInput = {
@@ -20,6 +23,19 @@ const input: BacktestResultCreateInput = {
 };
 
 const stored = { id: 'result-1', ...input };
+const strategyVersion = {
+  id: input.strategyVersionId,
+  strategyType: StrategyType.MA,
+  name: 'Moving Average',
+  version: 1,
+  parameters: { period: 20 },
+  parentVersionId: null,
+  isComposite: false,
+  childVersionIds: [],
+  combinerType: null,
+  combinerWeights: null,
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
+};
 
 describe('BacktestResultPort', () => {
   it('creates a result once using producer jobId', async () => {
@@ -29,7 +45,7 @@ describe('BacktestResultPort', () => {
 
     await expect(port.save(input)).resolves.toEqual(stored);
     expect(prisma.backtestResult.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ jobId: input.jobId }),
+      data: { ...input, trades: input.trades },
     });
   });
 
@@ -46,7 +62,9 @@ describe('BacktestResultPort', () => {
     const prisma = mockPrisma(stored);
     const port = new BacktestResultPort(prisma as never);
 
-    await expect(port.save({ ...input, pair: 'ETHUSDT' })).rejects.toMatchObject({
+    await expect(
+      port.save({ ...input, pair: 'ETHUSDT' }),
+    ).rejects.toMatchObject({
       code: 'JOB_CONFLICT',
     });
   });
@@ -63,17 +81,33 @@ describe('BacktestResultPort', () => {
   });
 
   it('gets a persisted result by result id', async () => {
-    const prisma = mockPrisma(stored);
+    const prisma = mockPrisma({ ...stored, strategyVersion });
     const port = new BacktestResultPort(prisma as never);
 
-    await expect(port.getById(stored.id)).resolves.toEqual(stored);
+    await expect(port.getById(stored.id)).resolves.toEqual({
+      ...stored,
+      strategyVersion: {
+        id: strategyVersion.id,
+        strategyType: StrategyType.MA,
+        name: strategyVersion.name,
+        version: strategyVersion.version,
+        parameters: strategyVersion.parameters,
+        parentVersionId: undefined,
+        isComposite: false,
+        childVersionIds: [],
+        combinerType: undefined,
+        combinerWeights: undefined,
+        createdAt: strategyVersion.createdAt,
+      },
+    });
     expect(prisma.backtestResult.findUnique).toHaveBeenCalledWith({
       where: { id: stored.id },
+      include: { strategyVersion: true },
     });
   });
 });
 
-function mockPrisma(existing: typeof stored | null) {
+function mockPrisma(existing: object | null) {
   return {
     backtestResult: {
       findUnique: jest.fn().mockResolvedValue(existing),

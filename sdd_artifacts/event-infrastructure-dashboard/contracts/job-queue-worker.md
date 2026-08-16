@@ -56,7 +56,7 @@ interface IStrategyExecutionPort {
 
 interface IBacktestResultPort {
   save(input: BacktestResultCreateInput): Promise<BacktestResult>;
-  getById(id: string): Promise<BacktestResult | null>;
+  getById(id: string): Promise<BacktestResultDetail | null>;
 }
 ```
 
@@ -65,6 +65,9 @@ for that ID: an idempotent replay returns the immutable stored result, while
 reuse of the ID for a different backtest request returns `JOB_CONFLICT`.
 
 These ports are owned/provided by Strategy Engine. Event Infrastructure does not query Strategy-owned tables.
+`BacktestResultDetail` contains the immutable result plus its full
+`StrategyVersion`; the relation is resolved only inside the Strategy-owned
+adapter for Leaderboard detail composition.
 
 ## Terminal Events
 

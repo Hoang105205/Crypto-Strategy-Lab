@@ -46,7 +46,9 @@ LeaderboardEntryPayload & {
 }
 ```
 
-Detail is composed through the Strategy result reader port.
+Detail is composed through the Strategy-owned `IBacktestResultPort.getById()`
+reader, which returns the immutable Backtest Result together with its full
+`StrategyVersion`. Leaderboard code never queries either Strategy-owned table.
 
 **Errors**: `404 LEADERBOARD_ENTRY_NOT_FOUND`, `503 STRATEGY_ENGINE_UNAVAILABLE`.
 
@@ -55,4 +57,3 @@ Detail is composed through the Strategy result reader port.
 ### `LeaderboardUpdated`
 
 Publisher: Leaderboard. Subscriber: Push Gateway. Payload is the exact active event-contract payload. It is emitted only after persistence/ranking succeeds and never for a duplicate completion.
-

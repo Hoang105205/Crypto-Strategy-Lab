@@ -296,3 +296,58 @@ The current `workspace/docker-compose.yml` mounts `/data` but does **not** expli
 ## Phase 2 Checkpoint
 
 **PASS — US2 runtime acceptance**. T012–T020 are complete (9/9). The production BullMQ adapter and in-process worker demonstrate scheduling, bounded concurrency, persistence-before-event ordering, retry/DLQ behavior, real stalled recovery, stable outage behavior, graceful lifecycle, operator recovery, and bounded retention without live external domain services. T021/Leaderboard was not started. The Compose AOF delivery gap above remains explicitly unclaimed and assigned to T049.
+
+## Phase 3 — Realtime Leaderboard Checkpoint (T021–T027)
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### Commands and results
+
+```powershell
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand leaderboard
+# Test Suites: 5 passed, 5 total
+# Tests:       60 passed, 60 total
+
+npm.cmd exec -w @crypto-strategy-lab/backend -- tsc --noEmit -p tsconfig.build.json
+# exit 0
+
+npm.cmd run build -w @crypto-strategy-lab/backend
+# nest build, exit 0
+
+npm.cmd run test -w @crypto-strategy-lab/backend -- --runInBand --detectOpenHandles events queue
+# Test Suites: 13 passed, 13 total
+# Tests:       91 passed, 91 total
+
+$env:DATABASE_URL='postgresql://validation:validation@localhost:5432/validation'
+npm.cmd exec -w @crypto-strategy-lab/backend -- prisma validate --schema prisma/schema.prisma
+# The schema at prisma\schema.prisma is valid
+
+git diff --check
+# exit 0; line-ending conversion warnings only
+```
+
+### T027 integration evidence
+
+- The Nest test application boots production `LeaderboardModule`, production `EventsModule`/`EventBus`, controller, service, scoring policy, and repository wiring. Only `PrismaService` is replaced by a stateful isolated persistence fake and `IBACKTEST_RESULT_PORT` by its public contract fake.
+- Publishing `BacktestCompleted` through `IEVENT_BUS` exercises runtime validation, score calculation, unique persistence, full deterministic reranking, best-per-version Top-K projection, and exactly one `LeaderboardUpdated` with the original correlation ID.
+- Duplicate delivery creates no second row, rerank, or broadcast. Malformed metrics create no row. An injected persistence failure is isolated by EventBus and emits no `LeaderboardUpdated`.
+- Four-decimal score ties execute the complete Sharpe Ratio, absolute drawdown severity, earlier `executedAt`, and result-identity fallback ordering. All accepted rows remain persisted while configured Top-K = 2 exposes one best row per Strategy Version.
+- REST integration covers every shared `RankingCriterion`, detail composition through `IBacktestResultPort`, and sanitized `INVALID_SORT_CRITERION` (400), `LEADERBOARD_ENTRY_NOT_FOUND` (404), and `STRATEGY_ENGINE_UNAVAILABLE` (503) bodies.
+- Repeated application shutdown invokes Leaderboard unsubscribe once, and publishing after shutdown produces no new persistence side effect.
+- Overriding only the `ScoringPolicy` provider changes the persisted score to the alternative policy's sentinel value. Worker, Backtester, Evaluator, repository, controller, and event wiring remain unchanged, demonstrating the scoring-policy swap seam.
+
+### Boundary and scope audit
+
+```text
+PASS: Leaderboard production Prisma calls are limited to prisma.leaderboardEntry and transaction.leaderboardEntry (plus PrismaService.$transaction).
+PASS: executable Prisma tripwires observed no strategyVersion or backtestResult delegate access.
+PASS: no forbidden BacktestWorker, Backtester, Evaluator, PushGateway, WebSocket, or SearchLoop import/access in Leaderboard production files.
+PASS: no diff in backtest.worker.ts, backtester.ts, or evaluator.ts.
+PASS: no PushGateway/WebSocket, Search Loop, or frontend files changed for T027.
+```
+
+Prisma emitted only its existing package.json configuration deprecation warning; schema validation passed. No pre-existing or out-of-scope test/build failure was encountered in the requested T027 command matrix.
+
+## Phase 3 Checkpoint
+
+**PASS — US3 runtime acceptance**. T021–T027 are complete (7/7). The production Observer path is demonstrated from `BacktestCompleted` through persistent deterministic ranking, exact update publication, and sortable/detail REST reads while preserving Strategy ownership boundaries and scoring-policy replaceability.

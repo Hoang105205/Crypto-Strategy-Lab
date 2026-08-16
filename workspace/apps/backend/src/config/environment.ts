@@ -9,14 +9,29 @@ export interface ValidatedEnvironment extends Record<string, unknown> {
   BACKTEST_MAX_ATTEMPTS: 3;
   BACKTEST_JOB_RETENTION_AGE_SECONDS: number;
   BACKTEST_JOB_RETENTION_COUNT: number;
+  LEADERBOARD_TOP_K: number;
 }
 
 function nonEmpty(value: unknown, fallback: string, name: string): string {
-  const resolved = value === undefined || value === '' ? fallback : String(value).trim();
+  const resolved =
+    value === undefined || value === ''
+      ? fallback
+      : primitiveString(value, name).trim();
   if (resolved.length === 0) {
     throw new Error(`${name} must be a non-empty string`);
   }
   return resolved;
+}
+
+function primitiveString(value: unknown, name: string): string {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return String(value);
+  }
+  throw new Error(`${name} must be a string`);
 }
 
 function integer(
@@ -26,9 +41,12 @@ function integer(
   minimum: number,
   maximum = Number.MAX_SAFE_INTEGER,
 ): number {
-  const resolved = value === undefined || value === '' ? fallback : Number(value);
+  const resolved =
+    value === undefined || value === '' ? fallback : Number(value);
   if (!Number.isInteger(resolved) || resolved < minimum || resolved > maximum) {
-    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+    throw new Error(
+      `${name} must be an integer between ${minimum} and ${maximum}`,
+    );
   }
   return resolved;
 }
@@ -36,14 +54,24 @@ function integer(
 export function validateEnvironment(
   input: Record<string, unknown>,
 ): ValidatedEnvironment {
-  const maxAttempts = integer(input.BACKTEST_MAX_ATTEMPTS, 3, 'BACKTEST_MAX_ATTEMPTS', 3, 3);
+  const maxAttempts = integer(
+    input.BACKTEST_MAX_ATTEMPTS,
+    3,
+    'BACKTEST_MAX_ATTEMPTS',
+    3,
+    3,
+  );
 
   return {
     ...input,
     REDIS_HOST: nonEmpty(input.REDIS_HOST, 'localhost', 'REDIS_HOST'),
     REDIS_PORT: integer(input.REDIS_PORT, 6379, 'REDIS_PORT', 1, 65_535),
-    REDIS_USERNAME: input.REDIS_USERNAME ? String(input.REDIS_USERNAME) : undefined,
-    REDIS_PASSWORD: input.REDIS_PASSWORD ? String(input.REDIS_PASSWORD) : undefined,
+    REDIS_USERNAME: input.REDIS_USERNAME
+      ? primitiveString(input.REDIS_USERNAME, 'REDIS_USERNAME')
+      : undefined,
+    REDIS_PASSWORD: input.REDIS_PASSWORD
+      ? primitiveString(input.REDIS_PASSWORD, 'REDIS_PASSWORD')
+      : undefined,
     REDIS_DB: integer(input.REDIS_DB, 0, 'REDIS_DB', 0),
     BACKTEST_QUEUE_NAME: nonEmpty(
       input.BACKTEST_QUEUE_NAME,
@@ -69,6 +97,13 @@ export function validateEnvironment(
       1_000,
       'BACKTEST_JOB_RETENTION_COUNT',
       1,
+    ),
+    LEADERBOARD_TOP_K: integer(
+      input.LEADERBOARD_TOP_K,
+      10,
+      'LEADERBOARD_TOP_K',
+      1,
+      100,
     ),
   };
 }

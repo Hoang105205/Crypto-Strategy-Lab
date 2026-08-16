@@ -1,7 +1,7 @@
 // Strategy Engine types — sourced from kb/contracts/strategy.yaml
 // Owner: Huy | Status: Active
 
-import { StrategyType, SignalAction, CombinerType } from './enums';
+import { StrategyType, SignalAction, CombinerType } from "./enums";
 
 export interface BacktestConfig {
   initialCapital: number;
@@ -69,9 +69,14 @@ export interface BacktestResult {
   executionTimeMs: number;
 }
 
+/** Strategy-owned detail projection used by read-only cross-module consumers. */
+export interface BacktestResultDetail extends BacktestResult {
+  strategyVersion: StrategyVersion;
+}
+
 export interface StrategyExecutionResult<TStrategy = unknown> {
   version: StrategyVersion;
   strategy: TStrategy;
 }
 
-export type BacktestResultCreateInput = Omit<BacktestResult, 'id'>;
+export type BacktestResultCreateInput = Omit<BacktestResult, "id">;
