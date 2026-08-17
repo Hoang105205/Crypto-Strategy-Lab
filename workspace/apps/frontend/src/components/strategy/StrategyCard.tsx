@@ -29,8 +29,16 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
         return 'bg-amber-900/50 text-amber-300 border-amber-700/50';
       case 'SR':
         return 'bg-teal-900/50 text-teal-300 border-teal-700/50';
+      case 'MACD':
+        return 'bg-cyan-900/50 text-cyan-300 border-cyan-700/50';
+      case 'STOCHASTIC':
+        return 'bg-orange-900/50 text-orange-300 border-orange-700/50';
+      case 'ATR':
+        return 'bg-pink-900/50 text-pink-300 border-pink-700/50';
+      case 'SENTIMENT':
+        return 'bg-emerald-900/50 text-emerald-300 border-emerald-700/50';
       case 'COMPOSITE':
-        return 'bg-yellow-900/50 text-[#fcd535] border-yellow-700/50';
+        return 'bg-indigo-900/50 text-indigo-300 border-indigo-700/50';
       default:
         return 'bg-gray-800 text-gray-300 border-gray-700';
     }
@@ -57,16 +65,20 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`p-6 rounded-2xl border transition-all cursor-pointer shadow-md ${
-        isSelected
-          ? 'bg-[#1e2329] border-[#fcd535] shadow-xl shadow-[#fcd535]/15 ring-1 ring-[#fcd535]'
-          : 'bg-[#1e2329]/90 border-[#2b3139] hover:border-gray-500 hover:bg-[#1e2329]'
-      }`}
+      className={`p-6 rounded-2xl border transition-all cursor-pointer shadow-md ${isSelected
+        ? 'bg-[#1e2329] border-[#fcd535] shadow-xl shadow-[#fcd535]/15 ring-1 ring-[#fcd535]'
+        : 'bg-[#1e2329]/90 border-[#2b3139] hover:border-gray-500 hover:bg-[#1e2329]'
+        }`}
       style={{ padding: '1.5rem' }}
     >
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-bold text-gray-100 tracking-wide">{name}</h3>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <h3
+          className="text-lg font-bold text-gray-100 tracking-wide break-all line-clamp-2 flex-auto max-w-full"
+          title={name}
+        >
+          {name}
+        </h3>
+        <div className="flex items-center gap-2 shrink-0">
           <span
             className={`text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm ${getTypeBadgeColor(
               type,
@@ -97,16 +109,21 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           Parameters
         </div>
         <div className="flex flex-wrap gap-4">
-          {Object.entries(parameters || {}).map(([key, val]) => (
-            <span
-              key={key}
-              className="rounded-xl bg-[#0b0e11] text-gray-200 font-mono text-xs border border-[#2b3139] shadow-sm flex items-center gap-1.5"
-              style={{ padding: '0.5rem 1rem' }}
-            >
-              <span className="text-gray-400 capitalize">{key}:</span> <span className="text-[#fcd535] font-bold">{formatParamValue(val)}</span>
-            </span>
-          ))}
-          {Object.keys(parameters || {}).length === 0 && (
+          {Object.entries(parameters || {}).map(([key, val]) => {
+            if (key.toLowerCase() === 'name') return null; // Remove 'name' parameter
+            return (
+              <span
+                key={key}
+                className="rounded-xl bg-[#0b0e11] text-gray-200 font-mono text-xs border border-[#2b3139] shadow-sm flex items-center gap-1.5 max-w-full overflow-hidden"
+                style={{ padding: '0.5rem 1rem' }}
+                title={`${key}: ${formatParamValue(val)}`}
+              >
+                <span className="text-gray-400 capitalize shrink-0">{key}:</span>
+                <span className="text-[#fcd535] font-bold truncate">{formatParamValue(val)}</span>
+              </span>
+            );
+          })}
+          {Object.keys(parameters || {}).filter(k => k.toLowerCase() !== 'name').length === 0 && (
             <span className="italic text-gray-500 text-xs px-2">No parameters</span>
           )}
         </div>
