@@ -8,8 +8,9 @@ export interface INewsProvider {
    * Fetch the latest news articles normalized to RawArticle format
    * @param limit Maximum number of articles to fetch
    * @param coin Optional coin ticker filter (e.g. 'BTC')
+   * @param activeCoins Optional active trading coins list for dynamic extraction
    */
-  fetchLatest(limit?: number, coin?: string): Promise<RawArticle[]>;
+  fetchLatest(limit?: number, coin?: string, activeCoins?: string[]): Promise<RawArticle[]>;
 }
 
 /**

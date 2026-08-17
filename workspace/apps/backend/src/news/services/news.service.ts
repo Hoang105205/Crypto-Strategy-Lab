@@ -33,10 +33,24 @@ export class NewsService {
     this.logger.log(`Starting news collection across ${this.providers.length} registered providers...`);
     const allRawArticles: RawArticle[] = [];
 
+    // Query active trading pairs from PostgreSQL to extract matching coins dynamically
+    let activeCoins: string[] = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA'];
+    try {
+      const activePairs = await this.prisma.tradingPair.findMany({
+        where: { isActive: true },
+        select: { baseAsset: true },
+      });
+      if (activePairs.length > 0) {
+        activeCoins = activePairs.map((p) => p.baseAsset.toUpperCase());
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to fetch active TradingPairs from DB: ${err.message}. Using default coin list.`);
+    }
+
     // Fetch from all provider adapters concurrently (Fault isolation per ADR-0010)
     for (const provider of this.providers) {
       try {
-        const rawList = await provider.fetchLatest(20);
+        const rawList = await provider.fetchLatest(20, undefined, activeCoins);
         allRawArticles.push(...rawList);
       } catch (err) {
         this.logger.error(`Error in provider fetch: ${err.message}`);
@@ -93,7 +107,8 @@ export class NewsService {
         const textToAnalyze = `${raw.title}. ${raw.content}`;
         const sentimentResult = await this.sentimentClient.analyzeText(textToAnalyze);
 
-        // Normalize and save
+        // Normalize and save with explicit GENERAL fallback tag
+        const relatedCoins = (raw.relatedCoins && raw.relatedCoins.length > 0) ? raw.relatedCoins : ['GENERAL'];
         const article = await this.prisma.newsArticle.create({
           data: {
             source: raw.source,
@@ -102,7 +117,7 @@ export class NewsService {
             url: raw.url,
             publishedAt: new Date(raw.publishedAt),
             crawledAt: now,
-            relatedCoins: raw.relatedCoins ?? ['BTC'],
+            relatedCoins,
             sentimentScore: sentimentResult.score,
             sentimentLabel: sentimentResult.label,
           },

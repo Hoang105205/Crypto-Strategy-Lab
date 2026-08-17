@@ -22,17 +22,17 @@
 
 **Purpose**: Implement dynamic coin extraction from PostgreSQL `TradingPair`, tag fallback to `GENERAL`, pure coin sentiment in trading strategy, and clean mock data.
 
-- [ ] T003 [US1] [US3] Update `workspace/apps/backend/src/news/providers/rss.provider.ts`:
+- [X] T003 [US1] [US3] Update `workspace/apps/backend/src/news/providers/rss.provider.ts`:
   - Accept dynamic `activeCoins` parameter in `fetchLatest()` and `extractCoins()`.
   - Tag unrecognized / macro articles with `['GENERAL']` instead of `['BTC']`.
   - Remove `mockArticles` array per ADR-0010 (return `[]` on feed failure).
-- [ ] T004 [P] [US3] Update `workspace/apps/backend/src/news/providers/crawler.provider.ts`:
+- [X] T004 [P] [US3] Update `workspace/apps/backend/src/news/providers/crawler.provider.ts`:
   - Remove `crawlerArticles` mock data (return `[]` on crawler failure).
-- [ ] T005 [US1] Update `workspace/apps/backend/src/news/services/news.service.ts`:
+- [X] T005 [US1] Update `workspace/apps/backend/src/news/services/news.service.ts`:
   - Query active `TradingPair` base assets via `PrismaService.tradingPair.findMany({ where: { isActive: true } })`.
   - Pass active coin symbols to news providers.
   - Default null/empty `relatedCoins` to `['GENERAL']` in `collectAllNews()`.
-- [ ] T006 [US1] Update `workspace/apps/backend/src/news/strategies/sentiment.strategy.ts`:
+- [X] T006 [US1] Update `workspace/apps/backend/src/news/strategies/sentiment.strategy.ts`:
   - Ensure `NewsSentimentStrategy` computes trading signals using 100% of target coin sentiment.
 
 ---
