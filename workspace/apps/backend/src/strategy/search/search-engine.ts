@@ -1,20 +1,17 @@
-import { Injectable } from '@nestjs/common';
-import type { IStrategy } from '@crypto-strategy-lab/shared';
-import { RandomGenerator } from './random.generator';
-import { DomainGuidedGenerator } from './domain-guided.generator';
-
-export type SearchGeneratorType = 'RANDOM' | 'DOMAIN_GUIDED';
+import { Injectable, Inject } from '@nestjs/common';
+import type { IStrategyGenerator, IStrategy } from '@crypto-strategy-lab/shared';
+import { StrategyGeneratorType } from '@crypto-strategy-lab/shared';
+import { ISTRATEGY_GENERATOR } from '../../shared/tokens';
 
 export interface ISearchEngine {
-  generateCandidates(count: number, type: SearchGeneratorType): IStrategy[];
+  generateCandidates(count: number, type: StrategyGeneratorType): IStrategy[];
 }
-
 
 @Injectable()
 export class SearchEngine implements ISearchEngine {
   constructor(
-    private readonly randomGenerator: RandomGenerator,
-    private readonly domainGuidedGenerator: DomainGuidedGenerator,
+    @Inject(ISTRATEGY_GENERATOR)
+    private readonly generators: Map<StrategyGeneratorType, IStrategyGenerator>,
   ) {}
 
   /**
@@ -24,18 +21,16 @@ export class SearchEngine implements ISearchEngine {
    * @returns Mảng các chiến lược (đã được khởi tạo)
    * @throws {Error} Nếu type không được hỗ trợ
    */
-  generateCandidates(count: number, type: SearchGeneratorType): IStrategy[] {
+  generateCandidates(count: number, type: StrategyGeneratorType): IStrategy[] {
     if (count <= 0) {
       return [];
     }
 
-    switch (type) {
-      case 'RANDOM':
-        return this.randomGenerator.generate(count);
-      case 'DOMAIN_GUIDED':
-        return this.domainGuidedGenerator.generate(count);
-      default:
-        throw new Error(`Generator type not supported: ${type}`);
+    const generator = this.generators.get(type);
+    if (!generator) {
+      throw new Error(`Generator type not supported: ${type}`);
     }
+
+    return generator.generate(count);
   }
 }

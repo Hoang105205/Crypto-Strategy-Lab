@@ -9,7 +9,7 @@ import { StrategyController } from './controllers';
 import { EventsModule } from '../events/events.module';
 import { QueueModule } from '../queue/queue.module';
 import { DatabaseModule } from '../database/database.module';
-import { ISTRATEGY_CANDIDATE_PORT } from '../shared/tokens';
+import { ISTRATEGY_CANDIDATE_PORT, ISTRATEGY_GENERATOR } from '../shared/tokens';
 import { StrategyCandidatePort } from './ports';
 import { StrategyRuntimeModule } from './strategy-runtime.module';
 
@@ -19,6 +19,16 @@ import { StrategyRuntimeModule } from './strategy-runtime.module';
   providers: [
     RandomGenerator,
     DomainGuidedGenerator,
+    {
+      provide: ISTRATEGY_GENERATOR,
+      useFactory: (random: RandomGenerator, domain: DomainGuidedGenerator) => {
+        return new Map<string, any>([
+          ['RANDOM', random],
+          ['DOMAIN_GUIDED', domain],
+        ]);
+      },
+      inject: [RandomGenerator, DomainGuidedGenerator],
+    },
     SearchEngine,
     StrategyCandidatePort,
     {
