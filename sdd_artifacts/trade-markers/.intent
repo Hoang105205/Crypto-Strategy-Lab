@@ -1,0 +1,23 @@
+feature: trade-markers
+description: |
+  Implement TradeMarkers component to render buy/sell markers on the candlestick
+  chart using trade data from BacktestResult.trades. Fetches trades from
+  GET /api/strategies/backtest/:id and renders markers via lightweight-charts v5
+  createSeriesMarkers() API. Req §25, §26, §37 MVP.
+
+created: 2026-08-17
+status: complete
+phases:
+  - specify: done
+  - plan: done
+  - tasks: done
+  - implement: done
+  - analyze: done
+  - converge: done
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Frontend (TradeMarkers component)
+    - Market Data (chart integration)
+    - Strategy Engine (consumes BacktestResult.trades via REST)
