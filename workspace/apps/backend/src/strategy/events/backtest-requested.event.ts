@@ -1,3 +1,5 @@
+import { BacktestSource } from '@crypto-strategy-lab/shared';
+
 export class BacktestRequestedEvent {
   jobId: string;
   strategyVersionId: string;
@@ -5,7 +7,12 @@ export class BacktestRequestedEvent {
   timeframe: string;
   startDate: Date;
   endDate: Date;
-  initialCapital: number;
-  positionSizePercent: number;
-  executedAt: Date;
+  backtestConfig: {
+    initialCapital: number;
+    positionSizePercent: number;
+    commission?: number;
+    slippage?: number;
+  };
+  source: BacktestSource;
+  loopRunId: string | null;
 }
