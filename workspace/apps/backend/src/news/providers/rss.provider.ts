@@ -17,34 +17,6 @@ export class RSSProvider implements INewsProvider {
     { name: 'Decrypt RSS', url: 'https://decrypt.co/feed' },
   ];
 
-  // Fallback mock articles for offline dev environment or network failure
-  private readonly mockArticles: RawArticle[] = [
-    {
-      source: 'CoinDesk RSS',
-      title: 'Bitcoin Surges Above $90,000 Following Institutional ETF Inflows',
-      content: 'Institutional adoption accelerates as spot Bitcoin ETFs record unprecedented daily net inflows across major exchanges.',
-      url: 'https://coindesk.com/markets/2026/08/10/btc-surges-90k-etf',
-      publishedAt: new Date(Date.now() - 3600000).toISOString(),
-      relatedCoins: ['BTC'],
-    },
-    {
-      source: 'CoinTelegraph RSS',
-      title: 'Ethereum Layer-2 Network Activity Hits New All-Time High',
-      content: 'Transaction volume across Layer-2 scaling solutions quadrupled over the past quarter driven by lower gas fees.',
-      url: 'https://cointelegraph.com/news/eth-l2-activity-ath',
-      publishedAt: new Date(Date.now() - 7200000).toISOString(),
-      relatedCoins: ['ETH'],
-    },
-    {
-      source: 'Decrypt RSS',
-      title: 'Solana DeFi Total Value Locked Reaches Multi-Year Peak',
-      content: 'DeFi protocols on Solana observe a surge in liquidity pools and decentralized exchange trading volumes.',
-      url: 'https://decrypt.co/news/sol-tvl-multi-year-peak',
-      publishedAt: new Date(Date.now() - 10800000).toISOString(),
-      relatedCoins: ['SOL'],
-    },
-  ];
-
   getName(): string {
     return 'RSS Multi-Feed Provider';
   }
@@ -52,7 +24,11 @@ export class RSSProvider implements INewsProvider {
   /**
    * Fetch live crypto news articles from registered RSS XML feeds
    */
-  async fetchLatest(limit: number = DEFAULT_NEWS_FETCH_LIMIT, coin?: string): Promise<RawArticle[]> {
+  async fetchLatest(
+    limit: number = DEFAULT_NEWS_FETCH_LIMIT,
+    coin?: string,
+    activeCoins: string[] = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA'],
+  ): Promise<RawArticle[]> {
     this.logger.log(`Fetching latest live RSS news articles (limit: ${limit}, coin: ${coin ?? 'ALL'})`);
     const liveArticles: RawArticle[] = [];
 
@@ -66,7 +42,7 @@ export class RSSProvider implements INewsProvider {
           },
         });
 
-        const parsed = this.parseRssXml(response.data, feedConfig.name);
+        const parsed = this.parseRssXml(response.data, feedConfig.name, activeCoins);
         liveArticles.push(...parsed);
         this.logger.log(`Successfully fetched ${parsed.length} live articles from [${feedConfig.name}]`);
       } catch (err) {
@@ -74,11 +50,11 @@ export class RSSProvider implements INewsProvider {
       }
     }
 
-    let articles = liveArticles.length > 0 ? liveArticles : [...this.mockArticles];
+    let articles = liveArticles;
 
-    if (coin) {
-      articles = articles.filter(a => 
-        a.relatedCoins?.some(c => c.toUpperCase() === coin.toUpperCase())
+    if (coin && coin.toUpperCase() !== 'ALL') {
+      articles = articles.filter((a) =>
+        a.relatedCoins?.some((c) => c.toUpperCase() === coin.toUpperCase())
       );
     }
 
@@ -88,7 +64,7 @@ export class RSSProvider implements INewsProvider {
   /**
    * Safe XML parsing helper extracting <item> elements, CDATA text, URLs, and keyword coin tags
    */
-  private parseRssXml(xml: string, sourceName: string): RawArticle[] {
+  private parseRssXml(xml: string, sourceName: string, activeCoins: string[]): RawArticle[] {
     const articles: RawArticle[] = [];
     const itemMatches = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
 
@@ -119,7 +95,7 @@ export class RSSProvider implements INewsProvider {
         }
 
         const fullText = `${title}. ${content}`;
-        const relatedCoins = this.extractCoins(fullText);
+        const relatedCoins = this.extractCoins(fullText, activeCoins);
 
         articles.push({
           source: sourceName,
@@ -152,20 +128,42 @@ export class RSSProvider implements INewsProvider {
   }
 
   /**
-   * Keyword coin tagging supporting all major Market Data trading pairs
+   * Dynamic keyword coin tagging supporting all active database TradingPairs.
+   * If no active trading pair matches the article, tags as ['GENERAL'].
    */
-  private extractCoins(text: string): string[] {
+  private extractCoins(text: string, activeCoins: string[]): string[] {
     const coins: string[] = [];
     const upper = text.toUpperCase();
 
-    if (upper.includes('BTC') || upper.includes('BITCOIN')) coins.push('BTC');
-    if (upper.includes('ETH') || upper.includes('ETHEREUM')) coins.push('ETH');
-    if (upper.includes('SOL') || upper.includes('SOLANA')) coins.push('SOL');
-    if (upper.includes('BNB') || upper.includes('BINANCE')) coins.push('BNB');
-    if (upper.includes('XRP') || upper.includes('RIPPLE')) coins.push('XRP');
-    if (upper.includes('DOGE') || upper.includes('DOGECOIN')) coins.push('DOGE');
-    if (upper.includes('ADA') || upper.includes('CARDANO')) coins.push('ADA');
+    // Map common full coin names to ticker symbols
+    const nameAliases: Record<string, string> = {
+      BITCOIN: 'BTC',
+      ETHEREUM: 'ETH',
+      SOLANA: 'SOL',
+      BINANCE: 'BNB',
+      RIPPLE: 'XRP',
+      DOGECOIN: 'DOGE',
+      CARDANO: 'ADA',
+      AVALANCHE: 'AVAX',
+      POLKADOT: 'DOT',
+      CHAINLINK: 'LINK',
+    };
 
-    return coins.length > 0 ? coins : ['BTC'];
+    // Check each active coin symbol or alias
+    for (const coin of activeCoins) {
+      const coinUpper = coin.toUpperCase();
+      if (upper.includes(coinUpper)) {
+        coins.push(coinUpper);
+      }
+    }
+
+    for (const [name, ticker] of Object.entries(nameAliases)) {
+      if (upper.includes(name) && activeCoins.includes(ticker) && !coins.includes(ticker)) {
+        coins.push(ticker);
+      }
+    }
+
+    // Default to 'GENERAL' instead of coercing to 'BTC'
+    return coins.length > 0 ? Array.from(new Set(coins)) : ['GENERAL'];
   }
 }
