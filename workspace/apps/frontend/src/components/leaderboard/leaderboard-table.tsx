@@ -47,17 +47,17 @@ function FinancialCell({ entry, criterion }: { entry: LeaderboardEntryPayload; c
 
 export function LeaderboardTable({ snapshot, sortBy, selectedStrategyVersionId, onSortByChange, onSelectStrategy }: LeaderboardTableProps) {
   return (
-    <section aria-labelledby="leaderboard-heading" className="min-w-0 rounded-lg border border-hairline-dark bg-surface-card">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-hairline-dark px-4 py-3">
+    <section aria-labelledby="leaderboard-heading" className="min-w-0 overflow-hidden rounded-xl border border-hairline-dark/80 bg-surface-card shadow-md">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline-dark/80 px-6 py-5">
         <div>
-          <h1 id="leaderboard-heading" className="text-lg font-semibold text-body">Strategy Leaderboard</h1>
-          <p className="mt-1 text-xs text-muted">Last updated: {snapshot.updatedAt.toLocaleString()}</p>
+          <h1 id="leaderboard-heading" className="text-2xl font-bold tracking-tight text-body">Strategy Leaderboard</h1>
+          <p className="mt-1 text-xs font-medium text-muted">Last updated: {snapshot.updatedAt.toLocaleString()}</p>
         </div>
-        <label className="text-sm text-muted">
-          Ranking criterion
+        <label className="flex items-center gap-2.5 text-sm font-medium text-muted">
+          <span>Ranking criterion</span>
           <select
             aria-label="Ranking criterion"
-            className="ml-2 rounded border border-hairline-dark bg-canvas-dark px-2 py-1 text-body outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="rounded-xl border border-hairline-dark/80 bg-canvas-dark px-3.5 py-2 text-sm font-medium text-body cursor-pointer transition-colors hover:border-muted-strong outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary shadow-sm"
             value={sortBy}
             onChange={(event) => onSortByChange(event.target.value as RankingCriterion)}
           >
@@ -66,45 +66,54 @@ export function LeaderboardTable({ snapshot, sortBy, selectedStrategyVersionId, 
         </label>
       </div>
 
-      <div data-testid="leaderboard-scroll" className="overflow-x-auto">
-        <table aria-label="Strategy leaderboard" className="min-w-[760px] w-full border-collapse text-left text-sm">
-          <thead className="bg-canvas-dark text-xs uppercase tracking-wide text-muted">
+      <div data-testid="leaderboard-scroll" className="max-h-[680px] overflow-x-auto overflow-y-auto">
+        <table aria-label="Strategy leaderboard" className="w-full min-w-[760px] border-collapse text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-canvas-dark/95 backdrop-blur-sm text-xs font-bold uppercase tracking-wider text-muted-strong border-b border-hairline-dark/80">
             <tr>
-              <th className="px-3 py-3" scope="col">Rank</th>
-              <th className="px-3 py-3" scope="col">Strategy</th>
+              <th className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">Rank</th>
+              <th className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">Strategy</th>
               {SORTABLE_COLUMNS.map(({ criterion, label }) => (
-                <th key={criterion} aria-sort={criterion === sortBy ? 'descending' : 'none'} className="px-3 py-3" scope="col">
+                <th key={criterion} aria-sort={criterion === sortBy ? 'descending' : 'none'} className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">
                   <button
                     type="button"
-                    className="rounded outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold transition-colors hover:text-primary hover:bg-surface-elevated/50 outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     onClick={() => onSortByChange(criterion)}
                     aria-label={`Sort by ${label}`}
                   >
-                    {label} {criterion === sortBy ? <span aria-hidden="true">↓</span> : null}
+                    {label} {criterion === sortBy ? <span aria-hidden="true" className="text-primary font-extrabold">↓</span> : null}
                   </button>
                 </th>
               ))}
-              <th className="px-3 py-3" scope="col">Trades</th>
+              <th className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">Trades</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-hairline-dark/60">
             {snapshot.entries.map((entry) => {
               const selected = entry.strategyVersionId === selectedStrategyVersionId;
+              const rankBadge =
+                entry.rank === 1
+                  ? 'text-yellow-400 font-bold bg-yellow-400/15 px-2.5 py-1 rounded-md border border-yellow-400/30'
+                  : entry.rank === 2
+                    ? 'text-slate-300 font-bold bg-slate-300/15 px-2.5 py-1 rounded-md border border-slate-300/30'
+                    : entry.rank === 3
+                      ? 'text-amber-500 font-bold bg-amber-500/15 px-2.5 py-1 rounded-md border border-amber-500/30'
+                      : 'text-body font-mono font-medium';
+
               return (
-                <tr key={entry.strategyVersionId} aria-selected={selected} className={`border-t border-hairline-dark ${selected ? 'bg-primary/10' : 'hover:bg-canvas-dark/70'}`}>
-                  <td className="px-3 py-3 font-mono tabular-nums text-body">#{entry.rank}</td>
-                  <td className="px-3 py-3">
+                <tr key={entry.strategyVersionId} aria-selected={selected} className={`transition-colors ${selected ? 'bg-primary/15 border-l-4 border-l-primary' : 'hover:bg-canvas-dark/70'}`}>
+                  <td className="px-4 py-3 whitespace-nowrap"><span className={`font-mono tabular-nums ${rankBadge}`}>#{entry.rank}</span></td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <button
                       type="button"
                       aria-label={`Select ${entry.strategyName}`}
-                      className="rounded font-medium text-body underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      className="rounded-md font-semibold text-body underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary text-left max-w-[200px] sm:max-w-[260px] lg:max-w-[320px] truncate block"
                       onClick={() => onSelectStrategy(entry.strategyVersionId)}
                     >
                       {entry.strategyName}
                     </button>
                   </td>
-                  {SORTABLE_COLUMNS.map(({ criterion }) => <td key={criterion} className="px-3 py-3 text-body"><FinancialCell entry={entry} criterion={criterion} /></td>)}
-                  <td className="px-3 py-3 font-mono tabular-nums text-body">{entry.totalTrades}</td>
+                  {SORTABLE_COLUMNS.map(({ criterion }) => <td key={criterion} className="px-4 py-3 whitespace-nowrap"><FinancialCell entry={entry} criterion={criterion} /></td>)}
+                  <td className="px-4 py-3 whitespace-nowrap"><span className="font-mono tabular-nums text-body">{entry.totalTrades}</span></td>
                 </tr>
               );
             })}

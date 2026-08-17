@@ -25,15 +25,17 @@ export function DashboardGrid({
       data-testid="dashboard-grid"
       className="grid grid-cols-1 gap-6 md:grid-cols-12"
     >
-      <header className="flex flex-wrap items-center justify-between gap-4 md:col-span-12">
+      <header className="flex flex-wrap items-center justify-between gap-4 pb-2 md:col-span-12">
         <div>
-          <h1 className="text-2xl font-semibold text-body">Market Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-strong">
+          <h1 className="text-2xl font-bold tracking-tight text-body md:text-3xl">
+            Market Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-muted-strong font-normal">
             Live price action and strategy infrastructure
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-muted-strong">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2.5 text-sm font-medium text-muted-strong">
             <span>Trading pair</span>
             <PairSelector value={pair} onChange={onPairChange} />
           </label>
@@ -50,7 +52,7 @@ export function DashboardGrid({
 
       <aside
         aria-label="Infrastructure status"
-        className="flex min-w-0 flex-col gap-4 md:col-span-4"
+        className="flex min-w-0 flex-col gap-6 md:col-span-4"
       >
         {loopPanel}
         {queueCard}

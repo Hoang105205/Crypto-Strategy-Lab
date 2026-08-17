@@ -29,7 +29,7 @@ export interface LoopStatusPanelProps {
 type LoopAction = 'start' | 'pause' | 'resume' | 'stop';
 
 const BUTTON_CLASS =
-  'min-h-10 rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex h-10 items-center justify-center rounded-md px-6 py-3 text-sm font-semibold transition-colors duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark disabled:cursor-not-allowed disabled:opacity-40 disabled:pointer-events-none shadow-sm';
 
 export function LoopStatusPanel({
   loop,
@@ -80,51 +80,67 @@ export function LoopStatusPanel({
   const progressMaximum = loop?.maxCandidates ?? Math.max(loop?.testedCandidates ?? 0, 1);
   const progressValue = Math.min(loop?.testedCandidates ?? 0, progressMaximum);
 
+  const statusBadgeClass =
+    loop?.status === LoopStatus.RUNNING
+      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+      : loop?.status === LoopStatus.PAUSED
+        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+        : loop?.status === LoopStatus.FAILED || loop?.status === LoopStatus.STOPPED_BY_USER
+          ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+          : 'bg-surface-elevated text-muted-strong border-hairline-dark/80';
+
   return (
-    <section
+    <div
+      role="region"
       aria-labelledby="loop-status-title"
-      className="rounded-xl border border-hairline-dark bg-surface-card p-4 text-body"
+      className="rounded-xl border border-hairline-dark/80 bg-surface-card p-6 text-body shadow-sm"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 id="loop-status-title" className="text-lg font-semibold">
+          <h2 id="loop-status-title" className="text-lg font-semibold tracking-tight">
             Search Loop
           </h2>
-          <p className="mt-1 text-xs text-muted-strong">
+          <p className="mt-0.5 text-xs text-muted-strong">
             Backend-authoritative orchestration status
           </p>
         </div>
         <span
           role="status"
-          className="rounded-md border border-hairline-dark px-2 py-1 text-xs font-semibold"
+          className={`rounded-md border px-2.5 py-1 text-xs font-semibold tracking-wide uppercase ${statusBadgeClass}`}
         >
           {loop?.status ?? 'IDLE'}
         </span>
       </div>
 
       {isStale && (
-        <p className="mt-3 text-sm text-primary">
-          Reconnecting — showing the last successful Loop data.
-        </p>
+        <div className="mt-3 rounded-lg border border-primary/30 bg-primary/10 p-2.5">
+          <p className="text-xs font-medium text-primary">
+            Reconnecting — showing the last successful Loop data.
+          </p>
+        </div>
       )}
       {lastSuccessfulAt && (
-        <p className="mt-1 text-xs text-muted-strong">
+        <p className="mt-1.5 text-xs text-muted-strong">
           Last updated: {lastSuccessfulAt.toLocaleString()}
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-3 text-sm text-muted-strong">
-          The latest Loop status could not be refreshed. Last known data remains visible.
-        </p>
+        <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5">
+          <p role="alert" className="text-xs font-medium text-rose-400">
+            The latest Loop status could not be refreshed. Last known data remains visible.
+          </p>
+        </div>
       )}
 
       {loop === null ? (
-        <p className="mt-5 text-sm text-muted-strong">
-          No active search loop. Start one to generate and evaluate bounded candidates.
-        </p>
+        <div className="mt-5 rounded-xl border border-dashed border-hairline-dark/80 bg-surface-elevated/40 p-5 text-center shadow-inner">
+          <p className="text-xs text-muted-strong leading-relaxed font-medium">
+            No active search loop. Start one to generate and evaluate bounded candidates.
+          </p>
+        </div>
       ) : (
         <>
-          <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
+          <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 text-sm">
             <Metric label="Iteration" value={loop.iteration} />
             <Metric label="Tested candidates" value={loop.testedCandidates} />
             <Metric
@@ -137,9 +153,9 @@ export function LoopStatusPanel({
             />
           </dl>
           <div className="mt-4">
-            <div className="mb-1 flex justify-between text-xs text-muted-strong">
-              <span>Progress</span>
-              <span className="font-mono">
+            <div className="mb-1.5 flex justify-between text-xs text-muted-strong">
+              <span className="font-medium">Progress</span>
+              <span className="font-mono tabular-nums">
                 {loop.testedCandidates}/{loop.maxCandidates ?? 'unbounded'}
               </span>
             </div>
@@ -148,7 +164,7 @@ export function LoopStatusPanel({
               aria-valuemin={0}
               aria-valuemax={progressMaximum}
               aria-valuenow={progressValue}
-              className="h-2 w-full accent-primary"
+              className="h-2 w-full overflow-hidden rounded-full accent-primary"
               max={progressMaximum}
               value={progressValue}
             />
@@ -157,18 +173,20 @@ export function LoopStatusPanel({
       )}
 
       {commandFailed && (
-        <p role="alert" className="mt-3 text-sm text-muted-strong">
-          The command could not be completed. Refresh the authoritative state and retry.
-        </p>
+        <div className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2.5">
+          <p role="alert" className="text-xs font-medium text-rose-300">
+            The command could not be completed. Refresh the authoritative state and retry.
+          </p>
+        </div>
       )}
 
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-5 flex flex-wrap gap-2.5">
         {canStart && (
           <button
             type="button"
             disabled={pendingAction !== null}
             onClick={() => void runCommand('start')}
-            className={`${BUTTON_CLASS} bg-primary text-black`}
+            className="px-6 py-3 bg-[#FCD535] text-[#181a20] font-semibold rounded-md h-10 hover:bg-[#f0b90b] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info"
           >
             {pendingAction === 'start' ? 'Starting…' : 'Start Search Loop'}
           </button>
@@ -178,7 +196,7 @@ export function LoopStatusPanel({
             type="button"
             disabled={pendingAction !== null}
             onClick={() => void runCommand('pause')}
-            className={`${BUTTON_CLASS} bg-surface-elevated text-body`}
+            className={`${BUTTON_CLASS} bg-surface-elevated border border-hairline-dark text-body hover:border-muted-strong`}
           >
             {pendingAction === 'pause' ? 'Pausing…' : 'Pause'}
           </button>
@@ -188,7 +206,7 @@ export function LoopStatusPanel({
             type="button"
             disabled={pendingAction !== null}
             onClick={() => void runCommand('resume')}
-            className={`${BUTTON_CLASS} bg-surface-elevated text-body`}
+            className={`${BUTTON_CLASS} bg-surface-elevated border border-hairline-dark text-body hover:border-muted-strong`}
           >
             {pendingAction === 'resume' ? 'Resuming…' : 'Resume'}
           </button>
@@ -198,7 +216,7 @@ export function LoopStatusPanel({
             type="button"
             disabled={pendingAction !== null}
             onClick={() => void runCommand('stop')}
-            className={`${BUTTON_CLASS} border border-hairline-dark bg-transparent text-body`}
+            className={`${BUTTON_CLASS} border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20`}
           >
             {pendingAction === 'stop' ? 'Stopping…' : 'Stop'}
           </button>
@@ -208,21 +226,21 @@ export function LoopStatusPanel({
             type="button"
             disabled={pendingAction !== null}
             onClick={() => void onRefresh()}
-            className={`${BUTTON_CLASS} bg-primary text-black`}
+            className={`${BUTTON_CLASS} bg-[#FCD535] text-[#181a20] font-semibold hover:bg-[#f0b90b]`}
           >
             Retry
           </button>
         )}
       </div>
-    </section>
+    </div>
   );
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg bg-surface-elevated p-3">
-      <dt className="text-xs text-muted-strong">{label}</dt>
-      <dd className="mt-1 break-all font-mono text-sm text-body">{value}</dd>
+    <div className="rounded-xl border border-hairline-dark/60 bg-surface-elevated/70 p-4 flex flex-col justify-between gap-2 transition-colors hover:border-hairline-dark">
+      <dt className="text-xs font-medium uppercase tracking-wider text-[#707a8a]">{label}</dt>
+      <dd className="break-all font-mono tabular-nums text-sm font-bold text-[#eaecef]">{value}</dd>
     </div>
   );
 }

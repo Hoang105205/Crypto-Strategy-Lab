@@ -137,4 +137,19 @@ describe('TradeMarkers lightweight-charts v5 contract', () => {
     unmount();
     expect(secondPlugin.detach).toHaveBeenCalledTimes(1);
   });
+
+  it('does not leak an already-disposed chart error during unmount cleanup', async () => {
+    createSeriesMarkersMock.mockImplementationOnce(() => ({
+      setMarkers: vi.fn(),
+      detach: vi.fn(() => {
+        throw new Error('Object is disposed');
+      }),
+    }));
+    const { TradeMarkers } = await loadTradeMarkers();
+    const { unmount } = render(
+      <TradeMarkers series={{ id: 'disposed-series' }} trades={[trade()]} />,
+    );
+
+    expect(() => unmount()).not.toThrow();
+  });
 });

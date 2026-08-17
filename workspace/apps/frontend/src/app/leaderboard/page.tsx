@@ -20,29 +20,34 @@ function LeaderboardWorkspace() {
   }
   if (leaderboard.error && !leaderboard.data) {
     return (
-      <section role="alert" className="rounded-lg border border-hairline-dark bg-surface-card p-6">
-        <p className="text-body">Leaderboard is temporarily unavailable.</p>
-        <button type="button" onClick={() => void leaderboard.refetch()} className="mt-4 rounded bg-primary px-4 py-2 font-medium text-canvas-dark outline-none focus-visible:ring-2 focus-visible:ring-white">Retry</button>
+      <section role="alert" className="rounded-xl border border-rose-500/30 bg-surface-card p-6 shadow-sm">
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3">
+          <p className="text-sm font-medium text-rose-400">Leaderboard is temporarily unavailable.</p>
+        </div>
+        <button type="button" onClick={() => void leaderboard.refetch()} className="mt-4 rounded-lg bg-primary px-4 py-2 font-semibold text-black transition-all hover:bg-primary/90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark shadow-sm">Retry</button>
       </section>
     );
   }
   if (!leaderboard.data || leaderboard.data.entries.length === 0) {
     return (
-      <section className="rounded-lg border border-hairline-dark bg-surface-card p-6">
-        <h1 className="text-xl font-semibold text-body">Strategy Leaderboard</h1>
+      <section className="rounded-xl border border-hairline-dark/80 bg-surface-card p-6 shadow-sm">
+        <h1 className="text-xl font-bold tracking-tight text-body">Strategy Leaderboard</h1>
         <p className="mt-2 text-sm text-muted">No ranked strategies have been published yet.</p>
-        <a href="/strategy" className="mt-4 inline-block rounded bg-primary px-4 py-2 font-medium text-canvas-dark">View strategies</a>
+        <a href="/strategy" className="mt-4 inline-block rounded-lg bg-primary px-4 py-2 font-semibold text-black transition-all hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark shadow-sm">View strategies</a>
       </section>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-        <span role="status">Infrastructure: {statusText}</span>
-        {leaderboard.isStale ? <span role="status">Showing last successful snapshot while reconnecting.</span> : null}
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-strong bg-surface-card border border-hairline-dark/80 rounded-xl px-4 py-2.5 shadow-sm">
+        <span role="status" className="flex items-center gap-2.5 font-medium">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          Infrastructure: {statusText}
+        </span>
+        {leaderboard.isStale ? <span role="status" className="text-primary font-semibold">Showing last successful snapshot while reconnecting.</span> : null}
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.8fr)_minmax(360px,1fr)] items-start">
         <LeaderboardTable
           snapshot={leaderboard.data}
           sortBy={leaderboard.sortBy}
@@ -61,7 +66,7 @@ function LeaderboardWorkspace() {
 
 export default function LeaderboardPage() {
   return (
-    <main className="p-4 md:p-6">
+    <main className="min-w-0">
       <Suspense fallback={<LoadingState label="Loading leaderboard" minHeight={420} />}>
         <LeaderboardWorkspace />
       </Suspense>

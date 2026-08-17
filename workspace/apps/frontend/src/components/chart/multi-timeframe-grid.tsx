@@ -29,7 +29,7 @@ export function MultiTimeframeGrid({ pair }: MultiTimeframeGridProps) {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {panels.map((panel, index) => (
         <div
           key={index}
@@ -39,7 +39,7 @@ export function MultiTimeframeGrid({ pair }: MultiTimeframeGridProps) {
             border: `1px solid ${COLORS.hairlineDark}`,
           }}
         >
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <span className="font-mono text-xs text-muted">
               {pair} · Chart {index + 1}
             </span>

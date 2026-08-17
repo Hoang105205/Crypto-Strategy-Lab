@@ -16,7 +16,7 @@ export function TimeframeSelector({ value, onChange }: TimeframeSelectorProps) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as Timeframe)}
-      className="rounded px-2 py-1 text-xs text-body outline-none"
+      className="rounded-md border px-2.5 py-1 text-xs font-medium text-body cursor-pointer transition-colors hover:border-muted-strong outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary"
       style={{
         backgroundColor: COLORS.surfaceCard,
         borderColor: COLORS.hairlineDark,

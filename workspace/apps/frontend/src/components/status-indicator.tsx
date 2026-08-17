@@ -27,12 +27,20 @@ export function StatusIndicator() {
         : 'Connection lost';
 
   return (
-    <div className="flex items-center gap-2">
-      <span
-        className="inline-block h-2 w-2 rounded-full"
-        style={{ backgroundColor: dotColor }}
-      />
-      <span className="text-sm text-body">{label}</span>
+    <div className="flex items-center gap-2 rounded-lg border border-hairline-dark/80 bg-surface-card px-3 py-1.5 shadow-sm">
+      <span className="relative flex h-2 w-2 items-center justify-center">
+        {status === 'reconnecting' && (
+          <span
+            className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+            style={{ backgroundColor: dotColor }}
+          />
+        )}
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: dotColor }}
+        />
+      </span>
+      <span className="text-xs font-medium text-body">{label}</span>
     </div>
   );
 }
