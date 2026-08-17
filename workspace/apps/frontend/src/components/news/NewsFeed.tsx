@@ -32,7 +32,7 @@ export interface NewsFeedProps {
   onCoinChange?: (coin: string) => void;
 }
 
-const AVAILABLE_COINS = ['ALL', 'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA'];
+const DEFAULT_AVAILABLE_COINS = ['ALL', 'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'GENERAL'];
 const DEFAULT_PAGE_SIZE = 10;
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
@@ -43,6 +43,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [aggregate, setAggregate] = useState<AggregateSentiment | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
+
+  // Dynamic Available Coins from TradingPair DB
+  const [availableCoins, setAvailableCoins] = useState<string[]>(DEFAULT_AVAILABLE_COINS);
 
   // Coin Filter States (Single & Multi-coin)
   const [activeTab, setActiveTab] = useState<string>(selectedCoin);
@@ -54,7 +59,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
   // Offset Pagination States
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const pageSize = DEFAULT_PAGE_SIZE;
   const [totalArticles, setTotalArticles] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [paginationMode, setPaginationMode] = useState<'pages' | 'loadMore'>('pages');
@@ -65,139 +70,133 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
 
+  // Fetch dynamic trading pairs on mount to populate coin tabs
   useEffect(() => {
-    setCurrentPage(1);
-    fetchNewsData(1, pageSize, activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, 'replace');
-  }, [activeTab, selectedCoins, isMultiCoinMode, pageSize]);
+    let ignore = false;
+    const fetchTradingPairs = async () => {
+      try {
+        const res = await fetch('http://localhost:3001/api/market-data/pairs');
+        if (res.ok) {
+          const pairs = await res.json();
+          if (Array.isArray(pairs) && pairs.length > 0 && !ignore) {
+            const baseCoins = Array.from(
+              new Set(
+                pairs
+                  .filter((p: { isActive?: boolean; baseAsset?: string }) => p.isActive !== false && p.baseAsset)
+                  .map((p: { baseAsset: string }) => p.baseAsset.toUpperCase())
+              )
+            ) as string[];
+            setAvailableCoins(['ALL', ...baseCoins, 'GENERAL']);
+          }
+        }
+      } catch {
+        // Fallback to default available coins
+      }
+    };
+    void fetchTradingPairs();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
+  // Effect A: Synchronize News Articles when filter, page or retry trigger changes
   useEffect(() => {
-    fetchAggregateSentiment(activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe);
-  }, [selectedTimeframe]);
+    let ignore = false;
 
-  const fetchAggregateSentiment = async (
-    singleCoin: string,
-    multiCoins: string[],
-    isMulti: boolean,
-    tf: TimeframeOption
-  ) => {
-    try {
-      let coinParams = '';
-      if (isMulti && multiCoins.length > 0) {
-        coinParams = `coins=${multiCoins.join(',')}`;
-      } else if (singleCoin && singleCoin !== 'ALL') {
-        coinParams = `coin=${singleCoin}`;
-      }
-      const aggParams = [coinParams, `timeframe=${tf}`].filter(Boolean).join('&');
-      const aggQueryStr = aggParams ? `?${aggParams}` : '';
-      const aggRes = await fetch(`http://localhost:3001/api/sentiment/aggregate${aggQueryStr}`);
-      if (aggRes.ok) {
-        const aggJson = await aggRes.json();
-        setAggregate(aggJson);
-      }
-    } catch (error) {
-      console.warn('Failed to fetch aggregate sentiment:', error);
-    }
-  };
+    const loadArticles = async () => {
+      try {
+        const offset = (currentPage - 1) * pageSize;
+        const limitParam = `limit=${pageSize}`;
+        const offsetParam = `offset=${offset}`;
 
-  const fetchNewsData = async (
-    page: number,
-    size: number,
-    singleCoin: string,
-    multiCoins: string[],
-    isMulti: boolean,
-    timeframeParam: TimeframeOption = selectedTimeframe,
-    mode: 'replace' | 'append' = 'replace'
-  ) => {
-    if (mode === 'append') setLoadingMore(true);
-    else setLoading(true);
-
-    try {
-      const offset = (page - 1) * size;
-      const limitParam = `limit=${size}`;
-      const offsetParam = `offset=${offset}`;
-
-      let coinParams = '';
-      if (isMulti && multiCoins.length > 0) {
-        coinParams = `coins=${multiCoins.join(',')}`;
-      } else if (singleCoin && singleCoin !== 'ALL') {
-        coinParams = `coin=${singleCoin}`;
-      }
-
-      const queryStr = [limitParam, offsetParam, coinParams].filter(Boolean).join('&');
-      const newsRes = await fetch(`http://localhost:3001/api/news?${queryStr}`);
-
-      if (newsRes.ok) {
-        const newsJson = await newsRes.json();
-        const fetchedData: NewsArticle[] = newsJson.data || [];
-        const pagMeta = newsJson.pagination || { total: fetchedData.length, limit: size, offset, hasMore: false };
-
-        if (mode === 'append') {
-          setArticles((prev) => [...prev, ...fetchedData]);
-        } else {
-          setArticles(fetchedData);
+        let coinParams = '';
+        if (isMultiCoinMode && selectedCoins.length > 0) {
+          coinParams = `coins=${selectedCoins.join(',')}`;
+        } else if (activeTab && activeTab !== 'ALL') {
+          coinParams = `coin=${activeTab}`;
         }
 
-        setTotalArticles(pagMeta.total);
-        setHasMore(pagMeta.hasMore);
+        const queryStr = [limitParam, offsetParam, coinParams].filter(Boolean).join('&');
+        const newsRes = await fetch(`http://localhost:3001/api/news?${queryStr}`);
+
+        if (newsRes.ok) {
+          const newsJson = await newsRes.json();
+          const fetchedData: NewsArticle[] = newsJson.data || [];
+          const pagMeta = newsJson.pagination || { total: fetchedData.length, limit: pageSize, offset, hasMore: false };
+
+          if (!ignore) {
+            setArticles(fetchedData);
+            setTotalArticles(pagMeta.total);
+            setHasMore(pagMeta.hasMore);
+            setFetchError(null);
+          }
+        } else {
+          if (!ignore) {
+            setArticles([]);
+            setTotalArticles(0);
+            setHasMore(false);
+            setFetchError('Backend server returned an error response.');
+          }
+        }
+      } catch {
+        if (!ignore) {
+          setArticles([]);
+          setTotalArticles(0);
+          setHasMore(false);
+          setFetchError('Unable to connect to live news service. Please verify backend server and internet connection.');
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
+    };
 
-      await fetchAggregateSentiment(singleCoin, multiCoins, isMulti, timeframeParam);
-    } catch (error) {
-      console.warn('Backend API unavailable, displaying mock news feed.');
-      const mockList: NewsArticle[] = [
-        {
-          id: 'mock-1',
-          source: 'CoinDesk RSS',
-          title: 'Bitcoin Surges Above $90,000 Following Institutional ETF Inflows',
-          content: 'Institutional adoption accelerates as spot Bitcoin ETFs record unprecedented daily net inflows across major exchanges.',
-          url: 'https://coindesk.com',
-          publishedAt: new Date().toISOString(),
-          crawledAt: new Date().toISOString(),
-          relatedCoins: ['BTC'],
-          sentimentScore: 0.82,
-          sentimentLabel: 'POSITIVE',
-        },
-        {
-          id: 'mock-2',
-          source: 'CoinTelegraph RSS',
-          title: 'Ethereum Layer-2 Network Activity Hits New All-Time High',
-          content: 'Transaction volume across Layer-2 scaling solutions quadrupled over the past quarter driven by lower gas fees.',
-          url: 'https://cointelegraph.com',
-          publishedAt: new Date(Date.now() - 3600000).toISOString(),
-          crawledAt: new Date().toISOString(),
-          relatedCoins: ['ETH'],
-          sentimentScore: 0.65,
-          sentimentLabel: 'POSITIVE',
-        },
-        {
-          id: 'mock-3',
-          source: 'Decrypt RSS',
-          title: 'Federal Reserve Monetary Policy Outlook Drives Crypto Volatility',
-          content: 'Traders closely analyze central bank interest rate projections as digital asset markets adjust risk exposure.',
-          url: 'https://decrypt.co',
-          publishedAt: new Date(Date.now() - 7200000).toISOString(),
-          crawledAt: new Date().toISOString(),
-          relatedCoins: ['BTC', 'ETH'],
-          sentimentScore: -0.15,
-          sentimentLabel: 'NEGATIVE',
-        },
-      ];
-      setArticles(mockList);
-      setTotalArticles(mockList.length);
-      setHasMore(false);
-      setAggregate({
-        score: 0.44,
-        label: 'POSITIVE',
-        articleCount: 3,
-        updatedAt: new Date().toISOString(),
-      });
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  };
+    void loadArticles();
 
+    return () => {
+      ignore = true;
+    };
+  }, [currentPage, pageSize, activeTab, selectedCoins, isMultiCoinMode, retryCount]);
+
+  // Effect B: Synchronize Aggregate Sentiment when timeframe, coin selection or retry changes
+  useEffect(() => {
+    let ignore = false;
+
+    const loadAggregate = async () => {
+      try {
+        let coinParams = '';
+        if (isMultiCoinMode && selectedCoins.length > 0) {
+          coinParams = `coins=${selectedCoins.join(',')}`;
+        } else if (activeTab && activeTab !== 'ALL') {
+          coinParams = `coin=${activeTab}`;
+        }
+        const aggParams = [coinParams, `timeframe=${selectedTimeframe}`].filter(Boolean).join('&');
+        const aggQueryStr = aggParams ? `?${aggParams}` : '';
+        const aggRes = await fetch(`http://localhost:3001/api/sentiment/aggregate${aggQueryStr}`);
+        if (aggRes.ok) {
+          const aggJson = await aggRes.json();
+          if (!ignore) {
+            setAggregate(aggJson);
+          }
+        }
+      } catch {
+        // Keep previous aggregate state on network error
+      }
+    };
+
+    void loadAggregate();
+
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, retryCount]);
+
+  // User Interaction Handlers
   const handleTabClick = (coin: string) => {
+    setLoading(true);
+    setCurrentPage(1);
     if (isMultiCoinMode) {
       if (coin === 'ALL') {
         setSelectedCoins([]);
@@ -212,20 +211,61 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     }
   };
 
+  const handleToggleMultiCoin = () => {
+    setLoading(true);
+    setCurrentPage(1);
+    setIsMultiCoinMode((prev) => !prev);
+  };
+
   const handleTimeframeClick = (tf: TimeframeOption) => {
     setSelectedTimeframe(tf);
   };
 
   const handlePageChange = (newPage: number) => {
+    setLoading(true);
     setCurrentPage(newPage);
-    fetchNewsData(newPage, pageSize, activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, 'replace');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleRetry = () => {
+    setLoading(true);
+    setFetchError(null);
+    setRetryCount((prev) => prev + 1);
+  };
+
   const handleLoadMore = async () => {
-    const nextPage = currentPage + 1;
-    setCurrentPage(nextPage);
-    await fetchNewsData(nextPage, pageSize, activeTab, selectedCoins, isMultiCoinMode, selectedTimeframe, 'append');
+    setLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const offset = (nextPage - 1) * pageSize;
+      const limitParam = `limit=${pageSize}`;
+      const offsetParam = `offset=${offset}`;
+
+      let coinParams = '';
+      if (isMultiCoinMode && selectedCoins.length > 0) {
+        coinParams = `coins=${selectedCoins.join(',')}`;
+      } else if (activeTab && activeTab !== 'ALL') {
+        coinParams = `coin=${activeTab}`;
+      }
+
+      const queryStr = [limitParam, offsetParam, coinParams].filter(Boolean).join('&');
+      const newsRes = await fetch(`http://localhost:3001/api/news?${queryStr}`);
+
+      if (newsRes.ok) {
+        const newsJson = await newsRes.json();
+        const fetchedData: NewsArticle[] = newsJson.data || [];
+        const pagMeta = newsJson.pagination || { total: fetchedData.length, limit: pageSize, offset, hasMore: false };
+
+        setArticles((prev) => [...prev, ...fetchedData]);
+        setTotalArticles(pagMeta.total);
+        setHasMore(pagMeta.hasMore);
+        setCurrentPage(nextPage);
+      }
+    } catch {
+      // Keep existing list on error
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   // Mouse Drag-to-Scroll Handlers
@@ -322,7 +362,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
       className="w-full max-w-6xl mx-auto flex flex-col items-center text-slate-100 font-sans"
       style={{ paddingBottom: '100px' }}
     >
-      {/* 1. Header Bar — Guaranteed 40px top/bottom and 48px left/right padding */}
+      {/* 1. Header Bar */}
       <div
         className="w-full rounded-3xl bg-slate-900/90 border border-slate-800/90 backdrop-blur-2xl shadow-2xl flex flex-col md:flex-row items-center justify-between gap-8 overflow-hidden"
         style={{ padding: '40px 48px' }}
@@ -356,10 +396,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                     <button
                       key={tf}
                       onClick={() => handleTimeframeClick(tf)}
-                      className={`text-xs font-extrabold rounded-full transition-all duration-200 cursor-pointer flex items-center gap-1.5 border shadow-sm ${isActive
-                        ? 'bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 text-white border-cyan-400/50 shadow-cyan-500/20 scale-105'
-                        : 'bg-slate-900/90 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border-slate-700/60'
-                        }`}
+                      className={`text-xs font-extrabold rounded-full transition-all duration-200 cursor-pointer flex items-center gap-1.5 border shadow-sm ${
+                        isActive
+                          ? 'bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500 text-white border-cyan-400/50 shadow-cyan-500/20 scale-105'
+                          : 'bg-slate-900/90 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border-slate-700/60'
+                      }`}
                       style={{ padding: '6px 16px' }}
                     >
                       <span>⏱️</span>
@@ -388,11 +429,12 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsMultiCoinMode(!isMultiCoinMode)}
-              className={`text-sm font-bold whitespace-nowrap rounded-full border transition-all cursor-pointer ${isMultiCoinMode
-                ? 'bg-cyan-950 text-cyan-300 border-cyan-500 shadow-md shadow-cyan-950'
-                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
-                }`}
+              onClick={handleToggleMultiCoin}
+              className={`text-sm font-bold whitespace-nowrap rounded-full border transition-all cursor-pointer ${
+                isMultiCoinMode
+                  ? 'bg-cyan-950 text-cyan-300 border-cyan-500 shadow-md shadow-cyan-950'
+                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+              }`}
               style={{ padding: '12px 28px' }}
             >
               {isMultiCoinMode ? '✓ Multi-Select Active' : '⚡ Enable Multi-Select'}
@@ -401,16 +443,18 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
             <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-full p-1">
               <button
                 onClick={() => setPaginationMode('pages')}
-                className={`text-sm font-extrabold whitespace-nowrap rounded-full transition-colors cursor-pointer shrink-0 ${paginationMode === 'pages' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
+                className={`text-sm font-extrabold whitespace-nowrap rounded-full transition-colors cursor-pointer shrink-0 ${
+                  paginationMode === 'pages' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
                 style={{ paddingLeft: '24px', paddingRight: '24px', paddingTop: '10px', paddingBottom: '10px' }}
               >
                 Page Bar
               </button>
               <button
                 onClick={() => setPaginationMode('loadMore')}
-                className={`text-sm font-extrabold whitespace-nowrap rounded-full transition-colors cursor-pointer shrink-0 ${paginationMode === 'loadMore' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
+                className={`text-sm font-extrabold whitespace-nowrap rounded-full transition-colors cursor-pointer shrink-0 ${
+                  paginationMode === 'loadMore' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
                 style={{ paddingLeft: '24px', paddingRight: '24px', paddingTop: '10px', paddingBottom: '10px' }}
               >
                 Load More
@@ -419,7 +463,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
           </div>
         </div>
 
-        {/* Drag-to-Scroll Coin Tabs */}
+        {/* Drag-to-Scroll Dynamic Coin Tabs */}
         <div
           ref={tabsRef}
           onMouseDown={handleMouseDown}
@@ -429,33 +473,58 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
           className="w-full flex items-center justify-center gap-4 overflow-x-auto overflow-y-hidden select-none cursor-grab active:cursor-grabbing [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           style={{ paddingTop: '10px', paddingBottom: '10px' }}
         >
-          {AVAILABLE_COINS.map((coin) => {
+          {availableCoins.map((coin) => {
             const isSelected = isMultiCoinMode
               ? selectedCoins.includes(coin)
               : activeTab === coin;
+
+            let label = `🪙 ${coin}`;
+            if (coin === 'ALL') label = '🌐 All Markets';
+            if (coin === 'GENERAL') label = '🌐 General';
 
             return (
               <button
                 key={coin}
                 onClick={() => handleTabClick(coin)}
-                className={`rounded-2xl text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer ${isSelected
-                  ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-xl shadow-indigo-500/25 border border-indigo-400/40 scale-105'
-                  : 'bg-slate-900/70 text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 border border-slate-800/60'
-                  }`}
+                className={`rounded-2xl text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer ${
+                  isSelected
+                    ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-xl shadow-indigo-500/25 border border-indigo-400/40 scale-105'
+                    : 'bg-slate-900/70 text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 border border-slate-800/60'
+                }`}
                 style={{ padding: '14px 28px' }}
               >
-                {coin === 'ALL' ? '🌐 All Markets' : `🪙 ${coin}`}
+                {label}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 3. Articles Feed Grid — 2 COLUMNS layout with relative time & full datetime */}
+      {/* 3. Articles Feed Grid / Error State / Empty State */}
       {loading ? (
         <div className="flex flex-col justify-center items-center py-28 text-slate-400 space-y-4 w-full">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400"></div>
           <span className="text-base font-semibold">Analyzing live market feeds...</span>
+        </div>
+      ) : fetchError ? (
+        <div className="w-full flex flex-col items-center justify-center py-20 px-8 rounded-3xl bg-slate-900/80 border border-rose-500/40 text-center space-y-5 shadow-2xl backdrop-blur-xl">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-3xl">
+            📡
+          </div>
+          <div className="space-y-2 max-w-md">
+            <h3 className="text-xl font-black text-slate-100">Live News Service Disconnected</h3>
+            <p className="text-sm text-slate-400 font-medium leading-relaxed">
+              {fetchError}
+            </p>
+          </div>
+          <button
+            onClick={handleRetry}
+            className="inline-flex items-center gap-2.5 text-sm font-extrabold text-white bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 rounded-full shadow-xl shadow-cyan-500/20 border border-cyan-400/40 transition-all duration-200 cursor-pointer transform hover:scale-105 active:scale-95"
+            style={{ padding: '12px 32px' }}
+          >
+            <span>🔄</span>
+            <span>Retry Connection</span>
+          </button>
         </div>
       ) : articles.length === 0 ? (
         <div className="text-center py-24 bg-slate-900/40 rounded-3xl border border-slate-800/80 text-slate-400 text-lg w-full">
@@ -493,7 +562,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                     {article.content}
                   </p>
 
-                  {/* Full Date & Time — Directly under content, ABOVE the divider line */}
+                  {/* Full Date & Time */}
                   <div
                     className="text-xs text-slate-400 font-semibold flex items-center gap-2"
                     style={{ marginTop: '16px' }}
@@ -503,7 +572,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                   </div>
                 </div>
 
-                {/* Divider Line & Footer: Related Coins on Left, Sentiment Badge on Right */}
+                {/* Divider Line & Footer */}
                 <div
                   className="border-t border-slate-800/80 flex items-center justify-between gap-4"
                   style={{ marginTop: '20px', paddingTop: '20px' }}
@@ -544,10 +613,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                 <button
                   key={pageNum}
                   onClick={() => handlePageChange(pageNum)}
-                  className={`w-12 h-12 rounded-2xl text-base font-black transition-all cursor-pointer ${pageNum === currentPage
-                    ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 scale-105'
-                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                    }`}
+                  className={`w-12 h-12 rounded-2xl text-base font-black transition-all cursor-pointer ${
+                    pageNum === currentPage
+                      ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/50 scale-105'
+                      : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
                 >
                   {pageNum}
                 </button>
