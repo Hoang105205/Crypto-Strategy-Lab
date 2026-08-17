@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
+import { AppShell } from "../components/common/app-shell";
+import { ErrorBoundary } from "../components/common/error-boundary";
+import { InfrastructureProvider } from "../components/common/infrastructure-provider";
 import "./globals.css";
 
 const inter = Inter({
@@ -22,7 +25,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="bg-canvas-dark text-body font-sans">
-        {children}
+        <ErrorBoundary>
+          <InfrastructureProvider>
+            <AppShell>{children}</AppShell>
+          </InfrastructureProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
