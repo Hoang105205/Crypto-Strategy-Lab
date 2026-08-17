@@ -82,6 +82,25 @@ async function mockLeaderboard(page: Page, onListRequest?: (url: URL) => void) {
   });
 }
 
+test('leaving the four-chart Dashboard does not access disposed chart objects', async ({
+  page,
+}) => {
+  const disposedErrors: string[] = [];
+  page.on('pageerror', (error) => {
+    if (/object is disposed/i.test(error.message)) {
+      disposedErrors.push(error.message);
+    }
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Market Dashboard' })).toBeVisible();
+  await page.getByRole('link', { name: 'Strategy Builder' }).click();
+  await expect(page).toHaveURL(/\/strategy$/);
+  await page.waitForTimeout(250);
+
+  expect(disposedErrors).toEqual([]);
+});
+
 test('desktop supports exact sort requests, keyboard selection, detail, and disconnected retention', async ({
   page,
 }) => {

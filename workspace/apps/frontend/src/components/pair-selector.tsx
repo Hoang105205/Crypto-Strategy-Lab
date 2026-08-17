@@ -28,7 +28,7 @@ export function PairSelector({ value, onChange }: PairSelectorProps) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-md px-3 py-2 text-sm text-body outline-none"
+      className="rounded-lg border px-3 py-1.5 text-sm font-medium text-body cursor-pointer transition-colors hover:border-muted-strong outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary"
       style={{
         backgroundColor: COLORS.surfaceCard,
         borderColor: COLORS.hairlineDark,

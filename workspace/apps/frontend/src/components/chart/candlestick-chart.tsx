@@ -53,6 +53,7 @@ export function CandlestickChart({ symbol, timeframe, trades = [] }: Candlestick
   // Create chart instance once
   useEffect(() => {
     if (!containerRef.current) return;
+    let disposed = false;
 
     const chart = createChart(containerRef.current, {
       layout: {
@@ -89,13 +90,17 @@ export function CandlestickChart({ symbol, timeframe, trades = [] }: Candlestick
 
     // Responsive resize
     const ro = new ResizeObserver(() => {
-      if (containerRef.current) {
+      if (!disposed && containerRef.current) {
         chart.applyOptions({ width: containerRef.current.clientWidth });
       }
     });
     ro.observe(containerRef.current);
 
     return () => {
+      // A ResizeObserver notification may already be queued when the route
+      // unmounts. Mark the instance dead before disposing the chart so that
+      // the queued callback cannot call into lightweight-charts afterwards.
+      disposed = true;
       ro.disconnect();
       chart.remove();
       setChart(null);
@@ -149,7 +154,9 @@ export function CandlestickChart({ symbol, timeframe, trades = [] }: Candlestick
         />
       )}
 
-      <TradeMarkers series={markerSeries} trades={trades} />
+      {trades.length > 0 ? (
+        <TradeMarkers series={markerSeries} trades={trades} />
+      ) : null}
     </div>
   );
 }

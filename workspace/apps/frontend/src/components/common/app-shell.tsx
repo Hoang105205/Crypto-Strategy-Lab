@@ -25,12 +25,12 @@ export function AppShell({ children }: AppShellProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-canvas-dark text-body">
-      <header className="relative h-16 border-b border-hairline-dark bg-canvas-dark">
-        <div className="flex h-full w-full items-center justify-between px-4 md:px-6">
+    <div className="min-h-screen bg-canvas-dark text-body font-sans antialiased">
+      <header className="sticky top-0 z-40 h-16 border-b border-hairline-dark/80 bg-canvas-dark backdrop-blur-md">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-6 md:px-8">
           <Link
             href="/"
-            className="rounded-sm text-base font-semibold text-body focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-info"
+            className="rounded-lg text-lg font-bold tracking-tight text-body transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark"
           >
             Crypto Strategy Lab
           </Link>
@@ -40,7 +40,7 @@ export function AppShell({ children }: AppShellProps) {
             aria-controls="primary-navigation"
             aria-expanded={isMenuOpen}
             aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            className="rounded-md border border-hairline-dark px-3 py-2 text-sm text-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info md:hidden"
+            className="rounded-lg border border-hairline-dark/80 bg-surface-card px-3.5 py-2 text-sm font-medium text-body transition-all hover:bg-surface-elevated active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark md:hidden"
             onClick={() => setIsMenuOpen((open) => !open)}
           >
             Menu
@@ -51,7 +51,7 @@ export function AppShell({ children }: AppShellProps) {
             aria-label="Primary navigation"
             className={`${
               isMenuOpen ? 'flex' : 'hidden'
-            } absolute left-0 right-0 top-full z-50 flex-col border-b border-hairline-dark bg-canvas-dark px-4 py-3 md:static md:flex md:flex-row md:items-stretch md:border-0 md:p-0`}
+            } absolute left-0 right-0 top-full z-50 flex-col gap-2 border-b border-hairline-dark bg-canvas-dark p-4 shadow-xl md:static md:flex md:flex-row md:items-center md:gap-4 lg:gap-6 md:border-0 md:p-0 md:shadow-none`}
           >
             {NAVIGATION_ITEMS.map((item) => {
               const active = isActiveRoute(pathname, item.href);
@@ -60,10 +60,10 @@ export function AppShell({ children }: AppShellProps) {
                   key={item.href}
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
-                  className={`flex min-h-11 items-center rounded-sm border-b-2 px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-info ${
+                  className={`flex min-h-10 items-center px-3.5 py-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     active
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-body hover:text-primary'
+                      ? 'text-primary border-b-2 border-primary font-bold'
+                      : 'text-muted-strong hover:text-body border-b-2 border-transparent hover:border-hairline-dark'
                   }`}
                   onClick={() => setIsMenuOpen(false)}
                 >
@@ -77,7 +77,7 @@ export function AppShell({ children }: AppShellProps) {
 
       <div
         data-testid="app-shell-container"
-        className="w-full px-4 py-6 md:px-6"
+        className="mx-auto max-w-7xl w-full px-6 py-8 md:px-8"
       >
         {children}
       </div>

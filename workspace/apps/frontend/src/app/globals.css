@@ -4,6 +4,7 @@
   --color-canvas-dark: #0b0e11;
   --color-surface-card: #1e2329;
   --color-surface-elevated: #2b3139;
+  --color-surface-elevated-dark: #2b3139;
   --color-primary: #fcd535;
   --color-primary-active: #f0b90b;
   --color-body: #eaecef;
@@ -50,10 +51,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+@layer base {
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
 }
 
 a {
@@ -65,4 +68,25 @@ a {
   html {
     color-scheme: dark;
   }
+}
+
+/* Custom sleek scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #14181d;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b3139;
+  border-radius: 4px;
+  border: 2px solid #14181d;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #474d57;
 }

@@ -55,7 +55,15 @@ export function TradeMarkers({ series, trades }: TradeMarkersProps) {
     skipFirstUpdateRef.current = true;
 
     return () => {
-      plugin.detach();
+      try {
+        plugin.detach();
+      } catch (error: unknown) {
+        // The parent chart owns the series and can be disposed before this
+        // child passive-effect cleanup runs during route navigation.
+        if (!(error instanceof Error && error.message === 'Object is disposed')) {
+          throw error;
+        }
+      }
       if (pluginRef.current === plugin) pluginRef.current = null;
     };
     // Series replacement recreates the primitive; trade-only updates are handled below.
