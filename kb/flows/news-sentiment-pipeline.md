@@ -22,21 +22,21 @@
 ## 3. Flow Steps
 
 1. **Trigger**: `NewsCollectorCron` triggers on schedule (or user hits `GET /api/news`).
-2. **Decoupled Fetch**: `NewsService` calls `INewsProvider.fetchLatest()` across registered provider adapters (`RSSProvider`, `NewsAPIProvider`, `WebCrawlerProvider`).
-3. **Normalize & Deduplicate**: Each provider converts raw payloads into standard `RawArticle` format containing `relatedCoins`. `NewsService` deduplicates articles by URL hash and assigns `crawledAt` timestamp.
+2. **Decoupled Fetch with Dynamic Coin Extraction**: `NewsService` queries active `TradingPair` symbols from PostgreSQL and invokes `INewsProvider.fetchLatest(limit, coin, activeCoins)` across registered provider adapters (`RSSProvider`, `NewsAPIProvider`, `WebCrawlerProvider`).
+3. **Normalize, Tag & Deduplicate**: Each provider parses raw articles and extracts matching coins from the active `TradingPair` list. Articles mentioning non-trading coins or macro economics are tagged with `relatedCoins: ['GENERAL']`. `NewsService` deduplicates articles by URL hash and assigns `crawledAt` timestamp.
 4. **Persist Raw Articles**: `NewsService` stores unique articles into PostgreSQL database.
 5. **Sentiment Scoring Request**: `NewsService` forwards article text (title + content summary) to `SentimentClient`.
 6. **ML Inference**: `SentimentClient` issues HTTP POST `/analyze` request to Python FastAPI ML service.
 7. **Score & Classification**: Python VADER model classifies sentiment (`POSITIVE`, `NEGATIVE`, `NEUTRAL`) and calculates compound score (e.g. `0.82`).
 8. **Persist Sentiment**: `NewsService` saves the resulting `SentimentScore` linked to `NewsArticle` in PostgreSQL.
 9. **Display & Strategy Plugin**:
-   - **Frontend UI**: Next.js fetches paginated news `GET /api/news?limit=10&offset=0&coin=BTC` (or multi-coin `GET /api/news?coins=BTC,ETH`) and `/api/sentiment/aggregate?coin=BTC` to render News Feed & Sentiment Gauge with pagination metadata (`total`, `offset`, `limit`, `hasMore`).
-   - **Strategy Engine**: `NewsSentimentStrategy` queries aggregate sentiment score for specific coins (Score > +0.5 → `BUY`, Score < -0.5 → `SELL`). Search engine can combine it into composite strategies (`MA + RSI + News Sentiment`).
+   - **Frontend UI**: Next.js fetches dynamic coin list from `GET /api/market-data/pairs` and queries paginated news `GET /api/news?limit=10&offset=0&coin=BTC` (or `coin=GENERAL` / `coins=BTC,ETH`) and `/api/sentiment/aggregate?coin=BTC` with pagination metadata (`total`, `offset`, `limit`, `hasMore`).
+   - **Strategy Engine**: `NewsSentimentStrategy` queries aggregate sentiment score for specific target coins (100% weight, avoiding general macro noise). Search engine can combine it into composite strategies (`MA + RSI + News Sentiment`).
 
 ---
 
 ## 4. Postconditions
-- Articles are deduplicated, normalized, and saved with sentiment classification (`POSITIVE`/`NEGATIVE`/`NEUTRAL`) and score.
+- Articles are deduplicated, normalized, tagged with accurate coins (or `GENERAL`), and saved with sentiment classification (`POSITIVE`/`NEGATIVE`/`NEUTRAL`) and score.
 - Latest market aggregate sentiment score is updated per coin and timeframe.
 - `NewsSentimentStrategy` is registered in `StrategyRegistry` and ready for backtesting in composite strategies.
 
@@ -70,7 +70,7 @@
 
 ### Exception Scenario: News Provider API / RSS Down
 1. `RSSProvider` or `WebCrawlerProvider` fails to fetch external feed.
-2. Adapter catches exception, logs error, and returns empty array `[]`.
+2. Adapter catches exception, logs error, and returns empty array `[]` (Fault Isolation per ADR-0010 without returning mock data).
 3. `NewsService` continues processing articles from other operational providers.
 
 ---
@@ -81,6 +81,7 @@
 - **BR-3**: `NewsSentimentStrategy` must trigger `BUY` when average sentiment > +0.X, `SELL` when < -0.X, and `HOLD` otherwise. (X will be calibrated later)
 - **BR-4**: Duplicate news articles (matching URL or identical title hash) must not be stored or re-analyzed within a 24-hour window.
 - **BR-5**: When sentiment service is unreachable, system MUST degrade gracefully and issue `HOLD` signals.
+- **BR-6**: Articles not matching any active `TradingPair` in PostgreSQL MUST be tagged with `['GENERAL']` (preventing artificial contamination of BTC).
 
 ---
 
