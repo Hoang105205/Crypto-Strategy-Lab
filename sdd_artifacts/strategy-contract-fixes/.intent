@@ -1,0 +1,21 @@
+feature: strategy-contract-fixes
+description: |
+  Fix 4 critical bugs related to contract compliance in Strategy Engine:
+  1. Verify IMarketDataService.getCandlesRange() contract compliance.
+  2. Verify BacktestRequested event payload matches events.yaml.
+  3. Verify IBacktester.run() and IEvaluator.evaluate() signatures match strategy.yaml.
+  4. Implement IStrategyGenerator interface verification against contract in SearchEngine.
+created: 2026-08-18T00:30:00+07:00
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Strategy Engine
