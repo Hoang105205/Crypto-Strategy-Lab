@@ -41,9 +41,9 @@
 
 **Purpose**: Implement dynamic coin filter tabs from API, tab `GENERAL`, remove mock data, and fix 7 React 19 / ESLint 9 warnings/errors.
 
-- [ ] T007 [US2] Update `workspace/apps/frontend/src/components/news/NewsFeed.tsx` to fetch active trading pairs from `GET /api/market-data/pairs` and render tabs `['ALL', ...activeCoins, 'GENERAL']`.
-- [ ] T008 [US3] Remove `mockList` fallback array in `workspace/apps/frontend/src/components/news/NewsFeed.tsx`.
-- [ ] T009 [US4] Refactor `workspace/apps/frontend/src/components/news/NewsFeed.tsx` for React 19 / ESLint 9 compliance:
+- [X] T007 [US2] Update `workspace/apps/frontend/src/components/news/NewsFeed.tsx` to fetch active trading pairs from `GET /api/market-data/pairs` and render tabs `['ALL', ...activeCoins, 'GENERAL']`.
+- [X] T008 [US3] Remove `mockList` fallback array in `workspace/apps/frontend/src/components/news/NewsFeed.tsx`.
+- [X] T009 [US4] Refactor `workspace/apps/frontend/src/components/news/NewsFeed.tsx` for React 19 / ESLint 9 compliance:
   - Fix `pageSize` to constant `DEFAULT_PAGE_SIZE` (remove unused `setPageSize`).
   - Remove synchronous `setCurrentPage(1)` from `useEffect` and place in user interaction handlers (`handleTabClick`, `handleToggleMultiCoin`, etc.).
   - Wrap `fetchNewsData` and `fetchAggregateSentiment` in `useCallback` and position them above `useEffect`s.
@@ -56,9 +56,9 @@
 
 **Purpose**: Verify TypeScript compilation, ESLint cleanliness, and document lessons learned.
 
-- [ ] T010 [P] Verify backend TypeScript compilation with `npx tsc --noEmit -p tsconfig.json` in `workspace/apps/backend`.
-- [ ] T011 [P] Verify frontend ESLint & TypeScript compilation with `npx eslint src/components/news/NewsFeed.tsx` and `npx tsc --noEmit` in `workspace/apps/frontend`.
-- [ ] T012 Record lessons learned in `agent_learn/lessons/news-general-tagging-clean-2026-08-17.md` and update `agent_learn/INDEX.md`.
+- [X] T010 [P] Verify backend TypeScript compilation with `npx tsc --noEmit -p tsconfig.json` in `workspace/apps/backend`.
+- [X] T011 [P] Verify frontend ESLint & TypeScript compilation with `npx eslint src/components/news/NewsFeed.tsx` and `npx tsc --noEmit` in `workspace/apps/frontend`.
+- [X] T012 Record lessons learned in `agent_learn/lessons/news-general-tagging-clean-2026-08-17.md` and update `agent_learn/INDEX.md`.
 
 ---
 
