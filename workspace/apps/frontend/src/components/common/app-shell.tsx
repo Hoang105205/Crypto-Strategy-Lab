@@ -27,7 +27,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-canvas-dark text-body font-sans antialiased">
       <header className="sticky top-0 z-40 h-16 border-b border-hairline-dark/80 bg-canvas-dark backdrop-blur-md">
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-6 md:px-8">
+        <div className="mx-auto flex h-full max-w-[80%] items-center justify-between px-6 md:px-8">
           <Link
             href="/"
             className="rounded-lg text-lg font-bold tracking-tight text-body transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark"
@@ -77,7 +77,7 @@ export function AppShell({ children }: AppShellProps) {
 
       <div
         data-testid="app-shell-container"
-        className="mx-auto max-w-7xl w-full px-6 py-8 md:px-8"
+        className="mx-auto max-w-[80%] w-full px-6 py-8 md:px-8"
       >
         {children}
       </div>

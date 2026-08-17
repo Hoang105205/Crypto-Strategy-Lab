@@ -350,7 +350,7 @@ export default function StrategyBuilderPage() {
                   >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-[#fcd535]/5 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2"></div>
                     <div className="text-sm font-bold text-gray-400 uppercase tracking-wider">Selected Strategy</div>
-                    <div className="text-xl font-extrabold text-[#fcd535]">{selectedStrategy.name}</div>
+                    <div className="text-xl font-extrabold text-[#fcd535] truncate" title={selectedStrategy.name}>{selectedStrategy.name}</div>
                     <div className="text-sm text-gray-300 font-mono flex items-center gap-2">
                       <span className="rounded bg-[#1e2329] border border-[#2b3139]" style={{ padding: '0.25rem 0.625rem' }}>{selectedStrategy.type}</span>
                     </div>
@@ -403,10 +403,14 @@ export default function StrategyBuilderPage() {
               className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-10"
               style={{ padding: '2rem' }}
             >
-              <div className="border-b border-[#2b3139] pb-8 mb-6 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-100">Backtest Execution Control</h3>
+              <div className="border-b border-[#2b3139] pb-8 mb-6 flex items-center justify-between gap-4">
+                <h3 className="text-xl font-bold text-gray-100 shrink-0">Backtest Execution Control</h3>
                 {selectedStrategy && (
-                  <span className="text-sm font-mono rounded-lg bg-[#0b0e11] text-[#fcd535] border border-[#fcd535]/30" style={{ padding: '0.375rem 0.75rem' }}>
+                  <span 
+                    className="text-sm font-mono rounded-lg bg-[#0b0e11] text-[#fcd535] border border-[#fcd535]/30 truncate max-w-[50%]" 
+                    style={{ padding: '0.375rem 0.75rem' }}
+                    title={`Active Strategy: ${selectedStrategy.name}`}
+                  >
                     Active Strategy: {selectedStrategy.name}
                   </span>
                 )}
