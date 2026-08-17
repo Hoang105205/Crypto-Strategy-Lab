@@ -1,5 +1,19 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T045 - 2026-08-16](lessons/event-infrastructure-dashboard-t045-2026-08-16.md): prop-driven live Leaderboard composition, exact percentage semantics, safe typed detail loading, lightweight-charts v5 primitive lifecycle, React 19 chart-series state, and honest checkpoint limitations.
+
+- [Event Infrastructure Dashboard T044 - 2026-08-16](lessons/event-infrastructure-dashboard-t044-2026-08-16.md): RED-first Leaderboard table/detail contracts, normalized-rate display, safe detail HTTP states, and lightweight-charts v5 marker mapping/lifecycle seams.
+
+- [Event Infrastructure Dashboard T043 - 2026-08-16](lessons/event-infrastructure-dashboard-t043-2026-08-16.md): single-owner Dashboard snapshot composition, stable Market Data child identity, pending command locks, stale-card retention, and backend-order Top-5 presentation.
+
+- [Event Infrastructure Dashboard T042 - 2026-08-16](lessons/event-infrastructure-dashboard-t042-2026-08-16.md): RED-first Dashboard component contracts for responsive 8/4 composition, Market Data state preservation, Loop action safety, queue health semantics, Top-5 navigation, and stale realtime UI behavior.
+
+- [Event Infrastructure Dashboard T041 - 2026-08-16](lessons/event-infrastructure-dashboard-t041-2026-08-16.md): Next 16 Server/Client shell boundary, canonical accessible navigation, stable singleton-provider ownership, exact listener cleanup, state-preserving layouts, and sanitized shared UI states.
+
+- [Event Infrastructure Dashboard T040 - 2026-08-16](lessons/event-infrastructure-dashboard-t040-2026-08-16.md): explicit wire-date decoding, typed HTTP errors, isolated lazy infrastructure socket, exact listener ownership, and per-stream REST/realtime race reconciliation.
+
+- [Event Infrastructure Dashboard T039 - 2026-08-16](lessons/event-infrastructure-dashboard-t039-2026-08-16.md): frontend RED-first REST/socket/hook contracts, dependency-injected socket/API test seams, request-generation and realtime-revision race guards, monotonic/terminal Loop reconciliation, and honest Market Data test limitations.
+
 - [Event Infrastructure Dashboard T038 - 2026-08-16](lessons/event-infrastructure-dashboard-t038-2026-08-16.md): public-boundary DashboardModule wiring, production Nest REST/Socket.IO integration, listener cleanup evidence, Market Data preservation, strict IDE/lint cleanup, full backend TypeScript reconciliation, and aligned KB paths/contracts.
 
 - [Event Infrastructure Dashboard T037 - 2026-08-16](lessons/event-infrastructure-dashboard-t037-2026-08-16.md): typed four-channel payload relay, bootstrap-time default/custom namespace metadata, idempotent gateway-scoped subscriptions, failure-safe cleanup/delivery, and preserved Market Data boundaries.

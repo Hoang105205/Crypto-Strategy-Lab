@@ -505,3 +505,399 @@ PASS: Event Infrastructure KB paths, BFF public calls, summary wire shape, infra
 ## Phase 5 Checkpoint
 
 **PASS — US5 backend runtime acceptance**. T035–T038 are complete (4/4). The backend now exposes an authoritative, failure-safe Dashboard summary and isolated four-channel infrastructure realtime delivery with deterministic cleanup while preserving the existing Market Data transport contract.
+
+## Phase 6 — T039 Frontend Service/Hook Contract RED Gate
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### Scope and contract coverage
+
+- Added only the four T039 service/hook specification files; no T040 production source or existing Market Data frontend source was modified.
+- The REST contract requires a parsed successful Dashboard snapshot and a stable typed error retaining HTTP `status`, public `code`, and safe `message`.
+- The infrastructure Socket.IO client contract requires a lazy singleton at `/infrastructure`, no `/market-data` reuse, one connection, and idempotent disconnect/reset.
+- The socket hook contract requires readable `connected`/`reconnecting`/`disconnected` state and exact-reference listener teardown without `removeAllListeners()`.
+- Dashboard/Leaderboard hooks retain the last successful data/timestamp through disconnect and refresh failure, stay stale until reconnect refetch resolves, and reject out-of-order request generations.
+- Leaderboard reconciliation rejects a snapshot older than the latest realtime `updatedAt` and preserves the user's sort and selected Strategy.
+- Loop reconciliation introduces no invented server timestamp: an in-flight REST response cannot overwrite a later realtime event, counters do not regress for the same run, and a terminal run cannot be resurrected by late progress.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test -w @crypto-strategy-lab/frontend
+# Baseline before T039: Test Files 1 passed (1); Tests 1 passed (1).
+
+npm.cmd exec -w @crypto-strategy-lab/frontend -- tsc --noEmit
+# Baseline before T039: exit 0.
+
+npm.cmd run test -w @crypto-strategy-lab/frontend -- src/services/infrastructure-socket.spec.ts src/hooks/use-infrastructure-socket.spec.tsx src/hooks/use-dashboard-summary.spec.tsx src/hooks/use-leaderboard.spec.tsx
+# Expected RED: Test Files 4 failed (4); Tests 16 failed (16).
+# All four files were collected. The two REST cases fail because getDashboardSummary is not yet
+# implemented; the remaining cases fail because the three T040 production modules do not yet exist.
+# No failure came from TypeScript syntax, jsdom setup, test collection, or mock cleanup.
+
+npm.cmd exec -w @crypto-strategy-lab/frontend -- eslint src/services/infrastructure-socket.spec.ts src/hooks/use-infrastructure-socket.spec.tsx src/hooks/use-dashboard-summary.spec.tsx src/hooks/use-leaderboard.spec.tsx
+# exit 0.
+
+npm.cmd exec -w @crypto-strategy-lab/frontend -- tsc --noEmit
+# After T039 tests: exit 0.
+
+npm.cmd run test -w @crypto-strategy-lab/frontend -- src/test/smoke.spec.tsx
+# Test Files 1 passed (1); Tests 1 passed (1).
+```
+
+### Boundary audit and limitation
+
+```text
+PASS: T005 and T038 were checked complete before T039.
+PASS: T039 adds no production implementation and leaves T040 unchecked.
+PASS: no Market Data socket, hook, service, chart, room, or subscription file was modified.
+PASS: test source is lint-clean and TypeScript-clean while reaching intentional RED at runtime.
+PASS: no live backend, Redis, Binance, sentiment service, or network connection is used.
+LIMITATION: the repository currently has no Market Data frontend specification file; the executable
+frontend regression evidence is the existing smoke test plus the unchanged Market Data source boundary,
+not a nonexistent Market Data test suite.
+```
+
+### T039 checkpoint
+
+**PASS — intentional RED contract gate**. T039 is complete: 16 executable expectations across four collected files fail only on the production API/socket/hooks owned by T040, while the pre-existing frontend smoke baseline, test lint, and full frontend TypeScript remain green.
+
+## Phase 6 — T040 Frontend Service/Hook GREEN Gate
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace`
+
+### Implemented boundaries
+
+- Extended the shared frontend fetch boundary with `ApiClientError`, retaining safe public `message`, HTTP `status`, and stable application `code`; existing Market Data method signatures and paths remain unchanged.
+- Added intentional wire-to-domain decoding for Dashboard, Leaderboard/detail, current/detail Loop, Strategy Version, candidate, and Trade ISO timestamps. Raw JSON strings are not typed as `Date` before decoding.
+- Added typed Leaderboard list/detail and Loop start/pause/resume/stop methods using the exact active REST paths and payloads.
+- Added a separate lazy `/infrastructure` Socket.IO singleton with idempotent disconnect/reset; it neither imports nor reuses the `/market-data` singleton.
+- Added exact-reference Socket.IO listener setup/teardown and readable `connected`, `reconnecting`, and `disconnected` states without `removeAllListeners()`.
+- Added Dashboard and Leaderboard initial fetch, last-success retention, stale/error handling, reconnect refetch, request-generation guards, and live-revision reconciliation.
+- Leaderboard rejects REST snapshots below the realtime `updatedAt` watermark. Loop same-run counters and best score do not regress, and terminal state has precedence over late progress.
+- `sortBy` and `selectedStrategyVersionId` remain client-owned state and are not overwritten by realtime server payloads.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test -- --run src/services/infrastructure-socket.spec.ts src/hooks/use-infrastructure-socket.spec.tsx src/hooks/use-dashboard-summary.spec.tsx src/hooks/use-leaderboard.spec.tsx
+# Test Files 4 passed (4); Tests 16 passed (16).
+
+npm.cmd run test
+# Test Files 5 passed (5); Tests 17 passed (17), including the existing frontend smoke test.
+
+npm.cmd exec -- tsc --noEmit -p apps/frontend/tsconfig.json
+# exit 0.
+
+npm.cmd run lint -- src/services/api-client.ts src/services/infrastructure-socket.ts src/hooks/use-infrastructure-socket.ts src/hooks/use-dashboard-summary.ts src/hooks/use-leaderboard.ts src/services/infrastructure-socket.spec.ts src/hooks/use-infrastructure-socket.spec.tsx src/hooks/use-dashboard-summary.spec.tsx src/hooks/use-leaderboard.spec.tsx
+# exit 0.
+```
+
+### Boundary audit
+
+```text
+PASS: T039 was checked complete before T040 and all 16 T039 expectations are GREEN.
+PASS: socket-client.ts, use-websocket.ts, use-market-data.ts, and chart subscription source are unchanged.
+PASS: no client-side Leaderboard ranking, Loop orchestration, or trade computation was introduced.
+PASS: no real network, backend, Redis, Binance, or sentiment dependency is used by the tests.
+PASS: T041 remains unchecked; no component, layout, or Next API was implemented, so no local Next 16 API documentation was required.
+```
+
+### T040 checkpoint
+
+**PASS — frontend service/hook contract GREEN gate**. T040 is complete: the isolated infrastructure REST/socket boundary and race-safe Dashboard/Leaderboard hooks satisfy all T039 contracts while preserving the existing Market Data frontend boundary.
+
+## Phase 6 — T041 Application Shell and Shared UI States GREEN Gate
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace\apps\frontend`
+
+### Implemented boundaries
+
+- Added the canonical navigation in exact order: Dashboard `/`, Strategy Builder `/strategies`, Leaderboard `/leaderboard`, and News Feed `/news`.
+- Active routes use `aria-current="page"` plus a visible primary indicator; all links and the mobile menu have visible `focus-visible` styles.
+- Added a usable mobile menu without changing route-owned children. App Router layout preservation is retained because the shell does not key, clone, or replace page content.
+- Added a 64px dark header and centered page container capped at 1440px with responsive horizontal padding.
+- Added one root `InfrastructureProvider` that lazily acquires the T040 singleton once, exposes connection state through context, lets `useInfrastructureSocket` remove its exact listener references, and disconnects only the singleton it owns during provider teardown.
+- Added a dimension-preserving accessible skeleton and a sanitizing Error Boundary with one retry action and no rendered stack/provider details.
+- Kept `app/layout.tsx` as a Server Component while composing the client shell/provider/boundary beneath the required root `html` and `body` tags.
+
+### RED evidence
+
+```powershell
+npm.cmd run test -- --run src/components/common/app-shell.spec.tsx
+# Expected RED after runtime loaders: Test Files 1 failed (1); Tests 6 failed (6).
+# All failures were missing T041 production modules; the suite collected without syntax, jsdom, or mock errors.
+```
+
+### Commands and actual GREEN results
+
+```powershell
+npm.cmd run test -- --run src/components/common/app-shell.spec.tsx
+# Test Files 1 passed (1); Tests 6 passed (6).
+
+npm.cmd run test
+# Test Files 6 passed (6); Tests 23 passed (23).
+
+npm.cmd exec -- tsc --noEmit -p apps/frontend/tsconfig.json
+# exit 0.
+
+npm.cmd run lint -- src/components/common/app-shell.spec.tsx src/components/common/app-shell.tsx src/components/common/infrastructure-provider.tsx src/components/common/loading-state.tsx src/components/common/error-boundary.tsx src/app/layout.tsx
+# exit 0 with no warnings.
+```
+
+### Boundary audit
+
+```text
+PASS: T040 was checked complete before T041.
+PASS: local Next 16 App Router docs for layouts/pages, Link/navigation, Server/Client Components, layout, Link, and usePathname were read before implementation.
+PASS: root layout remains a Server Component; usePathname and mobile state are isolated in client AppShell.
+PASS: no React ref is read or written during render.
+PASS: no route-owned page/component, Market Data socket/hook, Dashboard T042/T043 source, ranking, Loop, or trade behavior was changed.
+PASS: T042 and T043 remain unchecked.
+```
+
+### T041 checkpoint
+
+**PASS — application shell/shared-state GREEN gate**. T041 is complete with accessible canonical navigation, stable provider ownership, reusable loading/error states, preserved page-owned state, and clean frontend regression/type/lint evidence.
+
+## Phase 6 - T042 Dashboard Component RED Gate
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace\apps\frontend`
+
+### Contract coverage
+
+- `DashboardGrid` owns a responsive one-column/mobile and 8/4-column/desktop DOM/class contract while composing the real `MultiTimeframeGrid`, `PairSelector`, and `StatusIndicator` public behavior.
+- Loop tests cover contract fields, progress, legal state-dependent controls, exact typed start/pause/resume/stop calls, pending double-submit protection, keyboard focus styling, stale retention, and in-place realtime updates.
+- Queue tests cover all six `QueueStats` fields, distinguish a healthy zero queue from disconnected Redis and provider errors, preserve stale data/timestamps, sanitize errors, and expose one retry action.
+- Leaderboard tests preserve backend rank/order, cap the preview at five, cover `/leaderboard` and selected detail navigation, loading/empty/error/stale states, keyboard semantics, and in-place realtime updates.
+- Dashboard rerender evidence keeps the existing Market Data grid mounted and preserves its selected timeframe while Loop/Leaderboard side-rail content changes.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run lint -- src/components/dashboard/dashboard-grid.spec.tsx src/components/dashboard/loop-status-panel.spec.tsx src/components/dashboard/queue-health-card.spec.tsx src/components/dashboard/leaderboard-preview.spec.tsx
+# exit 0 with no warnings.
+
+npm.cmd exec -- tsc --noEmit -p apps/frontend/tsconfig.json
+# exit 0.
+
+npm.cmd run test -- --run src/components/dashboard/dashboard-grid.spec.tsx src/components/dashboard/loop-status-panel.spec.tsx src/components/dashboard/queue-health-card.spec.tsx src/components/dashboard/leaderboard-preview.spec.tsx
+# Expected RED: Test Files 4 failed (4); Tests 11 failed (11).
+# Every failure is an unresolved T043 production module: dashboard-grid, loop-status-panel, queue-health-card, or leaderboard-preview.
+# All four specs collect; there are no syntax, import-setup, jsdom, network, or mock-cleanup failures.
+
+npm.cmd run test -- --run src/test/smoke.spec.tsx src/services/infrastructure-socket.spec.ts src/hooks/use-infrastructure-socket.spec.tsx src/hooks/use-dashboard-summary.spec.tsx src/hooks/use-leaderboard.spec.tsx src/components/common/app-shell.spec.tsx
+# Test Files 6 passed (6); Tests 23 passed (23).
+# Non-blocking output: Vite CJS Node API deprecation warning.
+```
+
+### Boundary audit
+
+```text
+PASS: T040 and T041 were already checked complete before T042.
+PASS: only the four T042 dashboard spec files were created; no T043 production component was implemented.
+PASS: app/page.tsx, chart production source, Market Data socket/hooks, and existing Market Data public behavior were not changed.
+PASS: external boundaries are mocked; the tests use no real network, backend, Redis, Binance, or sentiment dependency.
+PASS: responsive behavior is asserted through semantic DOM and breakpoint class contracts, not jsdom pixel measurement.
+PASS: T043 remains unchecked.
+```
+
+### T042 checkpoint
+
+**PASS - intentional Dashboard component RED gate**. T042 is complete: four collected specs provide 11 executable contracts that fail exclusively because the T043 production components do not exist, while the T039-T041 frontend baseline, TypeScript, and targeted lint gates remain green.
+
+## Phase 6 - T043 Dashboard Component GREEN Gate
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace\apps\frontend`
+
+### Implemented boundaries
+
+- Added a responsive Dashboard grid with a one-column mobile layout and `md:grid-cols-12` desktop layout; the existing Market Data region occupies eight columns and the infrastructure side rail occupies four.
+- Reused the existing `PairSelector`, `StatusIndicator`, and `MultiTimeframeGrid` without modifying their source or subscription behavior. Pair selection remains page-owned, while side-rail rerenders preserve the chart grid's local timeframe state.
+- Added Loop status, bounded progress, state-valid typed controls, an event-time pending lock against double submission, safe command errors, authoritative refetch after commands, and retained stale data/timestamps.
+- Added all six authoritative queue-health fields with explicit Redis connection text, stable loading dimensions, sanitized errors, retry, and stale snapshot retention.
+- Added an order-preserving Top-5 Leaderboard preview using `slice(0, 5)` only, selected/detail navigation, `/leaderboard` navigation, safe loading/error/empty states, and direction-only return colors.
+- Composed one `useDashboardSummary()` owner in `app/page.tsx`; the three cards receive the same authoritative snapshot and do not create their own REST request or Socket.IO subscription.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test -- --run src/components/dashboard/dashboard-grid.spec.tsx src/components/dashboard/loop-status-panel.spec.tsx src/components/dashboard/queue-health-card.spec.tsx src/components/dashboard/leaderboard-preview.spec.tsx
+# Test Files 4 passed (4); Tests 11 passed (11).
+
+npm.cmd run test
+# Test Files 10 passed (10); Tests 34 passed (34).
+
+npm.cmd exec -- tsc --noEmit -p apps/frontend/tsconfig.json
+# exit 0.
+
+npm.cmd run lint -- src/components/dashboard/dashboard-grid.tsx src/components/dashboard/loop-status-panel.tsx src/components/dashboard/queue-health-card.tsx src/components/dashboard/leaderboard-preview.tsx src/app/page.tsx
+# exit 0 with no warnings.
+
+npm.cmd run build
+# First sandboxed attempt: failed only because next/font could not reach fonts.googleapis.com.
+# Approved network retry: Next.js 16.3.0 compiled successfully, TypeScript completed, and 8/8 static pages were generated.
+```
+
+### Regression and boundary audit
+
+```text
+PASS: the full frontend suite includes smoke, infrastructure socket/hooks, Dashboard/Leaderboard hooks, application shell, and all T042 component contracts.
+PASS: no dedicated use-market-data, CandlestickChart, or MultiTimeframeGrid spec exists in the current frontend tree; the smoke suite and DashboardGrid contract render the preserved Market Data composition.
+PASS: PairSelector, StatusIndicator, MultiTimeframeGrid, CandlestickChart, TradeMarkers, socket-client, use-websocket, use-market-data, and chart subscription source are unchanged.
+PASS: cards consume props only; one page-level Dashboard hook owns snapshot fetch/realtime listeners, preventing per-card duplicate fetch/socket ownership.
+PASS: Top-5 order comes directly from the backend snapshot; no ranking, Loop orchestration, trade calculation, or invented server field was added.
+PASS: T044 and T045 remain unchecked; the TradeMarkers stub is unchanged for T045.
+NOTE: Vitest remains green while reporting the existing Vite CJS deprecation plus jsdom navigation/async PairSelector harness stderr from T042; neither is a production failure.
+```
+
+### T043 checkpoint
+
+**PASS - Dashboard component GREEN gate**. T043 is complete: all 11 T042 contracts, the 34-test frontend suite, TypeScript, targeted lint, and an online production build pass while completed Market Data and future Leaderboard-detail/TradeMarker scope remain untouched.
+
+## Phase 6 - T044 Leaderboard and Trade Marker RED Gate
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace\apps\frontend`
+
+### Contract coverage
+
+- `LeaderboardTable` tests all five exact API criteria (`score`, `totalReturn`, `winRate`, `maxDrawdown`, `sharpeRatio`), visible sort arrows, `aria-sort`, focus-visible controls, selection, and in-place Top-K rerenders that preserve client-owned sort/selection.
+- Table formatting covers rank, four-decimal score, signed two-decimal return, normalized `[0,1]` win rate converted to a percentage, signed Max Drawdown, Sharpe Ratio, and trade count.
+- Responsive coverage requires a horizontally scrollable wrapper and retains Rank, Strategy, Score, Return, Win Rate, Max Drawdown, Sharpe, and Trades columns in the DOM.
+- `LeaderboardDetail` locks the exact `/api/leaderboard/:strategyVersionId` HTTP boundary, intentional ISO decoding through the typed client, immutable Strategy Version metadata/parameters, metrics, published trades, dimension-preserving loading, sanitized 404, and one safe retry for 503.
+- `TradeMarkers` mocks the installed lightweight-charts v5 boundary: `createSeriesMarkers(series, markers)`, `setMarkers(markers)`, and `detach()`. It covers entry/exit date-to-UTCTimestamp mapping, labeled Entry/Exit semantics, empty trades, replacement, series change, and unmount cleanup.
+- The Trade fixture deliberately publishes a negative P&L despite a positive raw price delta; the expected marker uses the published P&L, preventing client-side P&L or signal computation.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run lint -- src/components/leaderboard/leaderboard-table.spec.tsx src/components/leaderboard/leaderboard-detail.spec.tsx src/components/chart/trade-markers.spec.tsx
+# exit 0 with no warnings.
+
+npm.cmd exec -- tsc --noEmit -p apps/frontend/tsconfig.json
+# exit 0.
+
+npm.cmd run test -- --run src/components/leaderboard/leaderboard-table.spec.tsx src/components/leaderboard/leaderboard-detail.spec.tsx src/components/chart/trade-markers.spec.tsx
+# Expected RED: Test Files 3 failed (3); Tests 11 failed (11).
+# Four table and four detail cases fail only because their T045 modules do not exist.
+# Three marker cases load the current TradeMarkers stub and fail only because it does not call the v5 marker API.
+# All specs collect; there are no syntax, type, jsdom, network, or chart-mock API failures.
+
+npm.cmd run test -- --run src/test/smoke.spec.tsx src/services/infrastructure-socket.spec.ts src/hooks/use-infrastructure-socket.spec.tsx src/hooks/use-dashboard-summary.spec.tsx src/hooks/use-leaderboard.spec.tsx src/components/common/app-shell.spec.tsx src/components/dashboard/dashboard-grid.spec.tsx src/components/dashboard/loop-status-panel.spec.tsx src/components/dashboard/queue-health-card.spec.tsx src/components/dashboard/leaderboard-preview.spec.tsx
+# Test Files 10 passed (10); Tests 34 passed (34).
+# Non-blocking output: existing Vite CJS deprecation and T042 jsdom navigation/PairSelector act warnings.
+```
+
+### Boundary audit
+
+```text
+PASS: T040-T043 were checked complete before T044.
+PASS: only the three T044 spec files were created; no T045 table/detail/page production was implemented.
+PASS: TradeMarkers remains the pre-existing stub; CandlestickChart, use-market-data, use-websocket, socket-client, and candle subscriptions are unchanged.
+PASS: the chart mock follows installed lightweight-charts v5 typings and lifecycle rather than the removed series.setMarkers API.
+PASS: the current frontend tree has no dedicated Market Data hook/chart specs; smoke plus DashboardGrid composition/state-preservation tests are the available Market Data regression evidence and pass.
+PASS: no real REST, Socket.IO, backend, Redis, chart canvas, or external network is used by T044 tests.
+PASS: T045 remains unchecked.
+```
+
+### T044 checkpoint
+
+**PASS - intentional Leaderboard/detail/marker RED gate**. T044 is complete: three collected specs provide 11 executable contracts that fail exclusively at the T045 production boundary while the 34-test T039-T043 baseline, TypeScript, and targeted lint gates remain green.
+
+## Phase 6 - T045 Leaderboard and Trade Marker GREEN Implementation
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace\apps\frontend`
+
+### Implemented boundaries
+
+- Added a prop-driven `LeaderboardTable` that preserves backend rank/order, exposes the five exact `RankingCriterion` values, retains parent-owned sort/selection across realtime rerenders, formats all required financial values, and keeps every required column inside a mobile horizontal-scroll wrapper.
+- Added `LeaderboardDetail` through the existing typed API client. It intentionally decodes contract ISO dates at the boundary, renders immutable Strategy Version parameters plus published metrics/trades, ignores superseded requests, and sanitizes 404/503 states with at most one retry action.
+- Replaced the old TradeMarkers stub with the installed lightweight-charts v5 primitive lifecycle: `createSeriesMarkers`, `setMarkers`, and `detach`. Marker time and displayed P&L come from published `Trade[]`; the frontend does not calculate signals, trades, ranking, or P&L.
+- Added an optional `trades` chart extension point and React-19-safe series state to `CandlestickChart`. Existing `useMarketData`, candle callbacks, socket ownership, and candle subscription/data flow are unchanged.
+- Composed the full Leaderboard route with the T040 hook/provider, a Suspense boundary required by local Next 16 `useSearchParams` guidance, stale connection text, REST retry/empty states, and a one-column-mobile/two-column-desktop table/detail layout.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test -- --run src/components/leaderboard/leaderboard-table.spec.tsx src/components/leaderboard/leaderboard-detail.spec.tsx src/components/chart/trade-markers.spec.tsx
+# PASS: Test Files 3 passed (3); Tests 11 passed (11).
+
+npm.cmd exec -- tsc --noEmit
+# PASS: exit 0.
+
+npm.cmd exec -- eslint src/components/leaderboard/leaderboard-table.tsx src/components/leaderboard/leaderboard-detail.tsx src/components/chart/trade-markers.tsx src/components/chart/candlestick-chart.tsx src/app/leaderboard/page.tsx
+# PASS: exit 0 with no warnings.
+
+npm.cmd run test
+# PASS: Test Files 13 passed (13); Tests 45 passed (45).
+# Non-blocking stderr: the existing Vite CJS deprecation plus T043 jsdom-navigation and PairSelector act warnings.
+
+npm.cmd run test -- --run src/test/smoke.spec.tsx src/components/dashboard/dashboard-grid.spec.tsx
+# PASS: Test Files 2 passed (2); Tests 3 passed (3).
+# This is the available Market Data composition regression; no dedicated use-market-data/CandlestickChart spec exists in the current tree.
+
+npm.cmd run build
+# PASS: Next.js 16.3.0 compiled, TypeScript finished, 8/8 static pages generated, and /leaderboard was statically prerendered.
+
+npm.cmd run lint
+# FAIL: 13 pre-existing/out-of-scope findings (7 errors, 6 warnings) in app/strategy/page.tsx, components/news/NewsFeed.tsx, and components/strategy/ParameterEditor.tsx.
+# None of the five T045 production files appears in the full-lint findings; targeted lint above passes.
+```
+
+### Manual and boundary audit
+
+```text
+PASS (automated DOM contract): keyboard-reachable sort/selection controls, focus-visible classes, aria-sort, aria-selected, safe status/alert text, responsive breakpoint classes, horizontal-scroll retention, realtime rerender identity, and stable sort/selection are covered by T044/T040 tests.
+NOT EXECUTED (manual browser): desktop, sub-768px viewport, keyboard-only traversal, live backend disconnect/reconnect, and live detail/trade inspection. The workspace has no Playwright binary/config and this execution environment exposes no localhost browser automation; no manual PASS is claimed.
+PASS: no real network is used by component tests; fetch and lightweight-charts are mocked only at their public boundaries.
+PASS: use-market-data, use-websocket, socket-client, candle callbacks, candle history updates, and Socket.IO Market Data ownership were not changed.
+PASS: T046 and T047 remain unchecked.
+```
+
+### T045 checkpoint
+
+**NOT MARKED COMPLETE**. The T045 production implementation, T044 contracts, TypeScript, targeted lint, full Vitest, Market Data composition regression, production build, lesson, and index are complete. The user-required checkpoint is not fully green because full frontend lint still fails in out-of-scope Strategy/News files and browser-manual scenarios could not be executed. T045 remains `[ ]`; no false green evidence was recorded.
+
+## Phase 6 - T045 Playwright Browser Follow-up (2026-08-17)
+
+The earlier browser limitation is superseded by this follow-up. The user installed `@playwright/test` 1.62.1 and its matching Chromium 1234 binary. A repeatable Windows runner now builds the production frontend, starts a dedicated Next server on port 3100 and a real Socket.IO `/infrastructure` fixture on port 3201, runs Chromium, and terminates only those two owned processes in `finally`.
+
+### Added browser coverage
+
+- Desktop production route: exact metric formatting, active `aria-sort`, exact `sortBy=sharpeRatio` request, keyboard focus/Enter selection, stable selected row, Strategy Version detail, and published trades.
+- Mobile 390x844 viewport: usable open/close navigation, a genuinely overflowing horizontal table wrapper, all eight required columns retained in the accessibility tree, and detail rendered below the table.
+- Safe provider boundary: a raw 503 provider error is hidden, exactly one Retry action is exposed, and retry requests the same detail successfully.
+- Real Socket.IO lifecycle: the browser starts Connected, switches to Disconnected/Reconnecting when Chromium goes offline, retains table/detail/sort/selection, and returns to Connected after network restoration and reconnect refetch.
+- REST responses remain deterministic through Playwright route mocks; websocket state uses the real Socket.IO client/server protocol rather than a DOM-only mock.
+
+### Commands and actual results
+
+```powershell
+npm.cmd run test:e2e
+# PASS: Next.js 16.3.0 production build completed and 8/8 static pages generated.
+# PASS: Chromium Test Files 1 passed; Tests 3 passed (3), duration 5.6s.
+# PASS: owned Next/Socket.IO fixture processes were removed; no listener remained on ports 3100 or 3201.
+
+npm.cmd run test
+# PASS after excluding e2e/** from Vitest ownership: Test Files 13 passed (13); Tests 45 passed (45).
+
+npm.cmd exec -- tsc --noEmit
+# PASS: exit 0.
+
+npm.cmd exec -- eslint playwright.config.ts vitest.config.ts e2e/leaderboard.spec.ts e2e/infrastructure-fixture.mjs src/components/leaderboard/leaderboard-table.tsx src/components/leaderboard/leaderboard-detail.tsx src/components/chart/trade-markers.tsx src/components/chart/candlestick-chart.tsx src/app/leaderboard/page.tsx
+# PASS: exit 0 with no warnings.
+
+npm.cmd run lint
+# FAIL unchanged: 13 out-of-scope findings (7 errors, 6 warnings) only in app/strategy/page.tsx, components/news/NewsFeed.tsx, and components/strategy/ParameterEditor.tsx.
+```
+
+### Updated checkpoint
+
+```text
+PASS: T044, full Vitest, TypeScript, T045+E2E targeted lint, production build, desktop/mobile Chromium, keyboard interaction, safe detail retry, and real disconnect/reconnect retention.
+PASS: Playwright and Vitest have non-overlapping test ownership; E2E files are excluded from Vitest collection.
+PASS: no T046/T047 task was marked or implemented.
+BLOCKED: full frontend lint remains red only in three pre-existing feature areas outside T045 authorization.
+```
+
+**T045 remains `[ ]` under the user's all-green checkpoint rule.** Browser/manual-equivalent validation is now complete; only authorization to repair or explicitly baseline the unrelated full-lint findings is still required.

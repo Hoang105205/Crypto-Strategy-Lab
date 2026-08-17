@@ -12,7 +12,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import type { Candle } from '@crypto-strategy-lab/shared';
+import type { Candle, Trade } from '@crypto-strategy-lab/shared';
 import { useMarketData } from '../../hooks/use-market-data';
 import { COLORS } from '../../lib/constants';
 import { ChartOverlay } from './chart-overlay';
@@ -21,6 +21,7 @@ import { TradeMarkers } from './trade-markers';
 interface CandlestickChartProps {
   symbol: string;
   timeframe: string;
+  trades?: Trade[];
 }
 
 function toChartBar(candle: Candle) {
@@ -33,10 +34,11 @@ function toChartBar(candle: Candle) {
   };
 }
 
-export function CandlestickChart({ symbol, timeframe }: CandlestickChartProps) {
+export function CandlestickChart({ symbol, timeframe, trades = [] }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const [chart, setChart] = useState<IChartApi | null>(null);
+  const [markerSeries, setMarkerSeries] = useState<ISeriesApi<'Candlestick'> | null>(null);
   const [showOverlays, setShowOverlays] = useState(false);
 
   const { candles, loading, error } = useMarketData(symbol, timeframe, {
@@ -83,6 +85,7 @@ export function CandlestickChart({ symbol, timeframe }: CandlestickChartProps) {
 
     setChart(chart);
     seriesRef.current = series;
+    setMarkerSeries(series);
 
     // Responsive resize
     const ro = new ResizeObserver(() => {
@@ -96,6 +99,7 @@ export function CandlestickChart({ symbol, timeframe }: CandlestickChartProps) {
       ro.disconnect();
       chart.remove();
       setChart(null);
+      setMarkerSeries(null);
       seriesRef.current = null;
     };
   }, []);
@@ -145,7 +149,7 @@ export function CandlestickChart({ symbol, timeframe }: CandlestickChartProps) {
         />
       )}
 
-      <TradeMarkers symbol={symbol} timeframe={timeframe} />
+      <TradeMarkers series={markerSeries} trades={trades} />
     </div>
   );
 }
