@@ -41,8 +41,8 @@ endpoints:
     queryParams:
       limit: number # default 10, max 50
       offset: number # default 0 (for offset-based pagination / Load More)
-      coin: string # e.g. 'BTC' (single coin filter)
-      coins: string # e.g. 'BTC,ETH,SOL' (comma-separated multi-coin filter)
+      coin: string # e.g. 'BTC', 'ETH', 'GENERAL', 'ALL' (single coin / general filter)
+      coins: string # e.g. 'BTC,ETH,SOL,GENERAL' (comma-separated multi-coin filter)
     response:
       success: boolean
       data: NewsArticle[]
@@ -51,12 +51,13 @@ endpoints:
         limit: number # requested limit
         offset: number # requested offset
         hasMore: boolean # true if offset + limit < total
+    notes: "Articles not matching any active TradingPair are tagged with 'GENERAL'. The frontend dynamically retrieves active trading pairs from GET /api/market-data/pairs."
 
   - method: GET
     path: /api/sentiment/aggregate
     queryParams:
-      timeframe: string # '1h' | '24h' | '7d'
-      coin: string # e.g. 'BTC' (single coin)
+      timeframe: string # '1h' | '24h' | '7d' (default: '24h')
+      coin: string # e.g. 'BTC', 'ETH', 'GENERAL' (single coin)
       coins: string # e.g. 'BTC,ETH' (multi-coin filter)
     response:
       score: number # average score -1.0 to 1.0

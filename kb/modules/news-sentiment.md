@@ -72,13 +72,15 @@ RSS Provider      News API Provider   Web Crawler
 ### 1. Decoupled Provider Adapter Pattern (`INewsProvider`)
 - **Where**: `apps/backend/src/news/providers/`
 - **Why**: Prevents hardcoding the trading system to a single web crawler or news site (`Trading System ❌ Website A Crawler`).
-- **How**: `INewsProvider` defines a standardized method `fetchLatest(limit?, coin?): Promise<RawArticle[]>`. Whether news comes from RSS, CryptoPanic API, or a Web Crawler, every provider converts raw payloads into the unified `RawArticle` format.
-- **Extensibility**: Adding a new news portal requires creating 1 new adapter class implementing `INewsProvider`. Downstream modules (`NewsService`, `NewsSentimentStrategy`, UI) require ZERO changes.
+- **How**: `INewsProvider` defines a standardized method `fetchLatest(limit?, coin?, activeCoins?): Promise<RawArticle[]>`. Whether news comes from RSS, CryptoPanic API, or a Web Crawler, every provider converts raw payloads into the unified `RawArticle` format.
+- **Dynamic Coin Extraction**: Providers scan text against active `TradingPair` symbols from PostgreSQL. If no active trading pair coin matches the article, the provider assigns `relatedCoins: ['GENERAL']` (avoiding artificial data contamination of BTC).
+- **Fault Isolation**: If feeds fail, providers return an empty array `[]` cleanly without returning stale mock articles (ADR-0010).
+- **Extensibility**: Adding a new trading pair to PostgreSQL dynamically enables news tagging for that coin without changing provider code.
 
 ### 2. Standardized News Data Schema
 - **Where**: `NewsArticle` entity in PostgreSQL & Prisma schema.
-- **Fields**: `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins` (e.g. `['BTC']`), `url` (unique hash deduplication), `sentimentScore`, `sentimentLabel`.
-- **How**: Ensures consistent querying by asset pair (`relatedCoins: 'BTC'`) and timeframe.
+- **Fields**: `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins` (e.g. `['BTC']`, `['ETH']`, `['GENERAL']`), `url` (unique hash deduplication), `sentimentScore`, `sentimentLabel`.
+- **How**: Ensures consistent querying by asset pair (`relatedCoins: 'BTC'`), general market news (`relatedCoins: 'GENERAL'`), and timeframe.
 
 ### 3. Process Isolation for Sentiment Analysis
 - **Where**: Python FastAPI ML Service (`apps/sentiment/`)

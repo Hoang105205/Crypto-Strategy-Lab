@@ -1,0 +1,20 @@
+feature: news-general-tagging-clean
+description: |
+  Dynamic TradingPair coin extraction from DB, fallback to ['GENERAL'] tag for non-trading coins, clean all news mock data, and refactor React 19 NewsFeed ESLint debt
+created: 2026-08-17T10:00:25+07:00
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - News & Sentiment Module
+    - Market Data Module
+    - Strategy Engine
+    - Frontend
