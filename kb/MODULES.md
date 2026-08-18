@@ -4,6 +4,7 @@
 
 | Module | Owner | Responsibility | Layer | Depends On |
 |--------|-------|---------------|-------|------------|
+| **Auth** | **Hoàng** | **Supabase Auth integration — JWT verification guard, @CurrentUser() decorator, frontend session management** | **Backend (cross-cutting) + Frontend** | **Supabase Auth service** |
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
 | News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
@@ -12,17 +13,25 @@
 
 ## Module Details
 
+### Auth (Hoàng)
+- **Scope**: SupabaseJwtGuard (verify Supabase JWT), @CurrentUser() decorator (extract userId), frontend @supabase/ssr session management, login/register pages
+- **Exposes**: `SupabaseJwtGuard`, `@CurrentUser()`, `RequireAuth` guard — consumed by ALL modules
+- **Dependencies**: Supabase Auth service (JWKS endpoint)
+- **Module doc**: `kb/modules/auth.md`
+- **Contracts**: `kb/contracts/auth.yaml`
+- **Related ADRs**: ADR-0015 (Supabase Auth), ADR-0016 (app-level userId filtering)
+
 ### Market Data (Hoàng)
 - **Scope**: BinanceAdapter (historical + WebSocket, auto-reconnect), MarketDataService (caching, rate-limit handling), WebSocket Gateway to frontend, shared/ interfaces + Prisma schema
 - **Exposes**: `IMarketDataAdapter`, `IMarketDataService`, WebSocket candle stream
-- **Dependencies**: None (foundational)
+- **Dependencies**: Auth module (optional — market data is global, no userId filter)
 - **Module doc**: `kb/modules/market-data.md`
 - **Contracts**: `kb/contracts/market-data.yaml`
 
 ### Strategy Engine (Huy)
 - **Scope**: StrategyRegistry (register + analyze pipeline), 4 strategies (MA, RSI, Bollinger, Support/Resistance), Composite combiners (MajorityVote, WeightedScore), Backtester + Evaluator, Search generators (Random, Domain-Guided)
 - **Exposes**: `IBacktester`, `IStrategyGenerator`, strategy CRUD + backtest REST API
-- **Dependencies**: `IMarketDataService`, `IEventBus`, `IJobQueue` interfaces
+- **Dependencies**: `IMarketDataService`, `IEventBus`, `IJobQueue` interfaces, **Auth module** (`@CurrentUser()` + userId filter on StrategyVersion/BacktestResult queries)
 - **Module doc**: `kb/modules/strategy-engine.md`
 - **Contracts**: `kb/contracts/strategy.yaml`
 
@@ -37,7 +46,7 @@
 ### Event Infrastructure (Phương)
 - **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
 - **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs
-- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces and Redis (the BullMQ worker calls `IMarketDataService.getCandlesRange()` to fetch candles for backtesting)
+- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry queries, loop start/stop toggle per user)
 - **Module doc**: `kb/modules/event-infrastructure.md`
 - **Contracts**: `kb/contracts/events.yaml`
 

@@ -34,11 +34,11 @@ Prefer clear naming over comments.
 ## Constraints
 - **Tech Stack**: Modular Monolith — NestJS + Next.js + PostgreSQL/Prisma + EventEmitter2 + BullMQ/Redis + Python FastAPI (sentiment), see ARCHITECTURE.md
 - **Scale**: Course project — 4 members, 4 weeks; architecture must support 10 documented extensibility scenarios
-- **Security**: No real funds, no user accounts — API keys for external data sources stored in env vars, never committed
+- **Security**: No real funds. User authentication via Supabase Auth (ADR-0015) — email/password only. API keys for external data sources stored in env vars, never committed. Per-user data isolation via app-level userId filtering (ADR-0016): `WHERE userId IS NULL OR userId = :currentUserId`
 
 ## Governance
 - Constitution supersedes all other practices
 - Amendments require documentation in ADR/ and team approval (Hoàng approves)
 - Use GLOSSARY.md for consistent terminology
 
-**Version**: 1.1 | **Ratified**: 2026-08-05 | **Last Amended**: 2026-08-12
+**Version**: 1.2 | **Ratified**: 2026-08-05 | **Last Amended**: 2026-08-18 (auth added per ADR-0015/0016)

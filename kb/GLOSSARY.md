@@ -57,6 +57,16 @@ in code, documentation, and communication.
 | Subscription Deduplication | Pattern where multiple frontend clients watching the same `symbol:timeframe` share a single Binance WebSocket stream. `subscriberCount` tracks active viewers; the stream closes only when count reaches 0 | Market Data |
 | Auto-Reconnect | Automatic reconnection strategy for external WebSocket connections using exponential backoff (1s, 4s, 16s, max 3 attempts). On reconnect, missed candles are fetched via REST API (ADR-0007) | Market Data |
 
+| Authentication | Process of verifying a user's identity. Handled by Supabase Auth (ADR-0015) — email/password only. Frontend uses `@supabase/ssr` for cookie-based sessions | Auth, Frontend |
+| Authorization | Process of determining what data a user can access. Implemented via app-level userId filtering (ADR-0016): `WHERE userId IS NULL OR userId = :currentUserId` | All modules |
+| SupabaseJwtGuard | NestJS guard that verifies Supabase JWTs from the Authorization header. Fetches JWKS (cached), checks expiry, attaches userId to `request.user` | Auth |
+| @CurrentUser() | NestJS parameter decorator that extracts the authenticated userId from `request.user`. Returns `string | null` (null = unauthenticated). MUST be used with `@UseGuards(SupabaseJwtGuard)` | Auth, All modules |
+| RequireAuth | Companion guard that rejects requests where userId is null. Use after `SupabaseJwtGuard` for routes requiring a logged-in user | Auth |
+| userId (nullable) | Column on StrategyVersion, BacktestResult, LeaderboardEntry. `null` = system/shared data (loop-discovered). Non-null = user-private data. Filter: `WHERE userId IS NULL OR userId = :currentUserId` | Strategy Engine, Event Infrastructure |
+| System Data | Data with `userId = null` — shared across all users. Includes loop-discovered strategies, system backtests, and system leaderboard entries | All modules |
+| User-Private Data | Data with `userId = <uuid>` — visible only to the owning user. Includes user-created strategies, user-initiated backtests, and user leaderboard entries | All modules |
+| Equity Curve | Cumulative profit chart showing account balance growth over time, computed from `BacktestResult.trades[]` | Frontend |
+
 ## Naming Conventions
 - **API paths**: kebab-case (e.g., `/api/market-data`, `/api/strategy-backtest`)
 - **Database tables**: snake_case (e.g., `backtest_result`)
