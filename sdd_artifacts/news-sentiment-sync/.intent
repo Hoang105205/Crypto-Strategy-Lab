@@ -1,0 +1,16 @@
+# Intent: News Sentiment Strategy Synchronization
+
+## User Request
+"Tại sao chạy NewsSentimentStrategy lại không có kết quả nhỉ? Bạn hãy thử kiểm tra NewsSentimentStrategy và các file strategy khác của tôi xem có gì khác nhau. Và có thể đồng bộ file NewsSentimentStrategy với các file của tôi được không? Tôi nghĩ là việc sửa này nên dùng /hoang-sdd-on để tạo .intent và làm từ từ, kiểm tra xem có ảnh hưởng tới bất kỳ component nào khác không."
+
+## Analysis & Core Problem
+- Currently, `IStrategy.analyze()` and `IBacktester.run()` are strictly synchronous interfaces (`shared/src/interfaces/strategy.ts`).
+- `NewsSentimentStrategy` relies on an asynchronous `NewsService` to fetch sentiment scores.
+- Because `analyze` is synchronous, `NewsSentimentStrategy` currently hardcodes its synchronous output to return `0.0`, rendering it non-functional (always returning `HOLD`).
+- Making `IBacktester.run()` asynchronous impacts its callers, specifically the BullMQ queue worker (`backtest.worker.ts`), unit tests, and potentially the `SearchLoop` integration points.
+
+## Desired Outcome
+1. Support asynchronous strategy execution (e.g., `analyzeAsync`) in `IStrategy`.
+2. Refactor `IBacktester.run()` to return `Promise<Trade[]>` and handle async capabilities if present on a strategy.
+3. Ensure backwards compatibility so that synchronous mathematical strategies (MACD, RSI, etc.) remain intact and functional.
+4. Validate these cross-cutting changes against the existing SDD documentation (especially `kb/contracts/strategy.yaml`) to ensure no side effects.
