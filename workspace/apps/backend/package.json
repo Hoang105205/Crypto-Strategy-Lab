@@ -30,6 +30,7 @@
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/websockets": "^11.0.0",
     "@prisma/client": "^6.0.0",
+    "@supabase/supabase-js": "^2.112.3",
     "axios": "^1.7.0",
     "bullmq": "^5.81.3",
     "cheerio": "^1.2.0",
