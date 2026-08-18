@@ -116,9 +116,12 @@ export class NewsSentimentStrategy implements IStrategy {
       : 'BTC';
 
     try {
+      const targetDate = new Date(latestCandle.closeTime);
       const agg = await this.newsService.getAggregateSentiment(
         coinSymbol,
         this.timeframe,
+        undefined,
+        targetDate,
       );
 
       if (agg.score >= this.buyThreshold) {
