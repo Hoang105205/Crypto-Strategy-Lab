@@ -40,6 +40,62 @@ export const TradeTable: React.FC<TradeTableProps> = ({ trades }) => {
         </span>
       </div>
 
+      {(() => {
+        const totalTrades = trades.length;
+        const wins = trades.filter(t => (t.pnl || 0) > 0).length;
+        const loses = trades.filter(t => (t.pnl || 0) <= 0).length;
+        const winrate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+        
+        let totalProfit = 0;
+        let currentEquity = 10000;
+        let peakEquity = currentEquity;
+        let maxDrawdown = 0;
+
+        for (const t of trades) {
+          const pnl = t.pnl || 0;
+          totalProfit += pnl;
+          currentEquity += pnl;
+          if (currentEquity > peakEquity) {
+            peakEquity = currentEquity;
+          }
+          const drawdown = (peakEquity - currentEquity) / peakEquity;
+          if (drawdown > maxDrawdown) {
+            maxDrawdown = drawdown;
+          }
+        }
+
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 p-6 bg-[#14181d] border-b border-[#2b3139]/40">
+            <div className="flex flex-col">
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Winrate</span>
+              <span className="text-lg font-black text-gray-100">{winrate.toFixed(1)}%</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Wins</span>
+              <span className="text-lg font-black text-[#0ecb81]">{wins}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Loses</span>
+              <span className="text-lg font-black text-[#f6465d]">{loses}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Total Profit</span>
+              <span className={`text-lg font-black ${totalProfit >= 0 ? 'text-[#0ecb81]' : 'text-[#f6465d]'}`}>
+                ${totalProfit.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Max Drawdown</span>
+              <span className="text-lg font-black text-[#f6465d]">{(maxDrawdown * 100).toFixed(2)}%</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-1">Total Trades</span>
+              <span className="text-lg font-black text-gray-100">{totalTrades}</span>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm font-mono">
           <thead>
