@@ -21,6 +21,10 @@ import { SentimentClient } from './sentiment.client';
 @Injectable()
 export class NewsService {
   private readonly logger = new Logger(NewsService.name);
+  
+  // In-memory cache to prevent O(N) database queries during backtesting loops
+  private backtestCache: Map<string, NewsArticle[]> = new Map();
+  private cacheExpiresAt: number = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -226,12 +230,46 @@ export class NewsService {
   }
 
   /**
+   * Pre-loads and caches all sentiment-scored articles for a coin to avoid O(N) database
+   * queries when a strategy is evaluated inside a large backtest loop.
+   */
+  private async getCachedArticlesForCoin(coin?: string, coins?: string[]): Promise<NewsArticle[]> {
+    const now = Date.now();
+    // Cache TTL of 1 minute (sufficient for a continuous backtest run)
+    if (now > this.cacheExpiresAt) {
+      this.backtestCache.clear();
+      this.cacheExpiresAt = now + 60 * 1000;
+    }
+
+    const cacheKey = coins && coins.length > 0 ? coins.join(',') : (coin || 'ALL');
+    
+    if (!this.backtestCache.has(cacheKey)) {
+      const whereCondition: any = { sentimentScore: { not: null } };
+      if (coins && coins.length > 0) {
+        whereCondition.relatedCoins = { hasSome: coins.map((c) => c.toUpperCase()) };
+      } else if (coin) {
+        whereCondition.relatedCoins = { has: coin.toUpperCase() };
+      }
+
+      // Fetch all historical sentiment data into memory once
+      const allArticles = await this.prisma.newsArticle.findMany({
+        where: whereCondition,
+        orderBy: { publishedAt: 'desc' },
+      });
+      this.backtestCache.set(cacheKey, allArticles as unknown as NewsArticle[]);
+    }
+    
+    return this.backtestCache.get(cacheKey) || [];
+  }
+
+  /**
    * Get aggregate sentiment score and label for a coin / multi-coins over a timeframe ('1h', '24h', '7d')
    */
   async getAggregateSentiment(
     coin?: string,
     timeframe: string = '24h',
     coins?: string[],
+    targetDate: Date = new Date(),
   ): Promise<{
     score: number;
     label: SentimentLabel;
@@ -242,40 +280,21 @@ export class NewsService {
     if (timeframe === '1h') timeframeMs = 3600000;
     if (timeframe === '7d') timeframeMs = 604800000;
 
-    const sinceDate = new Date(Date.now() - timeframeMs);
-    const whereCondition: any = {
-      publishedAt: { gte: sinceDate },
-      sentimentScore: { not: null },
-    };
+    const sinceDate = new Date(targetDate.getTime() - timeframeMs);
+    // Load all historical articles from fast memory cache
+    const allArticles = await this.getCachedArticlesForCoin(coin, coins);
 
-    if (coins && coins.length > 0) {
-      whereCondition.relatedCoins = {
-        hasSome: coins.map((c) => c.toUpperCase()),
-      };
-    } else if (coin) {
-      whereCondition.relatedCoins = {
-        has: coin.toUpperCase(),
-      };
-    }
-
-    let articles = await this.prisma.newsArticle.findMany({
-      where: whereCondition,
+    // Filter strictly by the current candle's time window
+    let articles = allArticles.filter((a) => {
+      const pubDate = new Date(a.publishedAt).getTime();
+      return pubDate >= sinceDate.getTime() && pubDate <= targetDate.getTime();
     });
 
-    // Fallback if no articles in strict window: query all recent articles for target coin(s)
+    // Fallback if no articles in strict window: query recent articles before targetDate
     if (articles.length === 0) {
-      const fallbackWhere: any = { sentimentScore: { not: null } };
-      if (coins && coins.length > 0) {
-        fallbackWhere.relatedCoins = {
-          hasSome: coins.map((c) => c.toUpperCase()),
-        };
-      } else if (coin) {
-        fallbackWhere.relatedCoins = { has: coin.toUpperCase() };
-      }
-      articles = await this.prisma.newsArticle.findMany({
-        where: fallbackWhere,
-        take: 20,
-      });
+      articles = allArticles
+        .filter((a) => new Date(a.publishedAt).getTime() <= targetDate.getTime())
+        .slice(0, 20);
     }
 
     if (articles.length === 0) {
