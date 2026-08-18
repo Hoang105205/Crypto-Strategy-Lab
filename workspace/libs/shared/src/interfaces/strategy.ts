@@ -18,13 +18,14 @@ import type { StrategyGeneratorType } from "../types/enums";
 
 export interface IStrategy {
   analyze(candles: Candle[]): Signal;
+  analyzeAsync?(candles: Candle[]): Promise<Signal>;
   getName(): string;
   getType(): StrategyType;
   getParameters(): Record<string, unknown>;
 }
 
 export interface IBacktester {
-  run(strategy: IStrategy, candles: Candle[], config: BacktestConfig): Trade[];
+  run(strategy: IStrategy, candles: Candle[], config: BacktestConfig): Promise<Trade[]>;
 }
 
 export interface IEvaluator {

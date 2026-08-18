@@ -10,7 +10,7 @@ import { SignalAction } from '@crypto-strategy-lab/shared';
 
 @Injectable()
 export class BacktesterService implements IBacktester {
-  run(strategy: IStrategy, candles: Candle[], config: BacktestConfig): Trade[] {
+  async run(strategy: IStrategy, candles: Candle[], config: BacktestConfig): Promise<Trade[]> {
     if (!candles || candles.length === 0 || !strategy) {
       return [];
     }
@@ -27,7 +27,10 @@ export class BacktesterService implements IBacktester {
       const candle = candles[i];
       // Slice candles up to current timestamp for realistic simulation
       const currentCandles = candles.slice(0, i + 1);
-      const signal = strategy.analyze(currentCandles);
+      
+      const signal = typeof strategy.analyzeAsync === 'function' 
+        ? await strategy.analyzeAsync(currentCandles) 
+        : strategy.analyze(currentCandles);
 
       // Open LONG position if BUY signal and no position open
       if (signal.action === SignalAction.BUY && !openPosition) {

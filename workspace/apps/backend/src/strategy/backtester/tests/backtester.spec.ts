@@ -9,7 +9,7 @@ describe('BacktesterService', () => {
     backtester = new BacktesterService();
   });
 
-  it('should return empty array if no candles provided', () => {
+  it('should return empty array if no candles provided', async () => {
     const mockStrategy: jest.Mocked<IStrategy> = {
       getName: jest.fn().mockReturnValue('Mock'),
       getType: jest.fn().mockReturnValue(StrategyType.MA),
@@ -17,11 +17,11 @@ describe('BacktesterService', () => {
       analyze: jest.fn().mockReturnValue({ action: SignalAction.HOLD }),
     };
 
-    const trades = backtester.run(mockStrategy, [], { initialCapital: 10000, positionSizePercent: 100 });
+    const trades = await backtester.run(mockStrategy, [], { initialCapital: 10000, positionSizePercent: 100 });
     expect(trades).toHaveLength(0);
   });
 
-  it('should simulate trade on BUY and SELL signals and force close on last candle', () => {
+  it('should simulate trade on BUY and SELL signals and force close on last candle', async () => {
     const mockStrategy: jest.Mocked<IStrategy> = {
       getName: jest.fn().mockReturnValue('Mock'),
       getType: jest.fn().mockReturnValue(StrategyType.MA),
@@ -42,7 +42,7 @@ describe('BacktesterService', () => {
       { timestamp: 5000, open: 130, high: 135, low: 125, close: 130, volume: 10 },
     ] as any;
 
-    const trades = backtester.run(mockStrategy, mockCandles, { initialCapital: 10000, positionSizePercent: 100 });
+    const trades = await backtester.run(mockStrategy, mockCandles, { initialCapital: 10000, positionSizePercent: 100 });
 
     expect(trades).toHaveLength(2);
     expect(trades[0].entryPrice).toBe(100);

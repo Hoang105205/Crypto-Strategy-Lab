@@ -193,7 +193,7 @@ describe('StrategyController', () => {
     expect(result.totalReturn).toBe(10.5);
     expect(result.winRate).toBe(0.6);
     expect(prisma.backtestResult.findUnique).toHaveBeenCalledWith({
-      where: { id },
+      where: { jobId: id },
     });
   });
 
