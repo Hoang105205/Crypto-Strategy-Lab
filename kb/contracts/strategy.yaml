@@ -162,7 +162,7 @@ endpoints:
     path: /api/strategies/composite
     description: "Create a composite strategy from child strategies + combiner"
     request:
-      childStrategyIds: "UUID[]"
+      childStrategyNames: "string[]"
       combinerType: '"MajorityVote" | "WeightedScore"'
       combinerWeights: "number[]?    # Required for WeightedScore"
       name: "string"
@@ -173,7 +173,7 @@ endpoints:
     path: /api/strategies/backtest
     description: "Submit a backtest request (enqueued via job queue)"
     request:
-      strategyVersionId: "UUID"
+      strategyName: "string"
       pair: "string                  # e.g. 'BTCUSDT'"
       timeframe: "string             # e.g. '1h'"
       startDate: "DateTime"
