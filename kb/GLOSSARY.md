@@ -32,6 +32,10 @@ in code, documentation, and communication.
 | Reproducibility | Ability to re-run experiment #N with the exact same strategy version + params and get the same result. Enabled by immutable `StrategyVersion` snapshots (ADR-0008) | Strategy Engine |
 | INewsProvider | Abstraction interface for news sources (RSS, News API, Web Crawlers) returning normalized `RawArticle` payloads (ADR-0010) | News & Sentiment |
 | NewsArticle | Standardized news data entity containing `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins`, `url` | News & Sentiment |
+| CrawlerRule | Database entity storing LLM-discovered CSS selectors (`container`, `title`, `content`, `link`, `date`) per domain for fast reusable parsing (ADR-0014) | News & Sentiment |
+| Adaptive Web Crawler | Intelligent web crawler that uses LLMs for semantic selector discovery and Cheerio for high-performance extraction with selector caching (ADR-0014) | News & Sentiment |
+| Selector Caching | Architectural optimization persisting discovered CSS scraping rules in PostgreSQL to avoid recurring LLM token costs and latency | News & Sentiment |
+| Self-Healing Extraction | Fault recovery mechanism that automatically triggers LLM re-discovery when target website redesigns cause selector staleness | News & Sentiment |
 | NewsSentimentStrategy | Strategy plugin generating BUY/SELL/HOLD signals from news sentiment scores for composite strategies (e.g. `MA + RSI + News Sentiment`) | News & Sentiment, Strategy Engine |
 | Process Isolation | Architecture pattern running Python ML service as an isolated process from NestJS backend to contain CPU loads and crashes (ADR-0009) | News & Sentiment |
 | Graceful Degradation | Reliability mechanism falling back to neutral sentiment (`0.0`) and `HOLD` signal when ML sentiment service is unreachable | News & Sentiment |

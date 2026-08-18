@@ -27,11 +27,12 @@
 - **Contracts**: `kb/contracts/strategy.yaml`
 
 ### News & Sentiment (Thuận)
-- **Scope**: `INewsProvider` adapters (RSS, CryptoPanic), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER), NewsSentimentStrategy plugged into Registry (returns HOLD when service is down)
-- **Exposes**: News + sentiment REST API, `NewsSentimentStrategy`
+- **Scope**: `INewsProvider` adapters (RSS multi-feeds, LLM-assisted Adaptive Web Crawler with Selector Caching & Self-Healing per ADR-0014), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER per ADR-0009), NewsSentimentStrategy plugged into StrategyRegistry (returns HOLD when service is down)
+- **Exposes**: News + sentiment REST API, `NewsSentimentStrategy`, `CrawlerRule` configuration
 - **Dependencies**: Shared types + `IEventBus`
 - **Module doc**: `kb/modules/news-sentiment.md`
 - **Contracts**: `kb/contracts/news.yaml`
+- **Related ADRs**: `kb/ADR/0009-sentiment-service-as-separate-process.md`, `kb/ADR/0010-news-provider-adapter-pattern.md`, `kb/ADR/0014-llm-assisted-crawler-selector-caching.md`
 
 ### Event Infrastructure (Phương)
 - **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
