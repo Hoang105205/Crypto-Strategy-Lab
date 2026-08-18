@@ -3,6 +3,7 @@ import { SearchEngine } from '../search-engine';
 import { RandomGenerator } from '../random.generator';
 import { DomainGuidedGenerator } from '../domain-guided.generator';
 import { StrategyRegistry } from '../../registry/strategy.registry';
+import { ISTRATEGY_GENERATOR } from '../../../shared/tokens';
 
 describe('SearchEngine', () => {
   let searchEngine: SearchEngine;
@@ -16,6 +17,16 @@ describe('SearchEngine', () => {
         RandomGenerator,
         DomainGuidedGenerator,
         StrategyRegistry, // needed by generators
+        {
+          provide: ISTRATEGY_GENERATOR, // Token ISTRATEGY_GENERATOR
+          useFactory: (random: RandomGenerator, domain: DomainGuidedGenerator) => {
+            const map = new Map<string, any>();
+            map.set('RANDOM', random);
+            map.set('DOMAIN_GUIDED', domain);
+            return map;
+          },
+          inject: [RandomGenerator, DomainGuidedGenerator],
+        },
       ],
     }).compile();
 

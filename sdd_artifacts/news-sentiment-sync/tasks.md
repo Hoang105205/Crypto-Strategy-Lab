@@ -24,7 +24,7 @@
 
 **⚠️ CRITICAL**: Không thể thay đổi service bên dưới nếu chưa xong Interface.
 
-- [ ] T001 [Foundation] Cập nhật interface `IStrategy` và `IBacktester` trong `libs/shared/src/interfaces/strategy.ts` (thêm `analyzeAsync` và đổi `run` thành `Promise<Trade[]>`).
+- [x] T001 [Foundation] Cập nhật interface `IStrategy` và `IBacktester` trong `libs/shared/src/interfaces/strategy.ts` (thêm `analyzeAsync` và đổi `run` thành `Promise<Trade[]>`).
 
 **Checkpoint**: Foundation ready — các phần implement phụ thuộc vào Interface mới có thể bắt đầu.
 
@@ -37,8 +37,8 @@
 
 ### Implementation for User Story 1
 
-- [ ] T002 [US1] Refactor `BacktesterService` trong `apps/backend/src/strategy/backtester/backtester.service.ts` (Đổi `run` thành `async`, dùng `await` với `analyzeAsync` nếu tồn tại, ngược lại dùng `analyze`). (Phụ thuộc: T001)
-- [ ] T003 [P] [US1] Sửa các Unit Tests của `BacktesterService` trong `apps/backend/src/strategy/backtester/tests/backtester.spec.ts` (thêm `await` trước `backtester.run`). (Phụ thuộc: T002)
+- [x] T002 [US1] Refactor `BacktesterService` trong `apps/backend/src/strategy/backtester/backtester.service.ts` (Đổi `run` thành `async`, dùng `await` với `analyzeAsync` nếu tồn tại, ngược lại dùng `analyze`). (Phụ thuộc: T001)
+- [x] T003 [P] [US1] Sửa các Unit Tests của `BacktesterService` trong `apps/backend/src/strategy/backtester/tests/backtester.spec.ts` (thêm `await` trước `backtester.run`). (Phụ thuộc: T002)
 
 **Checkpoint**: User Story 1 should be fully functional and testable independently. Backtester đã sẵn sàng chạy Async.
 
@@ -48,8 +48,19 @@
 
 **Purpose**: Đảm bảo chất lượng hệ thống
 
-- [ ] T004 Code cleanup và chạy lại toàn bộ Unit Tests của backend (`npm run test`) để đảm bảo không bị regression.
-- [ ] T005 Chạy kiểm tra End-to-End theo kịch bản trong `quickstart.md`.
+- [x] T004 Code cleanup và chạy lại toàn bộ Unit Tests của backend (`npm run test`) để đảm bảo không bị regression.
+- [x] T005 Chạy kiểm tra End-to-End theo kịch bản trong `quickstart.md`.
+
+---
+
+## Phase N: Convergence
+
+**Purpose**: Close gaps between specification and implementation
+**Generated**: 2026-08-18 by /hoang-sdd-converge
+
+Hệ thống ghi nhận code triển khai khớp 100% với Spec và Plan.
+- Không có GAP (Critical, High, Medium, Low).
+- `NewsSentimentStrategy` thực tế đã có sẵn hàm `analyzeAsync`, việc duy nhất còn thiếu là Backtester hỗ trợ Async, và chúng ta đã làm hoàn hảo điều đó.
 
 ---
 
