@@ -10,9 +10,12 @@ import {
   SENTIMENT_NEUTRAL_SCORE,
   SentimentLabel,
   VADER_POSITIVE_THRESHOLD,
-  VADER_NEGATIVE_THRESHOLD
+  VADER_NEGATIVE_THRESHOLD,
 } from '@crypto-strategy-lab/shared';
-import { INewsProvider, INEWS_PROVIDER_TOKEN } from '../providers/news.provider.interface';
+import {
+  INewsProvider,
+  INEWS_PROVIDER_TOKEN,
+} from '../providers/news.provider.interface';
 import { SentimentClient } from './sentiment.client';
 
 @Injectable()
@@ -24,17 +27,27 @@ export class NewsService {
     @Inject(INEWS_PROVIDER_TOKEN)
     private readonly providers: INewsProvider[],
     private readonly sentimentClient: SentimentClient,
-  ) { }
+  ) {}
 
   /**
    * Collect all news from active INewsProvider instances, normalize, enrich with ML sentiment score, deduplicate, and persist to DB
    */
   async collectAllNews(): Promise<NewsArticle[]> {
-    this.logger.log(`Starting news collection across ${this.providers.length} registered providers...`);
+    this.logger.log(
+      `Starting news collection across ${this.providers.length} registered providers...`,
+    );
     const allRawArticles: RawArticle[] = [];
 
     // Query active trading pairs from PostgreSQL to extract matching coins dynamically
-    let activeCoins: string[] = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA'];
+    let activeCoins: string[] = [
+      'BTC',
+      'ETH',
+      'SOL',
+      'BNB',
+      'XRP',
+      'DOGE',
+      'ADA',
+    ];
     try {
       const activePairs = await this.prisma.tradingPair.findMany({
         where: { isActive: true },
@@ -44,7 +57,9 @@ export class NewsService {
         activeCoins = activePairs.map((p) => p.baseAsset.toUpperCase());
       }
     } catch (err) {
-      this.logger.warn(`Failed to fetch active TradingPairs from DB: ${err.message}. Using default coin list.`);
+      this.logger.warn(
+        `Failed to fetch active TradingPairs from DB: ${err.message}. Using default coin list.`,
+      );
     }
 
     // Fetch from all provider adapters concurrently (Fault isolation per ADR-0010)
@@ -70,10 +85,18 @@ export class NewsService {
 
         if (existing) {
           // If existing article has neutral/default label, re-analyze with Python VADER ML
-          if (existing.sentimentScore === 0 || existing.sentimentLabel === 'NEUTRAL' || !existing.sentimentScore) {
+          if (
+            existing.sentimentScore === 0 ||
+            existing.sentimentLabel === 'NEUTRAL' ||
+            !existing.sentimentScore
+          ) {
             const textToAnalyze = `${raw.title}. ${raw.content}`;
-            const sentimentResult = await this.sentimentClient.analyzeText(textToAnalyze);
-            if (sentimentResult.score !== 0.0 || sentimentResult.label !== SentimentLabel.NEUTRAL) {
+            const sentimentResult =
+              await this.sentimentClient.analyzeText(textToAnalyze);
+            if (
+              sentimentResult.score !== 0.0 ||
+              sentimentResult.label !== SentimentLabel.NEUTRAL
+            ) {
               const updated = await this.prisma.newsArticle.update({
                 where: { id: existing.id },
                 data: {
@@ -91,7 +114,7 @@ export class NewsService {
                 },
               });
               this.logger.log(
-                `Re-analyzed existing article [${existing.id}] with real VADER ML: ${sentimentResult.label} (${sentimentResult.score})`
+                `Re-analyzed existing article [${existing.id}] with real VADER ML: ${sentimentResult.label} (${sentimentResult.score})`,
               );
               savedArticles.push(updated as unknown as NewsArticle);
               continue;
@@ -105,10 +128,14 @@ export class NewsService {
 
         // Enrich with VADER Sentiment ML Score (Graceful degradation handled by SentimentClient)
         const textToAnalyze = `${raw.title}. ${raw.content}`;
-        const sentimentResult = await this.sentimentClient.analyzeText(textToAnalyze);
+        const sentimentResult =
+          await this.sentimentClient.analyzeText(textToAnalyze);
 
         // Normalize and save with explicit GENERAL fallback tag
-        const relatedCoins = (raw.relatedCoins && raw.relatedCoins.length > 0) ? raw.relatedCoins : ['GENERAL'];
+        const relatedCoins =
+          raw.relatedCoins && raw.relatedCoins.length > 0
+            ? raw.relatedCoins
+            : ['GENERAL'];
         const article = await this.prisma.newsArticle.create({
           data: {
             source: raw.source,
@@ -135,11 +162,13 @@ export class NewsService {
         });
 
         this.logger.log(
-          `Ingested article [${article.id}]: ${article.title} (Sentiment: ${sentimentResult.label} ${sentimentResult.score})`
+          `Ingested article [${article.id}]: ${article.title} (Sentiment: ${sentimentResult.label} ${sentimentResult.score})`,
         );
         savedArticles.push(article as unknown as NewsArticle);
       } catch (error) {
-        this.logger.error(`Failed to persist article ${raw.url}: ${error.message}`);
+        this.logger.error(
+          `Failed to persist article ${raw.url}: ${error.message}`,
+        );
       }
     }
 
@@ -153,8 +182,16 @@ export class NewsService {
     limit: number = DEFAULT_NEWS_FETCH_LIMIT,
     offset: number = 0,
     coin?: string,
-    coins?: string[]
-  ): Promise<{ data: NewsArticle[]; pagination: { total: number; limit: number; offset: number; hasMore: boolean } }> {
+    coins?: string[],
+  ): Promise<{
+    data: NewsArticle[];
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  }> {
     const whereCondition: any = {};
 
     if (coins && coins.length > 0) {
@@ -194,14 +231,19 @@ export class NewsService {
   async getAggregateSentiment(
     coin?: string,
     timeframe: string = '24h',
-    coins?: string[]
-  ): Promise<{ score: number; label: SentimentLabel; articleCount: number; updatedAt: string }> {
+    coins?: string[],
+  ): Promise<{
+    score: number;
+    label: SentimentLabel;
+    articleCount: number;
+    updatedAt: string;
+  }> {
     let timeframeMs = 86400000; // 24h default
     if (timeframe === '1h') timeframeMs = 3600000;
     if (timeframe === '7d') timeframeMs = 604800000;
 
-    let sinceDate = new Date(Date.now() - timeframeMs);
-    let whereCondition: any = {
+    const sinceDate = new Date(Date.now() - timeframeMs);
+    const whereCondition: any = {
       publishedAt: { gte: sinceDate },
       sentimentScore: { not: null },
     };
@@ -224,7 +266,9 @@ export class NewsService {
     if (articles.length === 0) {
       const fallbackWhere: any = { sentimentScore: { not: null } };
       if (coins && coins.length > 0) {
-        fallbackWhere.relatedCoins = { hasSome: coins.map((c) => c.toUpperCase()) };
+        fallbackWhere.relatedCoins = {
+          hasSome: coins.map((c) => c.toUpperCase()),
+        };
       } else if (coin) {
         fallbackWhere.relatedCoins = { has: coin.toUpperCase() };
       }
@@ -243,12 +287,16 @@ export class NewsService {
       };
     }
 
-    const sumScore = articles.reduce((acc, a) => acc + (a.sentimentScore ?? 0), 0);
+    const sumScore = articles.reduce(
+      (acc, a) => acc + (a.sentimentScore ?? 0),
+      0,
+    );
     const avgScore = Number((sumScore / articles.length).toFixed(4));
 
     let label = SentimentLabel.NEUTRAL;
     if (avgScore >= VADER_POSITIVE_THRESHOLD) label = SentimentLabel.POSITIVE;
-    else if (avgScore <= VADER_NEGATIVE_THRESHOLD) label = SentimentLabel.NEGATIVE;
+    else if (avgScore <= VADER_NEGATIVE_THRESHOLD)
+      label = SentimentLabel.NEGATIVE;
 
     return {
       score: avgScore,

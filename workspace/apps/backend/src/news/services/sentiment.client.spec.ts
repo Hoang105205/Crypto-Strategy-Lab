@@ -38,24 +38,32 @@ describe('SentimentClient', () => {
     });
     global.fetch = mockFetch;
 
-    const result = await client.analyzeText('Bitcoin surges past all-time high amidst strong ETF demand');
+    const result = await client.analyzeText(
+      'Bitcoin surges past all-time high amidst strong ETF demand',
+    );
 
     expect(mockFetch).toHaveBeenCalledWith(
       'http://localhost:8000/analyze',
       expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: 'Bitcoin surges past all-time high amidst strong ETF demand' }),
-      })
+        body: JSON.stringify({
+          text: 'Bitcoin surges past all-time high amidst strong ETF demand',
+        }),
+      }),
     );
     expect(result).toEqual({ score: 0.85, label: SentimentLabel.POSITIVE });
   });
 
   it('should implement Graceful Degradation returning neutral 0.0 on service timeout / crash (ADR-0009)', async () => {
-    const mockFetch = jest.fn().mockRejectedValueOnce(new Error('fetch failed: connection refused'));
+    const mockFetch = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('fetch failed: connection refused'));
     global.fetch = mockFetch;
 
-    const result = await client.analyzeText('Market experiences unexpected volatility');
+    const result = await client.analyzeText(
+      'Market experiences unexpected volatility',
+    );
 
     expect(result).toEqual({ score: 0.0, label: SentimentLabel.NEUTRAL });
   });
