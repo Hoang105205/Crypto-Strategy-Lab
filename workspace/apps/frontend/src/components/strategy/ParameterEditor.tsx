@@ -1,12 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+
+interface StrategyOption {
+  name: string;
+  type: string;
+  parameters?: Record<string, unknown>;
+}
 
 export interface ParameterEditorProps {
   strategyName?: string;
   strategyType?: string;
   initialParameters: Record<string, unknown>;
-  availableBaseStrategies?: Array<{ name: string; type: string }>;
+  availableBaseStrategies?: StrategyOption[];
   onSave?: (updatedParameters: Record<string, unknown>) => void;
   onDelete?: () => void;
 }
@@ -21,11 +27,6 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
 }) => {
   const [params, setParams] = useState<Record<string, unknown>>(initialParameters);
   const [isSaved, setIsSaved] = useState(false);
-
-  useEffect(() => {
-    setParams(initialParameters);
-    setIsSaved(false);
-  }, [initialParameters]);
 
   const isComposite =
     strategyType?.toUpperCase() === 'COMPOSITE' ||
@@ -67,8 +68,29 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
     setIsSaved(false);
   };
 
-  const checkCircular = (candidateName: string, targetName: string, allStrats: any[]): boolean => {
+  const getStrategyName = (value: unknown): string => {
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'name' in value &&
+      typeof value.name === 'string'
+    ) {
+      return value.name;
+    }
+
+    return String(value);
+  };
+
+  const checkCircular = (
+    candidateName: string,
+    targetName: string,
+    allStrats: StrategyOption[],
+    visited = new Set<string>(),
+  ): boolean => {
     if (candidateName === targetName) return true;
+    if (visited.has(candidateName)) return false;
+    visited.add(candidateName);
+
     const candidateStrat = allStrats.find(s => s.name === candidateName);
     if (!candidateStrat) return false;
     
@@ -77,7 +99,7 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
     if (typeof raw === 'string') {
       children = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
     } else if (Array.isArray(raw)) {
-      children = raw.map((r: any) => typeof r === 'object' && r ? r.name : String(r));
+      children = raw.map(getStrategyName);
     }
     
     for (const child of children) {

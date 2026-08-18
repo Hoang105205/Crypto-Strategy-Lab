@@ -35,3 +35,12 @@ When combining React with an imperative chart library, keep update refs for impe
 - Cross-origin typed GET requests with `Content-Type: application/json` require a valid OPTIONS response in Playwright route mocks; mock the browser boundary, including CORS, rather than assuming jsdom fetch behavior.
 - Vitest and Playwright both collect `*.spec.ts` by default. Assign explicit directory ownership (`e2e/**` excluded from Vitest) so the unit runner never imports Playwright's global `test()`.
 - A minimal real Socket.IO namespace fixture is more meaningful than starting disconnected: it proves Connected -> offline stale retention -> reconnect refetch -> Connected in Chromium while REST snapshots remain deterministic.
+
+## All-green completion follow-up - 2026-08-17
+
+- A full-feature checkpoint can remain blocked by lint outside the task's production files; fixing it requires explicit owner/user authorization rather than suppressing rules or silently broadening scope.
+- Write-only duplicated React state should be removed instead of retained merely to mirror the authoritative selected object. This reduces renders and removes competing state ownership.
+- For client-side initial loading, keep the async loader free of React state mutation and apply the resolved value in an asynchronous completion with an unmount guard. This satisfies React 19 effect rules without hiding the rule.
+- Prop-to-local-state effect mirroring is avoidable when component identity defines the reset boundary. Keying `ParameterEditor` by Strategy identity preserves local editing while making selection changes explicit.
+- Replacing `any` with an `unknown` guard exposed a natural place to bound recursive composite traversal with a visited set, preventing malformed cyclic graphs from recursing indefinitely.
+- The completed gate is full ESLint, TypeScript, 14/14 Vitest files (47/47 tests), an 8-route Next production build, and 4/4 Chromium scenarios with owned-port cleanup.

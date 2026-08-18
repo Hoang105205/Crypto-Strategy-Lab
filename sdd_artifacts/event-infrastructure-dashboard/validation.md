@@ -901,3 +901,174 @@ BLOCKED: full frontend lint remains red only in three pre-existing feature areas
 ```
 
 **T045 remains `[ ]` under the user's all-green checkpoint rule.** Browser/manual-equivalent validation is now complete; only authorization to repair or explicitly baseline the unrelated full-lint findings is still required.
+
+## Phase 6 - T045 All-Green Completion Follow-up (2026-08-17)
+
+The user authorized the two remaining Strategy-owned lint repairs that blocked the
+all-green frontend checkpoint. The repair was deliberately behavior-preserving:
+
+- `app/strategy/page.tsx` removes write-only duplicate parameter state and separates
+  the asynchronous Strategy fetch from React state application, including an unmount
+  cancellation guard. Initial selection, offline fallbacks, composite refresh, and
+  Strategy API paths remain unchanged.
+- `components/strategy/ParameterEditor.tsx` resets editor-local state through Strategy
+  identity rather than synchronous effect mirroring, replaces two `any` escape hatches
+  with an explicit Strategy option type and an `unknown` guard, and bounds circular
+  graph traversal with a visited set.
+- No Leaderboard contract, Market Data socket/candle flow, infrastructure socket,
+  ranking logic, published trade semantics, or backend source was changed.
+
+### Commands and actual results
+
+```powershell
+npm.cmd exec -- eslint src/app/strategy/page.tsx src/components/strategy/ParameterEditor.tsx
+# PASS: exit 0 with no warnings.
+
+npm.cmd exec -- tsc --noEmit
+# PASS: exit 0.
+
+npm.cmd run lint
+# PASS: full frontend ESLint exit 0 with no warnings.
+
+npm.cmd run test
+# PASS: Test Files 14 passed (14); Tests 47 passed (47).
+# Non-blocking harness stderr remains limited to the existing Vite CJS deprecation,
+# jsdom navigation limitation, and PairSelector act warning; no test failed.
+
+npm.cmd run build
+# PASS: Next.js 16.3.0 compiled, TypeScript completed, and 8/8 static pages generated,
+# including /leaderboard and /strategy.
+
+npm.cmd run test:e2e
+# PASS: Chromium Tests 4 passed (4), including Dashboard chart disposal,
+# desktop keyboard/sort/detail/reconnect, mobile overflow/detail layout, and safe 503 retry.
+# PASS: the runner's production build generated 8/8 pages.
+
+Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 3100,3201 }
+# PASS: no owned Next or Socket.IO fixture listener remained after Playwright teardown.
+
+git diff --check
+# PASS: no whitespace errors; Git reports line-ending conversion notices only.
+```
+
+### Final checkpoint
+
+```text
+PASS: T044 contract tests and the complete T045 implementation are green.
+PASS: targeted and full frontend lint, TypeScript, full Vitest, production build,
+      desktop/mobile Chromium, keyboard behavior, stable error retry, realtime
+      reconnect, chart disposal, and process cleanup are green.
+PASS: the former Strategy/News lint blocker is resolved without rule suppression,
+      broad ignore configuration, or an architecture/contract change.
+PASS: T046 and T047 remain unchecked and were not implemented by this follow-up.
+```
+
+**PASS - T045 COMPLETE.** The frontend US5 checkpoint is independently demonstrable
+with REST fallback and reconnect-safe realtime enhancement. T045 is now marked `[X]`;
+Phase 7 may use it as the dependency gate for T047.
+
+## Phase 7 - T046 Backend Cross-Cutting Validation (2026-08-18)
+
+**Working directory**: `C:\Users\cpshc\Y3\Software Architecture\Project\Crypto-Strategy-Lab\workspace\apps\backend`
+
+**Dependency gate**: T038 was confirmed `[X]` before execution. T047-T049 were not
+executed or modified.
+
+### Redis mode and isolation
+
+- Started the Compose `redis:7-alpine` service (`csl-redis`) and verified TCP
+  reachability at `127.0.0.1:6379` before Jest.
+- Redis-backed suites used the production `BullMqJobQueue`/BullMQ worker adapter and
+  ran serially with `--runInBand`.
+- Test fixtures use process/UUID-scoped queue names and remove only their owned queues
+  with BullMQ `obliterate`; source audit found no `FLUSHDB` or `FLUSHALL` operation.
+
+### Commands and actual results
+
+```powershell
+docker compose -f workspace/docker-compose.yml up -d redis
+# PASS: exit 0; container csl-redis running.
+
+Test-NetConnection -ComputerName 127.0.0.1 -Port 6379 -InformationLevel Quiet
+# PASS: True.
+
+npm.cmd run test -- --runInBand
+# INITIAL FAIL: exit 1; 54/55 suites and 441/442 tests passed.
+# Failure: queue.integration.spec.ts DLQ REST/manual-retry lifecycle exceeded Jest's
+# default 5-second per-test timeout during the full serial run.
+
+npm.cmd run test -- --runInBand src/queue/queue.integration.spec.ts --testNamePattern="lists a DLQ job over REST"
+# PASS: exit 0; 1 passed, 13 skipped, 1 suite passed. This isolated logic failure
+# from full-run timing pressure.
+
+npm.cmd run test -- --runInBand src/queue/queue.integration.spec.ts
+# PASS after repair: exit 0; 14/14 tests, 1/1 suite.
+
+npm.cmd run test -- --runInBand
+# PASS after repair: exit 0; 55/55 suites and 442/442 tests; no snapshots.
+
+npm.cmd run lint
+# FAIL: exit 1; official --fix run ended with 264 findings
+# (222 errors, 42 warnings). This is the only mandatory T046 gate still red.
+
+npm.cmd exec -- eslint '{src,apps,libs,test}/**/*.ts' --format json
+# Diagnostic-only, non-mutating ownership scan: exit 1; 73 files, 650 errors and
+# 43 warnings before autofixes. Out-of-scope owners include Market Data (2 errors),
+# News/Sentiment (105 errors, 1 warning), and Strategy (270 errors, 16 warnings).
+
+npm.cmd exec -- tsc --noEmit -p ../../libs/shared/tsconfig.json
+# PASS: exit 0.
+
+npm.cmd exec -- tsc --noEmit -p tsconfig.json
+# PASS: exit 0.
+
+npm.cmd exec -- prisma validate --schema prisma/schema.prisma
+# PASS: exit 0; schema valid. Non-blocking warning: package.json Prisma config is
+# deprecated for future Prisma 7; environment variables loaded from .env.
+
+npm.cmd run build
+# PASS: exit 0; Nest production build completed.
+
+git diff --check
+# PASS: exit 0.
+```
+
+### Regression repaired and lint mutation control
+
+- `src/queue/queue.integration.spec.ts` now gives the real Redis DLQ
+  list/retry/identity lifecycle the file's existing `DEFAULT_TIMEOUT_MS` (15 seconds).
+  Production queue behavior, retry policy, REST contract, and Redis data are unchanged.
+- A pre-lint status/diff baseline contained no backend source changes except this T046
+  test repair. Because the package lint script contains `--fix`, it reformatted many
+  Event Infrastructure and out-of-scope Strategy/Market Data/News files before exiting
+  red. Those autofix-only mutations were removed against the verified backend baseline;
+  the timeout repair was then reapplied and the 14-test Redis integration suite passed.
+- No Strategy, Market Data, News/Sentiment, or Prisma schema-owned implementation was
+  retained from the lint run.
+- On this Windows checkout, `git status --short` continues to flag several restored
+  backend paths because lint changed CRLF/stat metadata. Their clean-filter hashes equal
+  the index and `git diff --name-only -- workspace/apps/backend` reports only
+  `src/queue/queue.integration.spec.ts`; there is no retained textual diff in those
+  out-of-scope paths.
+
+### Boundary audit
+
+```text
+PASS: no feature production code imports a Strategy/Market Data/News implementation
+      class directly. The only matches are public Nest module composition imports:
+      StrategyModule, StrategyRuntimeModule, and MarketDataModule.
+PASS: no cross-module Prisma delegate access was found in events, queue, leaderboard,
+      loop, dashboard, shared infrastructure, or config production files.
+PASS: no BacktestRequested enqueue subscriber or @OnEvent handler exists.
+PASS: no backend Market Data diff exists; the full backend suite, including existing
+      Market Data regressions, passed.
+PASS: git diff --check exited 0.
+```
+
+### T046 checkpoint
+
+**BLOCKED - NOT MARKED COMPLETE.** Tests, both type-checks, Prisma validation, build,
+Redis isolation, and boundary audits are green. Full backend lint is still red and
+requires coordinated cleanup from Strategy, Market Data, and News/Sentiment owners in
+addition to feature-owned lint debt. Under the all-required-gates rule, T046 remains
+`[ ]`; T047-T049 remain untouched and no false-green completion is recorded.

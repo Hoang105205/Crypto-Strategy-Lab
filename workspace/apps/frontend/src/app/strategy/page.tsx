@@ -16,10 +16,43 @@ interface StrategyItem {
   parameters: Record<string, unknown>;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+const DEFAULT_STRATEGIES: StrategyItem[] = [
+  { name: 'MovingAverage', type: 'MA', parameters: { period: 14 } },
+  {
+    name: 'RelativeStrengthIndex',
+    type: 'RSI',
+    parameters: { period: 14, overbought: 70, oversold: 30 },
+  },
+  {
+    name: 'BollingerBands',
+    type: 'Bollinger',
+    parameters: { period: 20, stdDev: 2 },
+  },
+  {
+    name: 'SupportResistance',
+    type: 'SR',
+    parameters: { lookback: 5, tolerancePercent: 0.005 },
+  },
+];
+
+const loadStrategies = async (): Promise<StrategyItem[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/strategies`);
+    if (!response.ok) {
+      return DEFAULT_STRATEGIES;
+    }
+
+    return (await response.json()) as StrategyItem[];
+  } catch {
+    return DEFAULT_STRATEGIES;
+  }
+};
+
 export default function StrategyBuilderPage() {
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyItem | null>(null);
-  const [editedParameters, setEditedParameters] = useState<Record<string, unknown>>({});
   const [activeTab, setActiveTab] = useState<'catalog' | 'composite' | 'backtest'>('catalog');
   
   // Backtest form state
@@ -29,16 +62,6 @@ export default function StrategyBuilderPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [backtestStatus, setBacktestStatus] = useState<string | null>(null);
   const [tradeResults, setTradeResults] = useState<TradeItem[]>([]);
-
-  // Default fallback mock strategies if backend API is offline
-  const defaultStrategies: StrategyItem[] = [
-    { name: 'MovingAverage', type: 'MA', parameters: { period: 14 } },
-    { name: 'RelativeStrengthIndex', type: 'RSI', parameters: { period: 14, overbought: 70, oversold: 30 } },
-    { name: 'BollingerBands', type: 'Bollinger', parameters: { period: 20, stdDev: 2 } },
-    { name: 'SupportResistance', type: 'SR', parameters: { lookback: 5, tolerancePercent: 0.005 } },
-  ];
-
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
   const generateDynamicMockTrades = (
     stratName: string,
@@ -83,35 +106,23 @@ export default function StrategyBuilderPage() {
     return trades;
   };
 
-  const fetchStrategies = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/strategies`);
-      if (res.ok) {
-        const data = await res.json();
-        setStrategies(data);
-        if (data.length > 0 && !selectedStrategy) {
-          setSelectedStrategy(data[0]);
-          setEditedParameters(data[0].parameters || {});
-        }
-      } else {
-        setStrategies(defaultStrategies);
-        setSelectedStrategy(defaultStrategies[0]);
-        setEditedParameters(defaultStrategies[0].parameters);
-      }
-    } catch {
-      setStrategies(defaultStrategies);
-      setSelectedStrategy(defaultStrategies[0]);
-      setEditedParameters(defaultStrategies[0].parameters);
-    }
-  };
-
   useEffect(() => {
-    fetchStrategies();
+    let cancelled = false;
+
+    void loadStrategies().then((loadedStrategies) => {
+      if (cancelled) return;
+
+      setStrategies(loadedStrategies);
+      setSelectedStrategy(loadedStrategies[0] ?? null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSelectStrategy = (strat: StrategyItem) => {
     setSelectedStrategy(strat);
-    setEditedParameters(strat.parameters || {});
   };
 
   const handleBuildComposite = async (payload: {
@@ -130,7 +141,9 @@ export default function StrategyBuilderPage() {
 
       if (res.ok) {
         alert(`Composite Strategy '${payload.name}' created successfully!`);
-        await fetchStrategies();
+        const loadedStrategies = await loadStrategies();
+        setStrategies(loadedStrategies);
+        setSelectedStrategy((current) => current ?? loadedStrategies[0] ?? null);
         setActiveTab('catalog');
       } else {
         const errorData = await res.json();
@@ -214,7 +227,6 @@ export default function StrategyBuilderPage() {
   };
 
   const handleParametersUpdate = async (updated: Record<string, unknown>) => {
-    setEditedParameters(updated);
     if (!selectedStrategy) return;
 
     const newName = String(updated.name || selectedStrategy.name);
@@ -357,6 +369,7 @@ export default function StrategyBuilderPage() {
                   </div>
 
                   <ParameterEditor
+                    key={selectedStrategy.name}
                     strategyName={selectedStrategy.name}
                     strategyType={selectedStrategy.type}
                     initialParameters={selectedStrategy.parameters}
