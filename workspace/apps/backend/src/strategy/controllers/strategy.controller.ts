@@ -119,6 +119,8 @@ export class StrategyController {
       backtestConfig: {
         initialCapital: dto.initialCapital ?? 10000,
         positionSizePercent: dto.positionSizePercent ?? 100,
+        commission: dto.commission,
+        slippage: dto.slippage,
       },
       source: BacktestSource.USER,
       loopRunId: null,
@@ -149,7 +151,7 @@ export class StrategyController {
   @Get('backtest/:id')
   async getBacktestResult(@Param('id') id: string) {
     const result = await this.prisma.backtestResult.findUnique({
-      where: { id },
+      where: { jobId: id },
     });
     if (!result) {
       throw new HttpException(`BacktestResult '${id}' not found`, HttpStatus.NOT_FOUND);

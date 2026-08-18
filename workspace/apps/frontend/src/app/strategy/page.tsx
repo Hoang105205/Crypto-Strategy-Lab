@@ -26,6 +26,10 @@ export default function StrategyBuilderPage() {
   const [pair, setPair] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('1h');
   const [initialCapital, setInitialCapital] = useState(10000);
+  const [fromDate, setFromDate] = useState(new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().substring(0, 10));
+  const [toDate, setToDate] = useState(new Date().toISOString().substring(0, 10));
+  const [commission, setCommission] = useState(0.1);
+  const [slippage, setSlippage] = useState(0.1);
   const [isLoading, setIsLoading] = useState(false);
   const [backtestStatus, setBacktestStatus] = useState<string | null>(null);
   const [tradeResults, setTradeResults] = useState<TradeItem[]>([]);
@@ -162,6 +166,7 @@ export default function StrategyBuilderPage() {
     if (!selectedStrategy) return;
 
     setIsLoading(true);
+    setTradeResults([]);
     setBacktestStatus('Submitting job to Queue...');
 
     try {
@@ -173,25 +178,56 @@ export default function StrategyBuilderPage() {
           pair,
           timeframe,
           initialCapital,
+          startDate: fromDate,
+          endDate: toDate,
+          commission,
+          slippage,
         }),
       });
 
       if (res.ok) {
-        setBacktestStatus('Backtest simulation completed');
+        const { jobId } = await res.json();
+        setBacktestStatus('Job queued, waiting for results...');
+        
+        let attempts = 0;
+        const maxAttempts = 30; // Wait up to 60 seconds
+        
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          try {
+            const resultRes = await fetch(`${API_BASE_URL}/api/strategies/backtest/${jobId}`);
+            if (resultRes.ok) {
+              const data = await resultRes.json();
+              setBacktestStatus('Backtest simulation completed');
+              setTradeResults(typeof data.trades === 'string' ? JSON.parse(data.trades) : data.trades || []);
+              setIsLoading(false);
+              clearInterval(pollInterval);
+            } else if (resultRes.status === 404) {
+              if (attempts >= maxAttempts) {
+                setBacktestStatus('Timeout waiting for results (Backend Worker might not be running)');
+                setIsLoading(false);
+                clearInterval(pollInterval);
+              }
+              // Still processing, wait
+            } else {
+              setBacktestStatus('Failed to retrieve backtest result');
+              setIsLoading(false);
+              clearInterval(pollInterval);
+            }
+          } catch (err) {
+             setBacktestStatus('Error fetching results');
+             setIsLoading(false);
+             clearInterval(pollInterval);
+          }
+        }, 2000);
+        
+        return; // do not call setTradeResults here yet
       } else {
-        setBacktestStatus('Backtest simulation completed (offline)');
+        setBacktestStatus('Failed to submit job to Backend');
+        setIsLoading(false);
       }
     } catch {
-      setBacktestStatus('Backtest simulation completed (offline)');
-    } finally {
-      // Generate dynamic simulation trades reflecting selected strategy & pair inputs
-      const dynamicTrades = generateDynamicMockTrades(
-        selectedStrategy.name,
-        pair,
-        timeframe,
-        initialCapital
-      );
-      setTradeResults(dynamicTrades);
+      setBacktestStatus('Network error connecting to Backend');
       setIsLoading(false);
     }
   };
@@ -453,6 +489,52 @@ export default function StrategyBuilderPage() {
                       type="number"
                       value={initialCapital}
                       onChange={(e) => setInitialCapital(Number(e.target.value))}
+                      className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 font-mono focus:outline-none focus:border-[#fcd535]"
+                      style={{ padding: '0.75rem 1.25rem' }}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <label className="block text-sm font-semibold text-gray-300">From Date</label>
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 font-mono focus:outline-none focus:border-[#fcd535] [color-scheme:dark]"
+                      style={{ padding: '0.75rem 1.25rem' }}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <label className="block text-sm font-semibold text-gray-300">To Date</label>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 font-mono focus:outline-none focus:border-[#fcd535] [color-scheme:dark]"
+                      style={{ padding: '0.75rem 1.25rem' }}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <label className="block text-sm font-semibold text-gray-300">Transaction Cost (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={commission}
+                      onChange={(e) => setCommission(Number(e.target.value))}
+                      className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 font-mono focus:outline-none focus:border-[#fcd535]"
+                      style={{ padding: '0.75rem 1.25rem' }}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <label className="block text-sm font-semibold text-gray-300">Slippage (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={slippage}
+                      onChange={(e) => setSlippage(Number(e.target.value))}
                       className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-xl text-base text-gray-100 font-mono focus:outline-none focus:border-[#fcd535]"
                       style={{ padding: '0.75rem 1.25rem' }}
                     />
