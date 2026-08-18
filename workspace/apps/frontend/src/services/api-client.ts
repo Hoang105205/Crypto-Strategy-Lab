@@ -21,6 +21,7 @@ import type {
   TradingPair,
 } from '@crypto-strategy-lab/shared';
 import { API_BASE_URL } from '../lib/constants';
+import { supabase } from '../lib/supabase-client';
 
 export class ApiClientError extends Error {
   constructor(
@@ -40,9 +41,15 @@ interface ErrorBody {
 
 /** Shared HTTP boundary. Domain methods remain responsible for decoding JSON dates. */
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { ...headers, ...init?.headers as Record<string, string> },
   });
 
   if (!res.ok) {
