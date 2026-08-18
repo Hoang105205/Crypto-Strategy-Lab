@@ -852,69 +852,73 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     );
   });
 
-  it('lists a DLQ job over REST, manually retries with reset attempts, and preserves identity', async () => {
-    const harness = createHarness();
-    const payload = harness.payload();
-    harness.ports.marketData.getCandlesRange.mockResolvedValue([]);
-    await harness.enqueue(payload);
-    harness.startWorker(1);
-    await waitFor(
-      async () =>
-        (await harness.inspector.getJobState(payload.jobId)) === 'failed',
-      'DLQ job before REST recovery',
-    );
-    await harness.stopWorker();
+  it(
+    'lists a DLQ job over REST, manually retries with reset attempts, and preserves identity',
+    async () => {
+      const harness = createHarness();
+      const payload = harness.payload();
+      harness.ports.marketData.getCandlesRange.mockResolvedValue([]);
+      await harness.enqueue(payload);
+      harness.startWorker(1);
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(payload.jobId)) === 'failed',
+        'DLQ job before REST recovery',
+      );
+      await harness.stopWorker();
 
-    const module = await Test.createTestingModule({
-      controllers: [QueueController],
-      providers: [
-        { provide: IJOB_QUEUE, useValue: harness.adapter },
-        {
-          provide: DeadLetterRepository,
-          useValue: harness.ports.deadLetters,
-        },
-        { provide: PrismaService, useValue: {} },
-      ],
-    }).compile();
-    const app: INestApplication = module.createNestApplication();
-    await app.init();
-    try {
-      await request(app.getHttpServer())
-        .get('/api/queue/dead-letter')
-        .expect(200)
-        .expect((response) => {
-          expect(response.body).toHaveLength(1);
-          expect(response.body[0]).toMatchObject({
-            jobId: payload.jobId,
-            attempts: 1,
+      const module = await Test.createTestingModule({
+        controllers: [QueueController],
+        providers: [
+          { provide: IJOB_QUEUE, useValue: harness.adapter },
+          {
+            provide: DeadLetterRepository,
+            useValue: harness.ports.deadLetters,
+          },
+          { provide: PrismaService, useValue: {} },
+        ],
+      }).compile();
+      const app: INestApplication = module.createNestApplication();
+      await app.init();
+      try {
+        await request(app.getHttpServer())
+          .get('/api/queue/dead-letter')
+          .expect(200)
+          .expect((response) => {
+            expect(response.body).toHaveLength(1);
+            expect(response.body[0]).toMatchObject({
+              jobId: payload.jobId,
+              attempts: 1,
+            });
           });
-        });
-      await request(app.getHttpServer())
-        .post(`/api/queue/dead-letter/${payload.jobId}/retry`)
-        .expect(200)
-        .expect({ jobId: payload.jobId, status: JobStatusValue.QUEUED });
-    } finally {
-      await app.close();
-    }
+        await request(app.getHttpServer())
+          .post(`/api/queue/dead-letter/${payload.jobId}/retry`)
+          .expect(200)
+          .expect({ jobId: payload.jobId, status: JobStatusValue.QUEUED });
+      } finally {
+        await app.close();
+      }
 
-    const retried = await harness.inspector.getJob(payload.jobId);
-    expect(retried?.id).toBe(payload.jobId);
-    expect(retried?.attemptsMade).toBe(0);
-    expect(retried?.data.payload).toMatchObject({
-      ...payload,
-      startDate: payload.startDate.toISOString(),
-      endDate: payload.endDate.toISOString(),
-    });
-    expect(['waiting', 'prioritized']).toContain(await retried?.getState());
+      const retried = await harness.inspector.getJob(payload.jobId);
+      expect(retried?.id).toBe(payload.jobId);
+      expect(retried?.attemptsMade).toBe(0);
+      expect(retried?.data.payload).toMatchObject({
+        ...payload,
+        startDate: payload.startDate.toISOString(),
+        endDate: payload.endDate.toISOString(),
+      });
+      expect(['waiting', 'prioritized']).toContain(await retried?.getState());
 
-    harness.ports.marketData.getCandlesRange.mockResolvedValue([candle]);
-    harness.startWorker(1);
-    await waitFor(
-      async () =>
-        (await harness.inspector.getJobState(payload.jobId)) === 'completed',
-      'manually retried job to complete',
-    );
-  });
+      harness.ports.marketData.getCandlesRange.mockResolvedValue([candle]);
+      harness.startWorker(1);
+      await waitFor(
+        async () =>
+          (await harness.inspector.getJobState(payload.jobId)) === 'completed',
+        'manually retried job to complete',
+      );
+    },
+    DEFAULT_TIMEOUT_MS,
+  );
 
   it('enforces bounded completed retention by configured count and age options', async () => {
     const harness = createHarness(2);

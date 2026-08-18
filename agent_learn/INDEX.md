@@ -1,5 +1,7 @@
 # Agent Learn Index
 
+- [Event Infrastructure Dashboard T046 - 2026-08-18](lessons/event-infrastructure-dashboard-t046-2026-08-18.md): real-Redis serial validation, lifecycle-timeout stabilization, lint `--fix` mutation control, boundary auditing, and owner-specific blocked-gate reporting.
+
 - [Event Infrastructure Dashboard T045 - 2026-08-16](lessons/event-infrastructure-dashboard-t045-2026-08-16.md): prop-driven live Leaderboard composition, exact percentage semantics, safe typed detail loading, lightweight-charts v5 primitive lifecycle, React 19 chart-series state, and honest checkpoint limitations.
 
 - [Event Infrastructure Dashboard T044 - 2026-08-16](lessons/event-infrastructure-dashboard-t044-2026-08-16.md): RED-first Leaderboard table/detail contracts, normalized-rate display, safe detail HTTP states, and lightweight-charts v5 marker mapping/lifecycle seams.
