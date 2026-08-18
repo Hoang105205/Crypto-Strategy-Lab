@@ -10,7 +10,11 @@ export interface INewsProvider {
    * @param coin Optional coin ticker filter (e.g. 'BTC')
    * @param activeCoins Optional active trading coins list for dynamic extraction
    */
-  fetchLatest(limit?: number, coin?: string, activeCoins?: string[]): Promise<RawArticle[]>;
+  fetchLatest(
+    limit?: number,
+    coin?: string,
+    activeCoins?: string[],
+  ): Promise<RawArticle[]>;
 }
 
 /**

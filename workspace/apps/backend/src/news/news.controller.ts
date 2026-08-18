@@ -24,15 +24,28 @@ export class NewsController {
     @Query('coin') coin?: string,
     @Query('coins') coinsStr?: string,
   ) {
-    const rawLimit = limitStr ? parseInt(limitStr, 10) : DEFAULT_NEWS_FETCH_LIMIT;
-    const limit = Math.min(Math.max(isNaN(rawLimit) ? DEFAULT_NEWS_FETCH_LIMIT : rawLimit, 1), 50);
+    const rawLimit = limitStr
+      ? parseInt(limitStr, 10)
+      : DEFAULT_NEWS_FETCH_LIMIT;
+    const limit = Math.min(
+      Math.max(isNaN(rawLimit) ? DEFAULT_NEWS_FETCH_LIMIT : rawLimit, 1),
+      50,
+    );
     const offset = offsetStr ? Math.max(parseInt(offsetStr, 10) || 0, 0) : 0;
     const coins = coinsStr
-      ? coinsStr.split(',').map((c) => c.trim()).filter(Boolean)
+      ? coinsStr
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean)
       : undefined;
 
     const targetCoin = coin && coin.toUpperCase() !== 'ALL' ? coin : undefined;
-    const result = await this.newsService.getLatestNews(limit, offset, targetCoin, coins);
+    const result = await this.newsService.getLatestNews(
+      limit,
+      offset,
+      targetCoin,
+      coins,
+    );
     return {
       success: true,
       data: result.data,
@@ -54,14 +67,23 @@ export class NewsController {
     @Query('timeframe') timeframe: string = '24h',
   ) {
     const coins = coinsStr
-      ? coinsStr.split(',').map((c) => c.trim()).filter(Boolean)
+      ? coinsStr
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean)
       : undefined;
 
     const validTimeframes = ['1h', '24h', '7d'];
-    const activeTimeframe = validTimeframes.includes(timeframe) ? timeframe : '24h';
+    const activeTimeframe = validTimeframes.includes(timeframe)
+      ? timeframe
+      : '24h';
 
     const targetCoin = coin && coin.toUpperCase() !== 'ALL' ? coin : undefined;
-    const result = await this.newsService.getAggregateSentiment(targetCoin, activeTimeframe, coins);
+    const result = await this.newsService.getAggregateSentiment(
+      targetCoin,
+      activeTimeframe,
+      coins,
+    );
     return result;
   }
 }

@@ -123,6 +123,23 @@ model SentimentScore {
   @@index([articleId])
 }
 
+model CrawlerRule {
+  id                 String   @id @default(uuid())
+  domain             String   @unique
+  targetUrl          String
+  containerSelector  String
+  titleSelector      String
+  contentSelector    String
+  linkSelector       String
+  dateSelector       String
+  isActive           Boolean  @default(true)
+  lastDiscoveredAt   DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("crawler_rules")
+}
+
 // ──────────────────────────────────────────────
 // Event Infrastructure — kb/contracts/events.yaml
 // + kb/modules/event-infrastructure.md Section 6
