@@ -9,7 +9,7 @@ export const metadata = {
 export default function NewsPage() {
   return (
     <main
-      className="min-h-screen bg-slate-950 px-4 sm:px-8 lg:px-12 flex justify-center items-center"
+      className="min-h-screen bg-canvas-dark px-4 sm:px-8 lg:px-12 flex justify-center items-center"
       style={{ paddingTop: '40px', paddingBottom: '100px' }}
     >
       <NewsFeed />
