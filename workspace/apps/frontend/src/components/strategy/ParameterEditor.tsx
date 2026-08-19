@@ -70,11 +70,11 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
                 .map((strat) => (
                   <div
                     key={strat.name}
-                    className="p-3 rounded-lg border text-sm font-medium transition-all flex items-center justify-between gap-2 bg-[#1e2329] border-[#fcd535] text-[#fcd535] cursor-default"
+                    className="p-3 rounded-lg border text-sm font-medium transition-all flex items-center justify-between gap-2 min-w-0 bg-[#1e2329] border-[#fcd535] text-[#fcd535] cursor-default"
                   >
                     <span className="truncate">{strat.name}</span>
                     <span 
-                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700"
+                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700 shrink-0"
                       style={{ padding: '0.25rem 0.625rem' }}
                     >
                       {strat.type}
@@ -127,7 +127,7 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
                 <div key={key} className="flex flex-col gap-4">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wide">{key}</label>
                   <div 
-                    className="bg-[#1e2329]/50 border border-transparent rounded-xl text-base font-mono text-gray-100"
+                    className="bg-[#1e2329]/50 border border-transparent rounded-xl text-base font-mono text-gray-100 break-all"
                     style={{ padding: '0.75rem 1.25rem' }}
                   >
                     {String(val ?? '')}

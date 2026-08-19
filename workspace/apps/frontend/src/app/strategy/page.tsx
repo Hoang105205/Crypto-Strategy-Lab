@@ -142,6 +142,12 @@ export default function StrategyBuilderPage() {
     };
   }, []);
 
+  // Reset backtest state when selected strategy changes
+  useEffect(() => {
+    setBacktestStatus('');
+    setTradeResults([]);
+  }, [selectedStrategy?.name]);
+
   const handleSelectStrategy = (strat: StrategyItem) => {
     setSelectedStrategy(strat);
   };
@@ -572,17 +578,17 @@ export default function StrategyBuilderPage() {
 
               {backtestStatus && (
                 <div 
-                  className="bg-[#0ecb81]/10 border border-[#0ecb81]/30 rounded-xl text-sm font-bold text-center text-[#0ecb81] shadow-lg shadow-[#0ecb81]/5 flex items-center justify-center gap-3"
+                  className="bg-[#0ecb81]/10 border border-[#0ecb81]/30 rounded-xl text-sm font-bold text-center text-[#0ecb81] shadow-lg shadow-[#0ecb81]/5 flex items-center justify-center gap-3 min-w-0"
                   style={{ padding: '1rem 1.25rem' }}
                 >
-                  <span className="w-2 h-2 rounded-full bg-[#0ecb81] animate-pulse"></span>
-                  <span>{backtestStatus} for <span className="font-extrabold text-white">{selectedStrategy?.name || 'Selected Strategy'}</span></span>
+                  <span className="w-2 h-2 rounded-full bg-[#0ecb81] animate-pulse shrink-0"></span>
+                  <span className="truncate">{backtestStatus} for <span className="font-extrabold text-white">{selectedStrategy?.name || 'Selected Strategy'}</span></span>
                 </div>
               )}
             </div>
 
             {/* Backtest Results Stacked Layout */}
-            {tradeResults.length > 0 && (
+            {tradeResults.length > 0 ? (
               <div className="flex flex-col gap-6 w-full">
                 {/* Equity Curve Chart */}
                 <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
@@ -596,7 +602,17 @@ export default function StrategyBuilderPage() {
                   <TradeDetailTable trades={tradeResults as any} />
                 </div>
               </div>
-            )}
+            ) : backtestStatus === 'Backtest simulation completed' ? (
+              <div className="flex flex-col gap-4 w-full p-8 bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-xl text-center items-center justify-center">
+                 <svg className="w-12 h-12 text-gray-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                 </svg>
+                 <div className="text-gray-300 font-bold text-lg">No trades executed</div>
+                 <div className="text-gray-500 text-sm max-w-md">
+                   The selected strategy did not generate any trading signals during the specified period. Try adjusting the timeframe or date range.
+                 </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

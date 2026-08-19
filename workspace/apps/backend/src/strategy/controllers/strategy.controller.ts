@@ -5,6 +5,7 @@ import type {
   IJobQueue,
   IEventBus,
   UserBacktestRequestedPayload,
+  IStrategyExecutionPort,
 } from '@crypto-strategy-lab/shared';
 import {
   BacktestSource,
@@ -19,7 +20,7 @@ import { MajorityVoteCombiner } from '../combiners/majority-vote.combiner';
 import { WeightedScoreCombiner } from '../combiners/weighted-score.combiner';
 import { StrategyVersioningService } from '../versioning/strategy-versioning.service';
 import { PrismaService } from '../../database/prisma.service';
-import { IEVENT_BUS, IJOB_QUEUE } from '../../shared/tokens';
+import { IEVENT_BUS, IJOB_QUEUE, ISTRATEGY_EXECUTION_PORT } from '../../shared/tokens';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
 import { UseGuards } from '@nestjs/common';
@@ -34,6 +35,7 @@ export class StrategyController {
     private readonly versioning: StrategyVersioningService,
     @Inject(IJOB_QUEUE) private readonly jobQueue: IJobQueue,
     @Inject(IEVENT_BUS) private readonly eventBus: IEventBus,
+    @Inject(ISTRATEGY_EXECUTION_PORT) private readonly executionPort: IStrategyExecutionPort,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -88,9 +90,24 @@ export class StrategyController {
 
     const children: IStrategy[] = [];
     for (const name of dto.childStrategyNames) {
-      const child = this.registry.get(name);
+      let child = this.registry.get(name);
+      
+      // If not in registry, try resolving from DB (e.g. for user composites)
       if (!child) {
-        throw new HttpException(`Child strategy '${name}' not found in registry`, HttpStatus.NOT_FOUND);
+        const dbVersions = await this.versioning.getVersionsByName(name, userId);
+        if (dbVersions.length > 0) {
+          const latestVersion = dbVersions.reduce((latest, current) => 
+            current.version > latest.version ? current : latest
+          );
+          const executionResult = await this.executionPort.resolveVersion(latestVersion.id);
+          if (executionResult) {
+            child = executionResult.strategy;
+          }
+        }
+      }
+
+      if (!child) {
+        throw new HttpException(`Child strategy '${name}' not found in registry or database`, HttpStatus.NOT_FOUND);
       }
       children.push(child);
     }
@@ -100,7 +117,7 @@ export class StrategyController {
       const weights = dto.combinerWeights || {};
       const sum = Object.values(weights).reduce((acc, w) => acc + (typeof w === 'number' ? w : 0), 0);
       if (Math.abs(sum - 1.0) > 0.001) {
-        throw new HttpException('Weights must sum to 1.0', HttpStatus.BAD_REQUEST);
+        throw new HttpException('Total weights of all strategies must sum to exactly 1.0 (e.g. 0.4 and 0.6)', HttpStatus.BAD_REQUEST);
       }
       combiner = new WeightedScoreCombiner(weights);
     } else {
