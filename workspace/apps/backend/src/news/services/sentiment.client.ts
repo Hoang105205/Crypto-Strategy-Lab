@@ -15,7 +15,9 @@ export class SentimentClient {
   private readonly logger = new Logger(SentimentClient.name);
   private readonly sentimentServiceUrl =
     process.env.SENTIMENT_SERVICE_URL || DEFAULT_SENTIMENT_SERVICE_URL;
-  private readonly timeoutMs = SENTIMENT_CLIENT_TIMEOUT_MS; // Strict SLA timeout per plan.md & ADR-0009
+  private readonly timeoutMs = process.env.SENTIMENT_SERVICE_TIMEOUT_MS
+    ? parseInt(process.env.SENTIMENT_SERVICE_TIMEOUT_MS, 10)
+    : SENTIMENT_CLIENT_TIMEOUT_MS; // Strict SLA timeout per plan.md & ADR-0009
 
   /**
    * Send text to Python FastAPI micro-service for VADER sentiment analysis

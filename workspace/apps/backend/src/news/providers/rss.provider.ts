@@ -6,6 +6,7 @@ import axios from 'axios';
 import {
   RawArticle,
   DEFAULT_NEWS_FETCH_LIMIT,
+  DEFAULT_RSS_FEEDS,
 } from '@crypto-strategy-lab/shared';
 import { INewsProvider } from './news.provider.interface';
 
@@ -13,18 +14,57 @@ import { INewsProvider } from './news.provider.interface';
 export class RSSProvider implements INewsProvider {
   private readonly logger = new Logger(RSSProvider.name);
 
-  // Registered Live RSS Feeds
-  private readonly rssFeeds = [
-    {
-      name: 'CoinDesk RSS',
-      url: 'https://www.coindesk.com/arc/outboundfeeds/rss',
-    },
-    { name: 'CoinTelegraph RSS', url: 'https://cointelegraph.com/rss' },
-    { name: 'Decrypt RSS', url: 'https://decrypt.co/feed' },
-  ];
+  /**
+   * Data-Driven Coin Synonyms dictionary for accurate NLP Entity Recognition
+   */
+  private static readonly COIN_SYNONYMS: Record<string, string[]> = {
+    BTC: ['BITCOIN', 'SATOSHI'],
+    ETH: ['ETHEREUM', 'ETHER'],
+    SOL: ['SOLANA'],
+    BNB: ['BINANCE', 'BNB CHAIN'],
+    XRP: ['RIPPLE'],
+    DOGE: ['DOGECOIN', 'SHIBA'],
+    ADA: ['CARDANO'],
+    AVAX: ['AVALANCHE'],
+    DOT: ['POLKADOT'],
+    LINK: ['CHAINLINK'],
+  };
 
   getName(): string {
     return 'RSS Multi-Feed Provider';
+  }
+
+  /**
+   * Dynamically loads RSS Feeds from process.env.NEWS_RSS_FEEDS (12-Factor Config)
+   * with fallback to standard default crypto RSS feeds.
+   */
+  private getRssFeeds(): { name: string; url: string }[] {
+    const envFeeds = process.env.NEWS_RSS_FEEDS;
+    if (envFeeds) {
+      const urls = envFeeds
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean);
+      if (urls.length > 0) {
+        return urls.map((url) => {
+          let name = 'RSS Feed';
+          if (url.includes('coindesk')) name = 'CoinDesk RSS';
+          else if (url.includes('cointelegraph')) name = 'CoinTelegraph RSS';
+          else if (url.includes('decrypt')) name = 'Decrypt RSS';
+          else {
+            try {
+              const hostname = new URL(url).hostname.replace('www.', '');
+              name = `${hostname.charAt(0).toUpperCase() + hostname.slice(1)} RSS`;
+            } catch {
+              name = 'Custom RSS';
+            }
+          }
+          return { name, url };
+        });
+      }
+    }
+
+    return DEFAULT_RSS_FEEDS;
   }
 
   /**
@@ -39,10 +79,11 @@ export class RSSProvider implements INewsProvider {
       `Fetching latest live RSS news articles (limit: ${limit}, coin: ${coin ?? 'ALL'})`,
     );
     const liveArticles: RawArticle[] = [];
+    const feeds = this.getRssFeeds();
 
-    for (const feedConfig of this.rssFeeds) {
+    for (const feedConfig of feeds) {
       try {
-        const response = await axios.get(feedConfig.url, {
+        const response = await axios.get<string>(feedConfig.url, {
           timeout: 5000,
           headers: {
             'User-Agent':
@@ -167,42 +208,21 @@ export class RSSProvider implements INewsProvider {
    * If no active trading pair matches the article, tags as ['GENERAL'].
    */
   private extractCoins(text: string, activeCoins: string[]): string[] {
-    const coins: string[] = [];
-    const upper = text.toUpperCase();
+    const uppercaseText = text.toUpperCase();
+    const foundCoins: string[] = [];
 
-    // Map common full coin names to ticker symbols
-    const nameAliases: Record<string, string> = {
-      BITCOIN: 'BTC',
-      ETHEREUM: 'ETH',
-      SOLANA: 'SOL',
-      BINANCE: 'BNB',
-      RIPPLE: 'XRP',
-      DOGECOIN: 'DOGE',
-      CARDANO: 'ADA',
-      AVALANCHE: 'AVAX',
-      POLKADOT: 'DOT',
-      CHAINLINK: 'LINK',
-    };
-
-    // Check each active coin symbol or alias
     for (const coin of activeCoins) {
-      const coinUpper = coin.toUpperCase();
-      if (upper.includes(coinUpper)) {
-        coins.push(coinUpper);
+      const cleanCoin = coin.toUpperCase();
+      const tickerMatch = new RegExp(`\\b${cleanCoin}\\b`, 'i').test(text);
+      const synonyms = RSSProvider.COIN_SYNONYMS[cleanCoin] || [];
+      const synonymMatch = synonyms.some((syn) => uppercaseText.includes(syn));
+
+      if ((tickerMatch || synonymMatch) && !foundCoins.includes(cleanCoin)) {
+        foundCoins.push(cleanCoin);
       }
     }
 
-    for (const [name, ticker] of Object.entries(nameAliases)) {
-      if (
-        upper.includes(name) &&
-        activeCoins.includes(ticker) &&
-        !coins.includes(ticker)
-      ) {
-        coins.push(ticker);
-      }
-    }
-
-    // Default to 'GENERAL' instead of coercing to 'BTC'
-    return coins.length > 0 ? Array.from(new Set(coins)) : ['GENERAL'];
+    // Default to 'GENERAL' if no active coin mentioned
+    return foundCoins.length > 0 ? foundCoins : ['GENERAL'];
   }
 }
