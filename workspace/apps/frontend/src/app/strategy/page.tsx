@@ -5,9 +5,10 @@ import {
   StrategyCard,
   ParameterEditor,
   CompositeBuilder,
-  TradeTable,
   TradeItem,
 } from '../../components/strategy';
+import { EquityCurveChart } from '../../components/chart/equity-curve-chart';
+import { TradeDetailTable } from '../../components/trade-detail-table';
 import './strategy-builder.css';
 
 interface StrategyItem {
@@ -575,8 +576,21 @@ export default function StrategyBuilderPage() {
               )}
             </div>
 
+            {/* Equity Curve Chart */}
+            {tradeResults.length > 0 && (
+              <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
+                <h3 className="text-xl font-bold text-gray-100">Equity Curve</h3>
+                <EquityCurveChart trades={tradeResults as any} initialCapital={initialCapital} />
+              </div>
+            )}
+
             {/* Trade Results Table */}
-            <TradeTable trades={tradeResults} />
+            {tradeResults.length > 0 && (
+              <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
+                <h3 className="text-xl font-bold text-gray-100">Trade Details</h3>
+                <TradeDetailTable trades={tradeResults as any} />
+              </div>
+            )}
           </div>
         )}
       </div>

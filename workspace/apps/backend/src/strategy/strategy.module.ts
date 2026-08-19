@@ -9,12 +9,13 @@ import { StrategyController } from './controllers';
 import { EventsModule } from '../events/events.module';
 import { QueueModule } from '../queue/queue.module';
 import { DatabaseModule } from '../database/database.module';
+import { AuthModule } from '../auth/auth.module';
 import { ISTRATEGY_CANDIDATE_PORT, ISTRATEGY_GENERATOR } from '../shared/tokens';
 import { StrategyCandidatePort } from './ports';
 import { StrategyRuntimeModule } from './strategy-runtime.module';
 
 @Module({
-  imports: [DatabaseModule, StrategyRuntimeModule, EventsModule, QueueModule],
+  imports: [DatabaseModule, StrategyRuntimeModule, EventsModule, QueueModule, AuthModule],
   controllers: [StrategyController],
   providers: [
     RandomGenerator,

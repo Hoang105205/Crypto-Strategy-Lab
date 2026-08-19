@@ -59,8 +59,11 @@ describe('StrategyController', () => {
       getVersion: jest.fn(async (id: string) =>
         versions.find((candidate) => candidate.id === id),
       ),
-      getVersionsByName: jest.fn(async (name: string) =>
+      getVersionsByName: jest.fn(async (name: string, userId?: string | null) =>
         versions.filter((candidate) => candidate.name === name),
+      ),
+      getAllVersions: jest.fn(async (userId?: string | null) =>
+        versions,
       ),
     } as unknown as jest.Mocked<StrategyVersioningService>;
 
@@ -88,7 +91,7 @@ describe('StrategyController', () => {
     findBacktestResult = jest.fn<() => Promise<unknown>>();
     prisma = {
       backtestResult: {
-        findUnique: findBacktestResult,
+        findFirst: findBacktestResult,
       },
     } as unknown as PrismaService;
 
@@ -101,8 +104,8 @@ describe('StrategyController', () => {
     );
   });
 
-  it('GET /api/strategies returns all registered strategies', () => {
-    const result = controller.getAllStrategies();
+  it('GET /api/strategies returns all registered strategies', async () => {
+    const result = await controller.getAllStrategies(null);
 
     expect(result.length).toBeGreaterThanOrEqual(2);
     expect(result.some((strategy) => strategy.name === 'MovingAverage')).toBe(
@@ -115,10 +118,11 @@ describe('StrategyController', () => {
       name: 'TestComposite',
       childStrategyNames: ['MovingAverage', 'RelativeStrengthIndex'],
       combinerType: CombinerType.MAJORITY_VOTE,
-    });
+    }, null);
 
     expect(result.strategy.name).toBe('TestComposite');
-    expect(registry.get('TestComposite')).toBeDefined();
+    // Composites are no longer automatically put in the global registry (ADR-0016 compliance)
+    expect(registry.get('TestComposite')).toBeUndefined();
     expect(versioning.createVersion).toHaveBeenCalledTimes(1);
   });
 
@@ -129,7 +133,7 @@ describe('StrategyController', () => {
       timeframe: '1h',
       startDate: new Date(),
       endDate: new Date(),
-    });
+    }, null);
 
     expect(result.status).toBe(JobStatusValue.QUEUED);
     expect(jobQueue.enqueue).toHaveBeenCalledWith(
@@ -156,9 +160,9 @@ describe('StrategyController', () => {
       name: 'TestVersionById',
       childStrategyNames: ['MovingAverage'],
       combinerType: CombinerType.MAJORITY_VOTE,
-    });
+    }, null);
 
-    const version = await controller.getStrategyById(created.strategy.versionId);
+    const version = await controller.getStrategyById(created.strategy.versionId, null);
 
     expect(version.id).toBe(created.strategy.versionId);
     expect(version.name).toBe('TestVersionById');
@@ -171,9 +175,9 @@ describe('StrategyController', () => {
       timeframe: '1h',
       startDate: new Date(),
       endDate: new Date(),
-    });
+    }, null);
 
-    const result = await controller.getStrategyVersions('MovingAverage');
+    const result = await controller.getStrategyVersions('MovingAverage', null);
 
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('MovingAverage');
@@ -187,20 +191,26 @@ describe('StrategyController', () => {
       winRate: 0.6,
     });
 
-    const result = await controller.getBacktestResult(id);
+    const result = await controller.getBacktestResult(id, null);
 
     expect(result.id).toBe(id);
     expect(result.totalReturn).toBe(10.5);
     expect(result.winRate).toBe(0.6);
-    expect(prisma.backtestResult.findUnique).toHaveBeenCalledWith({
-      where: { jobId: id },
+    expect(prisma.backtestResult.findFirst).toHaveBeenCalledWith({
+      where: { 
+        jobId: id,
+        OR: [
+          { userId: null },
+          { userId: null },
+        ],
+      },
     });
   });
 
   it('GET /api/strategies/backtest/:id throws 404 when absent', async () => {
     findBacktestResult.mockResolvedValue(null);
 
-    await expect(controller.getBacktestResult('invalid_id')).rejects.toThrow(
+    await expect(controller.getBacktestResult('invalid_id', null)).rejects.toThrow(
       "BacktestResult 'invalid_id' not found",
     );
   });

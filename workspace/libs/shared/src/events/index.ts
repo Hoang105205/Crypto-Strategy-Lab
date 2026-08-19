@@ -41,6 +41,7 @@ interface BacktestRequestedPayloadBase {
   startDate: Date;
   endDate: Date;
   backtestConfig: BacktestConfig;
+  userId: string | null;
 }
 
 export interface UserBacktestRequestedPayload extends BacktestRequestedPayloadBase {
