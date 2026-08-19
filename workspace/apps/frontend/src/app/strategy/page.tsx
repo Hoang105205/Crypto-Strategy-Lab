@@ -55,6 +55,18 @@ export default function StrategyBuilderPage() {
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyItem | null>(null);
   const [activeTab, setActiveTab] = useState<'catalog' | 'composite' | 'backtest'>('catalog');
+  const [strategyPage, setStrategyPage] = useState(1);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState('');
+  const STRATEGIES_PER_PAGE = 8;
+  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedCatalogSearch(catalogSearch);
+      setStrategyPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [catalogSearch]);
   
   // Backtest form state
   const [pair, setPair] = useState('BTCUSDT');
@@ -92,7 +104,11 @@ export default function StrategyBuilderPage() {
         : (-0.01 - (i * 0.002)) * Math.sqrt(tfMultiplier);
       const exitPrice = entryPrice * (1 + changePercent);
       const qty = (capital * 0.15) / entryPrice;
-      const pnl = (exitPrice - entryPrice) * qty;
+      
+      const side = (i + seed) % 3 === 0 ? 'SHORT' : 'LONG';
+      const pnl = side === 'LONG' 
+        ? (exitPrice - entryPrice) * qty
+        : (entryPrice - exitPrice) * qty;
 
       const durationMs = 3600000 * tfMultiplier * (1.5 + (i % 3));
       const entry = new Date(Date.now() - (count - i) * 86400000 * (tfMultiplier > 4 ? 2 : 1));
@@ -103,7 +119,7 @@ export default function StrategyBuilderPage() {
         exitDate: exit.toISOString().replace('T', ' ').substring(0, 16),
         entryPrice,
         exitPrice,
-        side: (i + seed) % 3 === 0 ? 'SHORT' : 'LONG',
+        side,
         quantity: qty,
         pnl,
       });
@@ -129,6 +145,10 @@ export default function StrategyBuilderPage() {
   const handleSelectStrategy = (strat: StrategyItem) => {
     setSelectedStrategy(strat);
   };
+
+  const filteredStrategies = strategies.filter(s => s.name.toLowerCase().includes(debouncedCatalogSearch.toLowerCase()));
+  const totalStrategyPages = Math.ceil(filteredStrategies.length / STRATEGIES_PER_PAGE);
+  const currentStrategies = filteredStrategies.slice((strategyPage - 1) * STRATEGIES_PER_PAGE, strategyPage * STRATEGIES_PER_PAGE);
 
   const handleBuildComposite = async (payload: {
     name: string;
@@ -368,9 +388,18 @@ export default function StrategyBuilderPage() {
         {activeTab === 'catalog' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 w-full">
             <div className="space-y-6 w-full">
-              <h2 className="text-base font-bold text-gray-300 uppercase tracking-wider mb-6">Available Strategy Plugins</h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-base font-bold text-gray-300 uppercase tracking-wider">Available Strategy Plugins</h2>
+                <input
+                  type="text"
+                  placeholder="Search catalog..."
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  className="bg-[#0b0e11] border border-[#2b3139] rounded-lg px-4 py-2 text-sm text-gray-100 focus:outline-none focus:border-[#fcd535] w-64"
+                />
+              </div>
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                {strategies.map((strat) => (
+                {currentStrategies.map((strat) => (
                   <StrategyCard
                     key={strat.name}
                     name={strat.name}
@@ -386,6 +415,33 @@ export default function StrategyBuilderPage() {
                   />
                 ))}
               </div>
+              
+              {totalStrategyPages > 1 && (
+                <div className="flex justify-between items-center bg-[#1e2329] p-4 rounded-lg border border-[#2b3139] mt-6">
+                  <div className="text-sm text-gray-400 font-mono">
+                    Showing {(strategyPage - 1) * STRATEGIES_PER_PAGE + 1}-{Math.min(strategyPage * STRATEGIES_PER_PAGE, strategies.length)} of {strategies.length} strategies
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setStrategyPage((p) => Math.max(1, p - 1))}
+                      disabled={strategyPage === 1}
+                      className="px-4 py-2 bg-[#0b0e11] border border-[#2b3139] rounded-md text-sm text-[#fcd535] hover:bg-[#2b3139] disabled:opacity-30 disabled:hover:bg-[#0b0e11] transition-colors"
+                    >
+                      PREVIOUS
+                    </button>
+                    <span className="text-sm text-gray-300 font-mono">
+                      Page {strategyPage} / {totalStrategyPages}
+                    </span>
+                    <button
+                      onClick={() => setStrategyPage((p) => Math.min(totalStrategyPages, p + 1))}
+                      disabled={strategyPage === totalStrategyPages}
+                      className="px-4 py-2 bg-[#0b0e11] border border-[#2b3139] rounded-md text-sm text-[#fcd535] hover:bg-[#2b3139] disabled:opacity-30 disabled:hover:bg-[#0b0e11] transition-colors"
+                    >
+                      NEXT
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Parameter Inspector */}
@@ -576,19 +632,20 @@ export default function StrategyBuilderPage() {
               )}
             </div>
 
-            {/* Equity Curve Chart */}
+            {/* Backtest Results Stacked Layout */}
             {tradeResults.length > 0 && (
-              <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
-                <h3 className="text-xl font-bold text-gray-100">Equity Curve</h3>
-                <EquityCurveChart trades={tradeResults as any} initialCapital={initialCapital} />
-              </div>
-            )}
+              <div className="flex flex-col gap-6 w-full">
+                {/* Equity Curve Chart */}
+                <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
+                  <h3 className="text-xl font-bold text-gray-100">Equity Curve</h3>
+                  <EquityCurveChart trades={tradeResults as any} initialCapital={initialCapital} />
+                </div>
 
-            {/* Trade Results Table */}
-            {tradeResults.length > 0 && (
-              <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
-                <h3 className="text-xl font-bold text-gray-100">Trade Details</h3>
-                <TradeDetailTable trades={tradeResults as any} />
+                {/* Trade Results Table */}
+                <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
+                  <h3 className="text-xl font-bold text-gray-100">Trade Details</h3>
+                  <TradeDetailTable trades={tradeResults as any} />
+                </div>
               </div>
             )}
           </div>

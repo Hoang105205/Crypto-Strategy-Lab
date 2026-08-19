@@ -77,7 +77,7 @@ export function AppShell({ children }: AppShellProps) {
 
       <div
         data-testid="app-shell-container"
-        className="mx-auto max-w-[80%] w-full px-6 py-8 md:px-8"
+        className="mx-auto max-w-[90%] w-full px-6 py-8 md:px-8"
       >
         {children}
       </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Trade } from '@crypto-strategy-lab/shared';
 
 interface TradeDetailTableProps {
@@ -21,9 +22,16 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
     );
   }
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const TRADES_PER_PAGE = 10;
+
   const wins = trades.filter((t) => t.pnl > 0).length;
   const losses = trades.filter((t) => t.pnl <= 0).length;
   const totalProfit = trades.reduce((sum, t) => sum + t.pnl, 0);
+
+  const totalPages = Math.ceil(trades.length / TRADES_PER_PAGE);
+  const startIndex = (currentPage - 1) * TRADES_PER_PAGE;
+  const currentTrades = trades.slice(startIndex, startIndex + TRADES_PER_PAGE);
 
   return (
     <div className="space-y-4">
@@ -41,7 +49,10 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
         <div className="rounded-lg bg-surface-card p-4">
           <div className="text-sm text-body-secondary">Total Profit</div>
           <div className={`text-xl font-bold ${totalProfit >= 0 ? 'text-trading-up' : 'text-trading-down'}`}>
-            {totalProfit >= 0 ? '+' : ''}{totalProfit.toFixed(2)}%
+            {totalProfit >= 0 ? '+$' : '-$'}{Math.abs(totalProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </div>
+          <div className="text-xs text-body-secondary">
+            Cumulative Return
           </div>
         </div>
         <div className="rounded-lg bg-surface-card p-4">
@@ -70,9 +81,9 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
             </tr>
           </thead>
           <tbody>
-            {trades.map((trade, index) => (
-              <tr key={index} className="border-b border-border/50 hover:bg-canvas-dark/50">
-                <td className="px-4 py-3 text-body-secondary">{index + 1}</td>
+            {currentTrades.map((trade, index) => (
+              <tr key={startIndex + index} className="border-b border-border/50 hover:bg-canvas-dark/50">
+                <td className="px-4 py-3 text-body-secondary">{startIndex + index + 1}</td>
                 <td className="px-4 py-3 text-body">
                   {new Date(trade.entryDate).toLocaleString()}
                 </td>
@@ -106,13 +117,40 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
                   {trade.slippage != null ? trade.slippage.toFixed(2) : '—'}
                 </td>
                 <td className={`px-4 py-3 text-right font-mono font-semibold ${trade.pnl >= 0 ? 'text-trading-up' : 'text-trading-down'}`}>
-                  {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}%
+                  {trade.pnl >= 0 ? '+$' : '-$'}{Math.abs(trade.pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center bg-[#1e2329] p-4 rounded-lg border border-[#2b3139]">
+          <div className="text-sm text-gray-400 font-mono">
+            Showing {startIndex + 1}-{Math.min(startIndex + TRADES_PER_PAGE, trades.length)} of {trades.length} trades
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-[#0b0e11] border border-[#2b3139] rounded-md text-sm text-[#fcd535] hover:bg-[#2b3139] disabled:opacity-30 disabled:hover:bg-[#0b0e11] transition-colors"
+            >
+              PREVIOUS
+            </button>
+            <span className="text-sm text-gray-300 font-mono">
+              Page {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-[#0b0e11] border border-[#2b3139] rounded-md text-sm text-[#fcd535] hover:bg-[#2b3139] disabled:opacity-30 disabled:hover:bg-[#0b0e11] transition-colors"
+            >
+              NEXT
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
