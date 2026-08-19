@@ -281,6 +281,7 @@ export class StrategyLoopService {
       backtestConfig: context.config.backtestConfig,
       source: BacktestSource.SEARCH_LOOP,
       loopRunId: context.loopRunId,
+      userId: null,
     } as const;
 
     try {

@@ -22,8 +22,12 @@ import { PrismaService } from '../../database/prisma.service';
 import { IEVENT_BUS, IJOB_QUEUE } from '../../shared/tokens';
 import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
+import { UseGuards } from '@nestjs/common';
+import { SupabaseJwtGuard } from '../../auth/supabase-jwt.guard';
+import { CurrentUser } from '../../auth/current-user.decorator';
 
 @Controller('api/strategies')
+@UseGuards(SupabaseJwtGuard)
 export class StrategyController {
   constructor(
     private readonly registry: StrategyRegistry,
@@ -34,26 +38,50 @@ export class StrategyController {
   ) {}
 
   @Get()
-  getAllStrategies() {
-    const strategies = this.registry.getAll();
-    return strategies.map((s) => ({
+  async getAllStrategies(@CurrentUser() userId: string | null) {
+    // 1. Get system strategies from global registry
+    const registryStrategies = this.registry.getAll().map((s) => ({
       name: s.getName(),
       type: s.getType(),
       parameters: s.getParameters(),
     }));
+
+    // 2. Get user strategies from DB (latest version per name)
+    const dbVersions = await this.versioning.getAllVersions(userId);
+    const latestVersions = new Map<string, any>();
+    for (const v of dbVersions) {
+      if (!latestVersions.has(v.name) || latestVersions.get(v.name).version < v.version) {
+        latestVersions.set(v.name, {
+          name: v.name,
+          type: v.strategyType,
+          parameters: v.parameters,
+        });
+      }
+    }
+
+    // 3. Merge them
+    const result = new Map<string, any>();
+    for (const s of registryStrategies) {
+      result.set(s.name, s);
+    }
+    for (const [name, s] of latestVersions.entries()) {
+      result.set(name, s);
+    }
+
+    return Array.from(result.values());
   }
 
   @Delete(':name')
-  deleteStrategy(@Param('name') name: string) {
-    const deleted = this.registry.unregister(name);
-    if (!deleted) {
-      throw new HttpException(`Strategy '${name}' not found`, HttpStatus.NOT_FOUND);
+  async deleteStrategy(@Param('name') name: string, @CurrentUser() userId: string | null) {
+    if (this.registry.has(name)) {
+      throw new HttpException(`Cannot delete system strategy '${name}'`, HttpStatus.FORBIDDEN);
     }
-    return { message: `Strategy '${name}' deleted successfully` };
+    // Note: User strategies in DB are immutable snapshots (ADR-0008).
+    throw new HttpException(`Strategy deletion is not permitted`, HttpStatus.FORBIDDEN);
   }
 
   @Post('composite')
-  async createComposite(@Body() dto: CreateCompositeDto) {
+  async createComposite(@Body() dto: CreateCompositeDto, @CurrentUser() userId: string | null) {
     if (!dto || !dto.name || !dto.childStrategyNames || dto.childStrategyNames.length === 0) {
       throw new HttpException('Invalid composite configuration payload', HttpStatus.BAD_REQUEST);
     }
@@ -75,12 +103,13 @@ export class StrategyController {
     }
 
     if (this.registry.has(dto.name)) {
-      this.registry.unregister(dto.name);
+      throw new HttpException(`Cannot overwrite system strategy '${dto.name}'`, HttpStatus.FORBIDDEN);
     }
 
-    const composite = new CompositeStrategy(dto.name, children, combiner, this.registry);
+    // Do not pass this.registry to avoid exposing user composite to the global memory registry
+    const composite = new CompositeStrategy(dto.name, children, combiner);
 
-    const version = await this.versioning.createVersion(composite);
+    const version = await this.versioning.createVersion(composite, undefined, userId);
 
     return {
       message: 'Composite strategy registered successfully',
@@ -94,18 +123,31 @@ export class StrategyController {
 
   @Post('backtest')
   @HttpCode(HttpStatus.ACCEPTED)
-  async requestBacktest(@Body() dto: RequestBacktestDto) {
+  async requestBacktest(@Body() dto: RequestBacktestDto, @CurrentUser() userId: string | null) {
     if (!dto || !dto.strategyName || !dto.pair || !dto.timeframe) {
       throw new HttpException('Missing required backtest parameters', HttpStatus.BAD_REQUEST);
     }
 
+    let version;
     const strategy = this.registry.get(dto.strategyName);
-    if (!strategy) {
-      throw new HttpException(`Strategy '${dto.strategyName}' not found`, HttpStatus.BAD_REQUEST);
+    
+    if (strategy) {
+      // It's a system strategy in the global registry, create a snapshot of its current state
+      version = await this.versioning.createVersion(strategy, undefined, userId);
+    } else {
+      // Not in global registry, might be a user-created composite in the DB
+      const dbVersions = await this.versioning.getVersionsByName(dto.strategyName, userId);
+      if (dbVersions.length > 0) {
+        // Pick the latest version
+        version = dbVersions.reduce((latest, current) => 
+          current.version > latest.version ? current : latest
+        );
+      }
     }
 
-    // Persist immutable snapshot version
-    const version = await this.versioning.createVersion(strategy);
+    if (!version) {
+      throw new HttpException(`Strategy '${dto.strategyName}' not found`, HttpStatus.BAD_REQUEST);
+    }
     const correlationId = randomUUID();
     const jobId = randomUUID();
 
@@ -124,6 +166,7 @@ export class StrategyController {
       },
       source: BacktestSource.USER,
       loopRunId: null,
+      userId,
     };
 
     try {
@@ -149,9 +192,15 @@ export class StrategyController {
   }
 
   @Get('backtest/:id')
-  async getBacktestResult(@Param('id') id: string) {
-    const result = await this.prisma.backtestResult.findUnique({
-      where: { jobId: id },
+  async getBacktestResult(@Param('id') id: string, @CurrentUser() userId: string | null) {
+    const result = await this.prisma.backtestResult.findFirst({
+      where: { 
+        jobId: id,
+        OR: [
+          { userId: null },
+          { userId: userId },
+        ],
+      },
     });
     if (!result) {
       throw new HttpException(`BacktestResult '${id}' not found`, HttpStatus.NOT_FOUND);
@@ -160,14 +209,14 @@ export class StrategyController {
   }
 
   @Get(':id/versions')
-  async getStrategyVersions(@Param('id') id: string) {
-    const versions = await this.versioning.getVersionsByName(id);
+  async getStrategyVersions(@Param('id') id: string, @CurrentUser() userId: string | null) {
+    const versions = await this.versioning.getVersionsByName(id, userId);
     return versions;
   }
 
   @Get(':id')
-  async getStrategyById(@Param('id') id: string) {
-    const version = await this.versioning.getVersion(id);
+  async getStrategyById(@Param('id') id: string, @CurrentUser() userId: string | null) {
+    const version = await this.versioning.getVersion(id, userId);
     if (!version) {
       throw new HttpException(`Strategy version '${id}' not found`, HttpStatus.NOT_FOUND);
     }

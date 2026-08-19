@@ -103,18 +103,21 @@ describe('StrategyVersioningService', () => {
       combinerWeights: null,
       createdAt: new Date('2026-08-14'),
     };
-    mockPrisma.strategyVersion.findUnique.mockResolvedValue(dbRecord);
+    mockPrisma.strategyVersion.findFirst.mockResolvedValue(dbRecord);
 
     const version = await service.getVersion('uuid-002');
     expect(version).toBeDefined();
     expect(version!.name).toBe('TestRSI');
-    expect(mockPrisma.strategyVersion.findUnique).toHaveBeenCalledWith({
-      where: { id: 'uuid-002' },
+    expect(mockPrisma.strategyVersion.findFirst).toHaveBeenCalledWith({
+      where: { 
+        id: 'uuid-002',
+        OR: [{ userId: null }, { userId: null }] 
+      },
     });
   });
 
   it('should return undefined for non-existent version', async () => {
-    mockPrisma.strategyVersion.findUnique.mockResolvedValue(null);
+    mockPrisma.strategyVersion.findFirst.mockResolvedValue(null);
 
     const version = await service.getVersion('non-existent');
     expect(version).toBeUndefined();

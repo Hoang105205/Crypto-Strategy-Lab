@@ -22,14 +22,16 @@ export class StrategyVersioningService {
   createVersion(
     strategy: IStrategy,
     parentVersionId?: string,
+    userId: string | null = null,
   ): Promise<StrategyVersion> {
-    return this.createSnapshot(strategy, parentVersionId, new Set());
+    return this.createSnapshot(strategy, parentVersionId, new Set(), userId);
   }
 
   private async createSnapshot(
     strategy: IStrategy,
     parentVersionId: string | undefined,
     ancestors: Set<IStrategy>,
+    userId: string | null,
   ): Promise<StrategyVersion> {
     if (ancestors.has(strategy)) {
       throw new Error('Cyclic composite strategy cannot be materialized');
@@ -48,6 +50,7 @@ export class StrategyVersioningService {
           child,
           undefined,
           nextAncestors,
+          userId,
         );
         childVersionIds.push(childVersion.id);
       }
@@ -71,6 +74,7 @@ export class StrategyVersioningService {
           : null,
         combinerWeights:
           isComposite && params.weights ? (params.weights as any) : undefined,
+        userId,
       },
     });
 
@@ -88,6 +92,7 @@ export class StrategyVersioningService {
       combinerWeights: dbRecord.combinerWeights as
         Record<string, number> | undefined,
       createdAt: dbRecord.createdAt,
+      userId: dbRecord.userId,
     };
 
     // Cache for fast subsequent reads
@@ -101,15 +106,25 @@ export class StrategyVersioningService {
   /**
    * Retrieve a StrategyVersion by ID (cache-first, DB fallback).
    */
-  async getVersion(id: string): Promise<StrategyVersion | undefined> {
-    // Check cache first
+  async getVersion(id: string, userId: string | null = null): Promise<StrategyVersion | undefined> {
+    // Check cache first - ensure the cached version belongs to this user or is system
     if (this.cache.has(id)) {
-      return this.cache.get(id);
+      const cached = this.cache.get(id)!;
+      if (!cached.userId || cached.userId === userId) {
+        return cached;
+      }
+      return undefined;
     }
 
     // Fallback to database
-    const dbRecord = await this.prisma.strategyVersion.findUnique({
-      where: { id },
+    const dbRecord = await this.prisma.strategyVersion.findFirst({
+      where: { 
+        id,
+        OR: [
+          { userId: null },
+          { userId: userId },
+        ],
+      },
     });
     if (!dbRecord) return undefined;
 
@@ -121,8 +136,14 @@ export class StrategyVersioningService {
   /**
    * Retrieve all StrategyVersions from the database.
    */
-  async getAllVersions(): Promise<StrategyVersion[]> {
+  async getAllVersions(userId: string | null = null): Promise<StrategyVersion[]> {
     const records = await this.prisma.strategyVersion.findMany({
+      where: {
+        OR: [
+          { userId: null },
+          { userId: userId },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
     });
     return records.map((r) => this.mapDbToVersion(r));
@@ -131,9 +152,15 @@ export class StrategyVersioningService {
   /**
    * Retrieve all versions of a strategy by name.
    */
-  async getVersionsByName(name: string): Promise<StrategyVersion[]> {
+  async getVersionsByName(name: string, userId: string | null = null): Promise<StrategyVersion[]> {
     const records = await this.prisma.strategyVersion.findMany({
-      where: { name },
+      where: { 
+        name,
+        OR: [
+          { userId: null },
+          { userId: userId },
+        ],
+      },
       orderBy: { version: 'asc' },
     });
     return records.map((r) => this.mapDbToVersion(r));
@@ -168,6 +195,7 @@ export class StrategyVersioningService {
       combinerWeights: dbRecord.combinerWeights as
         Record<string, number> | undefined,
       createdAt: dbRecord.createdAt,
+      userId: dbRecord.userId,
     };
   }
 }

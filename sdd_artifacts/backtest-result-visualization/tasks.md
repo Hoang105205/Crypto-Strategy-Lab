@@ -16,7 +16,7 @@
 **Purpose**: Project initialization and basic structure
 
 - [x] T001 Verify project structure per implementation plan (Frontend and Backend apps exist).
-- [ ] T002 Verify `SupabaseJwtGuard` and `@CurrentUser` are available from `@crypto-strategy-lab/shared` or backend shared modules.
+- [x] T002 Verify `SupabaseJwtGuard` and `@CurrentUser` are available from `@crypto-strategy-lab/shared` or backend shared modules.
 
 ---
 
@@ -40,8 +40,8 @@
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] Thêm decorator `@CurrentUser()` (từ Auth Guard) vào các hàm API của `apps/backend/src/strategy/controllers/strategy.controller.ts`.
-- [ ] T006 [US1] Sửa các query Prisma (`findUnique`, `findMany`...) trong `strategy.controller.ts` để thêm bộ lọc `WHERE userId IS NULL OR userId = :currentUserId`.
+- [x] T005 [US1] Thêm decorator `@CurrentUser()` (từ Auth Guard) vào các hàm API của `apps/backend/src/strategy/controllers/strategy.controller.ts`.
+- [x] T006 [US1] Sửa các query Prisma (`findUnique`, `findMany`...) trong `strategy.controller.ts` để thêm bộ lọc `WHERE userId IS NULL OR userId = :currentUserId`.
 
 **Checkpoint**: User Story 1 should be fully functional and testable independently
 
@@ -54,9 +54,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T007 [US2] Update `BacktesterService.run()` trong `apps/backend/src/strategy/backtester/backtester.service.ts` để tính toán `stopLoss`, `takeProfit`, `transactionCost`, `slippage`, `volumeUsd` cho từng `Trade`.
-- [ ] T008 [P] [US2] Update file test `apps/backend/src/strategy/backtester/tests/backtester.spec.ts` để bổ sung test case cho các công thức tính toán mới.
-- [ ] T009 [P] [US2] Sửa component `TradeDetailTable` tại `apps/frontend/src/components/trade-detail-table.tsx` để hiển thị các cột SL, TP, Slippage, Cost, Vol.
+- [x] T007 [US2] Update `BacktesterService.run()` trong `apps/backend/src/strategy/backtester/backtester.service.ts` để tính toán `stopLoss`, `takeProfit`, `transactionCost`, `slippage`, `volumeUsd` cho từng `Trade`.
+- [x] T008 [P] [US2] Update file test `apps/backend/src/strategy/backtester/tests/backtester.spec.ts` để bổ sung test case cho các công thức tính toán mới.
+- [x] T009 [P] [US2] Sửa component `TradeDetailTable` tại `apps/frontend/src/components/trade-detail-table.tsx` để hiển thị các cột SL, TP, Slippage, Cost, Vol.
 
 **Checkpoint**: User Story 2 should be fully functional and testable independently
 
@@ -69,7 +69,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T010 [US3] Tích hợp component `EquityCurveChart` vào trang Strategy Builder UI tại `apps/frontend/src/app/strategy/page.tsx` (hoặc page tương ứng) để nhận dữ liệu từ BacktestResult và vẽ đồ thị.
+- [x] T010 [US3] Tích hợp component `EquityCurveChart` và `TradeDetailTable` vào trang Strategy Builder UI tại `apps/frontend/src/app/strategy/page.tsx` (hoặc page tương ứng) để nhận dữ liệu từ `BacktestResult` và vẽ đồ thị.
 
 ---
 
@@ -112,3 +112,24 @@
 2. Add US1 → Test independently → Deploy (MVP!)
 3. Add US2 → Test independently → Deploy
 4. Each story adds value without breaking previous stories
+
+---
+
+## Phase N: Convergence
+
+**Purpose**: Close gaps between specification and implementation
+**Generated**: 2026-08-19 by /hoang-sdd-converge
+
+### Critical Gaps
+- [x] CV001 ❌ [missing] Implement [FR-002] — spec requires filtering `GET /api/strategies` by `userId`, but `getAllStrategies` returns `this.registry.getAll()` exposing private composites.
+- [x] CV002 ❌ [missing] Implement Ownership Check — `deleteStrategy` unregisters any strategy by name from the global registry without checking ownership.
+- [x] CV003 ❌ [contradicts] Fix Global Override — `createComposite` overwrites existing global strategies in the registry without ownership check.
+
+### High Gaps
+(None)
+
+### Medium Gaps
+(None)
+
+### Low Gaps
+(None)
