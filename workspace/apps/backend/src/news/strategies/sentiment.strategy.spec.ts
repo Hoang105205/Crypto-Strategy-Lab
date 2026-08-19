@@ -73,6 +73,8 @@ describe('NewsSentimentStrategy', () => {
     expect(mockNewsService.getAggregateSentiment).toHaveBeenCalledWith(
       'BTC',
       '1h',
+      undefined,
+      expect.any(Date),
     );
   });
 
