@@ -26,14 +26,34 @@ entities:
       model: string # 'VADER'
       scoredAt: string (ISO8601)
 
+  CrawlerRule:
+    fields:
+      id: string (uuid)
+      domain: string # e.g. 'decrypt.co'
+      targetUrl: string # e.g. 'https://decrypt.co/news'
+      containerSelector: string # e.g. 'article.post-card'
+      titleSelector: string # e.g. 'h3.post-title'
+      contentSelector: string # e.g. 'p.post-excerpt'
+      linkSelector: string # e.g. 'a.story-link'
+      dateSelector: string # e.g. 'time'
+      isActive: boolean # default true
+      lastDiscoveredAt: string (ISO8601)
+      createdAt: string (ISO8601)
+      updatedAt: string (ISO8601)
+
 interfaces:
   INewsProvider:
     methods:
-      - fetchLatest(limit?: number, coin?: string): Promise<RawArticle[]>
+      - fetchLatest(limit?: number, coin?: string, activeCoins?: string[]): Promise<RawArticle[]>
   
   SentimentClient:
     methods:
       - analyzeText(text: string): Promise<SentimentResult>
+
+  IAdaptiveCrawler:
+    methods:
+      - discoverSelectors(htmlSample: string, domain: string): Promise<CrawlerRule>
+      - extractArticles(html: string, rule: CrawlerRule, activeCoins?: string[]): Promise<RawArticle[]>
 
 endpoints:
   - method: GET

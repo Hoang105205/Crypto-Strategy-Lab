@@ -232,6 +232,61 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const getPaginationItems = (current: number, total: number): (number | string)[] => {
+    if (total <= 12) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+
+    const leftEnd = [1, 2, 3];
+    const rightEnd = [total - 2, total - 1, total];
+
+    // Case 1: Close to start (current <= 4)
+    if (current <= 4) {
+      const leftBlock = Array.from({ length: Math.max(current + 1, 4) }, (_, i) => i + 1);
+      return [...leftBlock, 'ellipsis-right', ...rightEnd];
+    }
+
+    // Case 2: Close to end (current >= total - 3)
+    if (current >= total - 3) {
+      const rightBlockStart = Math.min(current - 1, total - 3);
+      const rightBlock = Array.from({ length: total - rightBlockStart + 1 }, (_, i) => rightBlockStart + i);
+      return [...leftEnd, 'ellipsis-left', ...rightBlock];
+    }
+
+    // Case 3: In the middle (e.g. current = 8 in 15 pages -> 1, 2, 3 ... 7, 8, 9 ... 13, 14, 15)
+    const middle = [current - 1, current, current + 1];
+    const hasLeftEllipsis = middle[0] > 4;
+    const hasRightEllipsis = middle[middle.length - 1] < total - 3;
+
+    const items: (number | string)[] = [];
+
+    if (hasLeftEllipsis) {
+      items.push(...leftEnd, 'ellipsis-left');
+    } else {
+      for (let p = 1; p < middle[0]; p++) items.push(p);
+    }
+
+    items.push(...middle);
+
+    if (hasRightEllipsis) {
+      items.push('ellipsis-right', ...rightEnd);
+    } else {
+      for (let p = middle[middle.length - 1] + 1; p <= total; p++) items.push(p);
+    }
+
+    // Deduplicate
+    const uniqueItems: (number | string)[] = [];
+    for (const item of items) {
+      if (typeof item === 'number') {
+        if (!uniqueItems.includes(item)) uniqueItems.push(item);
+      } else {
+        uniqueItems.push(item);
+      }
+    }
+
+    return uniqueItems;
+  };
+
   const handleRetry = () => {
     setLoading(true);
     setFetchError(null);
@@ -611,35 +666,48 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
 
           {/* 4. News Pagination / Load More Selector Bar */}
           {paginationMode === 'pages' ? (
-            <div className="flex items-center justify-center gap-2 w-full flex-wrap" style={{ marginTop: '40px', marginBottom: '60px' }}>
+            <div className="flex items-center justify-center gap-1.5 w-full flex-wrap" style={{ marginTop: '40px', marginBottom: '60px' }}>
               <button
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage <= 1}
                 className="flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-semibold bg-[#1e2329] border border-[#2b313a] text-[#eaecef] hover:bg-[#2b313a] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0"
-                style={{ height: '42px', minWidth: '88px', paddingLeft: '18px', paddingRight: '18px' }}
+                style={{ height: '40px', minWidth: '80px', paddingLeft: '14px', paddingRight: '14px' }}
               >
                 ‹ Prev
               </button>
 
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-                <button
-                  key={pageNum}
-                  onClick={() => handlePageChange(pageNum)}
-                  className={`w-10 h-10 rounded-lg text-sm font-bold transition-all cursor-pointer ${
-                    pageNum === currentPage
-                      ? 'bg-[#fcd535] text-[#181a20] border border-[#fcd535] shadow-sm'
-                      : 'bg-[#1e2329] border border-[#2b313a] text-[#929aa5] hover:text-[#eaecef] hover:bg-[#2b313a]'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              ))}
+              {getPaginationItems(currentPage, totalPages).map((item, idx) => {
+                if (typeof item === 'string') {
+                  return (
+                    <span
+                      key={`ellipsis-${idx}`}
+                      className="flex items-center justify-center w-8 h-10 text-sm font-bold text-[#929aa5] select-none"
+                    >
+                      ...
+                    </span>
+                  );
+                }
+
+                return (
+                  <button
+                    key={item}
+                    onClick={() => handlePageChange(item)}
+                    className={`w-10 h-10 rounded-lg text-sm font-bold transition-all cursor-pointer ${
+                      item === currentPage
+                        ? 'bg-[#fcd535] text-[#181a20] border border-[#fcd535] shadow-sm'
+                        : 'bg-[#1e2329] border border-[#2b313a] text-[#929aa5] hover:text-[#eaecef] hover:bg-[#2b313a]'
+                    }`}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
 
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage >= totalPages}
                 className="flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-semibold bg-[#1e2329] border border-[#2b313a] text-[#eaecef] hover:bg-[#2b313a] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shrink-0"
-                style={{ height: '42px', minWidth: '88px', paddingLeft: '18px', paddingRight: '18px' }}
+                style={{ height: '40px', minWidth: '80px', paddingLeft: '14px', paddingRight: '14px' }}
               >
                 Next ›
               </button>

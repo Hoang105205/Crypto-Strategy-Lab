@@ -10,6 +10,7 @@ import { DashboardGrid } from '../components/dashboard/dashboard-grid';
 import { LeaderboardPreview } from '../components/dashboard/leaderboard-preview';
 import { LoopStatusPanel } from '../components/dashboard/loop-status-panel';
 import { QueueHealthCard } from '../components/dashboard/queue-health-card';
+import { ProtectedRoute } from '../components/auth/protected-route';
 import { useDashboardSummary } from '../hooks/use-dashboard-summary';
 import { DEFAULT_PAIR } from '../lib/constants';
 import { apiClient, type StartLoopRequest } from '../services/api-client';
@@ -39,8 +40,9 @@ export default function Home() {
   }, [pair]);
 
   return (
-    <main className="min-h-screen bg-canvas-dark">
-      <DashboardGrid
+    <ProtectedRoute>
+      <main className="min-h-screen bg-canvas-dark">
+        <DashboardGrid
         pair={pair}
         onPairChange={setPair}
         loopPanel={
@@ -78,6 +80,7 @@ export default function Home() {
           />
         }
       />
-    </main>
+      </main>
+    </ProtectedRoute>
   );
 }

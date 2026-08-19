@@ -2,18 +2,19 @@
 // Owner: Thuan | See: ADR-0009, kb/modules/news-sentiment.md Section 8
 
 import { Injectable, Logger } from '@nestjs/common';
-import { 
-  SentimentResult, 
-  SentimentLabel, 
-  SENTIMENT_CLIENT_TIMEOUT_MS, 
+import {
+  SentimentResult,
+  SentimentLabel,
+  SENTIMENT_CLIENT_TIMEOUT_MS,
   DEFAULT_SENTIMENT_SERVICE_URL,
-  SENTIMENT_NEUTRAL_SCORE 
+  SENTIMENT_NEUTRAL_SCORE,
 } from '@crypto-strategy-lab/shared';
 
 @Injectable()
 export class SentimentClient {
   private readonly logger = new Logger(SentimentClient.name);
-  private readonly sentimentServiceUrl = process.env.SENTIMENT_SERVICE_URL || DEFAULT_SENTIMENT_SERVICE_URL;
+  private readonly sentimentServiceUrl =
+    process.env.SENTIMENT_SERVICE_URL || DEFAULT_SENTIMENT_SERVICE_URL;
   private readonly timeoutMs = SENTIMENT_CLIENT_TIMEOUT_MS; // Strict SLA timeout per plan.md & ADR-0009
 
   /**
@@ -40,22 +41,32 @@ export class SentimentClient {
       clearTimeout(timer);
 
       if (!response.ok) {
-        this.logger.warn(`Python sentiment service returned status ${response.status}. Fallback to NEUTRAL.`);
-        return { score: SENTIMENT_NEUTRAL_SCORE, label: SentimentLabel.NEUTRAL };
+        this.logger.warn(
+          `Python sentiment service returned status ${response.status}. Fallback to NEUTRAL.`,
+        );
+        return {
+          score: SENTIMENT_NEUTRAL_SCORE,
+          label: SentimentLabel.NEUTRAL,
+        };
       }
 
       const data = await response.json();
       return {
-        score: typeof data.score === 'number' ? data.score : SENTIMENT_NEUTRAL_SCORE,
+        score:
+          typeof data.score === 'number' ? data.score : SENTIMENT_NEUTRAL_SCORE,
         label: (data.label as SentimentLabel) || SentimentLabel.NEUTRAL,
       };
     } catch (error) {
       clearTimeout(timer);
       // Graceful Degradation per ADR-0009 & Reliability Scenario #5
       if (error.name === 'AbortError') {
-        this.logger.warn(`Sentiment service request timed out after ${this.timeoutMs}ms. Fallback to NEUTRAL.`);
+        this.logger.warn(
+          `Sentiment service request timed out after ${this.timeoutMs}ms. Fallback to NEUTRAL.`,
+        );
       } else {
-        this.logger.warn(`Failed to connect to sentiment micro-service at ${this.sentimentServiceUrl}: ${error.message}. Fallback to NEUTRAL.`);
+        this.logger.warn(
+          `Failed to connect to sentiment micro-service at ${this.sentimentServiceUrl}: ${error.message}. Fallback to NEUTRAL.`,
+        );
       }
       return { score: SENTIMENT_NEUTRAL_SCORE, label: SentimentLabel.NEUTRAL };
     }

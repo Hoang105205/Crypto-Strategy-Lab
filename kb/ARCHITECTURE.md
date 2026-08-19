@@ -133,9 +133,10 @@ crypto-strategy-lab/
 > See `kb/flows/news-sentiment-pipeline.md` for full flow.
 
 ## Security Model
-- **Authentication**: None (course project, no user accounts)
-- **Authorization**: n/a
-- **Data protection**: External API keys in `.env` (never committed); rate-limit handling in adapters
+- **Authentication**: Supabase Auth (ADR-0015) — email/password. Frontend uses `@supabase/ssr` for cookie-based sessions. Backend verifies Supabase JWTs via `SupabaseJwtGuard`.
+- **Authorization**: App-level userId filtering (ADR-0016). Each module owner adds `@CurrentUser()` to their controllers and filters queries: `WHERE userId IS NULL OR userId = :currentUserId`. null = system/shared data (loop-discovered), non-null = user-private data.
+- **Data scoping**: Market Data (candles, pairs) and News are global (no userId). StrategyVersion, BacktestResult, and LeaderboardEntry have nullable `userId`. SearchLoopRun is global (system loop runs 24/7).
+- **Data protection**: External API keys in `.env` (never committed); rate-limit handling in adapters. Supabase service keys in `.env` (never committed).
 
 ## Deployment Topology
 

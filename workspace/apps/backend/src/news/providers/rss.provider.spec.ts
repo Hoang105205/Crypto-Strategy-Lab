@@ -28,7 +28,7 @@ describe('RSSProvider', () => {
             <title>Bitcoin Reaches New Record High</title>
             <link>https://coindesk.com/article-1</link>
             <description>Institutional inflows drive BTC past 90k.</description>
-            <pubDate>Mon, 17 Aug 2026 08:00:00 GMT</pubDate>
+            <pubDate>Mon, 17 Aug 2026 10:00:00 GMT</pubDate>
           </item>
           <item>
             <title>Ethereum Layer-2 Activity Triples</title>
@@ -47,7 +47,11 @@ describe('RSSProvider', () => {
       return { data: '<rss></rss>' };
     });
 
-    const articles = await provider.fetchLatest(10, undefined, ['BTC', 'ETH', 'SOL']);
+    const articles = await provider.fetchLatest(10, undefined, [
+      'BTC',
+      'ETH',
+      'SOL',
+    ]);
 
     expect(articles).toHaveLength(2);
     expect(articles[0].title).toBe('Bitcoin Reaches New Record High');
@@ -77,10 +81,16 @@ describe('RSSProvider', () => {
       return { data: '<rss></rss>' };
     });
 
-    const articles = await provider.fetchLatest(10, undefined, ['BTC', 'ETH', 'SOL']);
+    const articles = await provider.fetchLatest(10, undefined, [
+      'BTC',
+      'ETH',
+      'SOL',
+    ]);
 
     expect(articles).toHaveLength(1);
-    expect(articles[0].title).toBe('Federal Reserve Signals Monetary Policy Shift');
+    expect(articles[0].title).toBe(
+      'Federal Reserve Signals Monetary Policy Shift',
+    );
     expect(articles[0].relatedCoins).toEqual(['GENERAL']);
   });
 
@@ -109,11 +119,19 @@ describe('RSSProvider', () => {
       return { data: '<rss></rss>' };
     });
 
-    const btcArticles = await provider.fetchLatest(10, 'BTC', ['BTC', 'ETH', 'SOL']);
+    const btcArticles = await provider.fetchLatest(10, 'BTC', [
+      'BTC',
+      'ETH',
+      'SOL',
+    ]);
     expect(btcArticles).toHaveLength(1);
     expect(btcArticles[0].title).toBe('Bitcoin Hits 95K');
 
-    const allArticles = await provider.fetchLatest(10, 'ALL', ['BTC', 'ETH', 'SOL']);
+    const allArticles = await provider.fetchLatest(10, 'ALL', [
+      'BTC',
+      'ETH',
+      'SOL',
+    ]);
     expect(allArticles).toHaveLength(2);
   });
 

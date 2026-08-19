@@ -91,4 +91,41 @@ export class CompositeStrategy implements IStrategy {
       },
     };
   }
+
+  async analyzeAsync(candles: Candle[]): Promise<Signal> {
+    if (!this.children || this.children.length === 0) {
+      return {
+        action: SignalAction.HOLD,
+        confidence: 0,
+        metadata: { reason: 'No child strategies configured in composite' },
+      };
+    }
+
+    const childSignalPromises = this.children.map(async (child) => {
+      const sig = typeof child.analyzeAsync === 'function'
+        ? await child.analyzeAsync(candles)
+        : child.analyze(candles);
+
+      return {
+        ...sig,
+        metadata: {
+          ...sig.metadata,
+          strategyName: child.getName(),
+          strategyType: child.getType(),
+        },
+      };
+    });
+
+    const childSignals: Signal[] = await Promise.all(childSignalPromises);
+    const combinedSignal = this.combiner.combine(childSignals);
+
+    return {
+      ...combinedSignal,
+      metadata: {
+        ...combinedSignal.metadata,
+        compositeName: this.name,
+        childSignals,
+      },
+    };
+  }
 }

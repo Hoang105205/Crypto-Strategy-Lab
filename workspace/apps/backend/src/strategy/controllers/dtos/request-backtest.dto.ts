@@ -6,4 +6,6 @@ export class RequestBacktestDto {
   endDate: string | Date;
   initialCapital?: number;
   positionSizePercent?: number;
+  commission?: number;
+  slippage?: number;
 }

@@ -13,6 +13,7 @@ import { QueueModule } from './queue/queue.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { LoopModule } from './loop/loop.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AuthModule } from './auth/auth.module';
 import { validateEnvironment } from './config/environment';
 
 @Module({
@@ -30,6 +31,7 @@ import { validateEnvironment } from './config/environment';
     LeaderboardModule,
     LoopModule,
     DashboardModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

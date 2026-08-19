@@ -32,6 +32,10 @@ in code, documentation, and communication.
 | Reproducibility | Ability to re-run experiment #N with the exact same strategy version + params and get the same result. Enabled by immutable `StrategyVersion` snapshots (ADR-0008) | Strategy Engine |
 | INewsProvider | Abstraction interface for news sources (RSS, News API, Web Crawlers) returning normalized `RawArticle` payloads (ADR-0010) | News & Sentiment |
 | NewsArticle | Standardized news data entity containing `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins`, `url` | News & Sentiment |
+| CrawlerRule | Database entity storing LLM-discovered CSS selectors (`container`, `title`, `content`, `link`, `date`) per domain for fast reusable parsing (ADR-0014) | News & Sentiment |
+| Adaptive Web Crawler | Intelligent web crawler that uses LLMs for semantic selector discovery and Cheerio for high-performance extraction with selector caching (ADR-0014) | News & Sentiment |
+| Selector Caching | Architectural optimization persisting discovered CSS scraping rules in PostgreSQL to avoid recurring LLM token costs and latency | News & Sentiment |
+| Self-Healing Extraction | Fault recovery mechanism that automatically triggers LLM re-discovery when target website redesigns cause selector staleness | News & Sentiment |
 | NewsSentimentStrategy | Strategy plugin generating BUY/SELL/HOLD signals from news sentiment scores for composite strategies (e.g. `MA + RSI + News Sentiment`) | News & Sentiment, Strategy Engine |
 | Process Isolation | Architecture pattern running Python ML service as an isolated process from NestJS backend to contain CPU loads and crashes (ADR-0009) | News & Sentiment |
 | Graceful Degradation | Reliability mechanism falling back to neutral sentiment (`0.0`) and `HOLD` signal when ML sentiment service is unreachable | News & Sentiment |
@@ -52,6 +56,16 @@ in code, documentation, and communication.
 | TradingPair | A tradable crypto pair (e.g., `BTCUSDT`) with `baseAsset`, `quoteAsset`, and `isActive` fields. Defined in `kb/contracts/market-data.yaml` | Market Data |
 | Subscription Deduplication | Pattern where multiple frontend clients watching the same `symbol:timeframe` share a single Binance WebSocket stream. `subscriberCount` tracks active viewers; the stream closes only when count reaches 0 | Market Data |
 | Auto-Reconnect | Automatic reconnection strategy for external WebSocket connections using exponential backoff (1s, 4s, 16s, max 3 attempts). On reconnect, missed candles are fetched via REST API (ADR-0007) | Market Data |
+
+| Authentication | Process of verifying a user's identity. Handled by Supabase Auth (ADR-0015) — email/password only. Frontend uses `@supabase/ssr` for cookie-based sessions | Auth, Frontend |
+| Authorization | Process of determining what data a user can access. Implemented via app-level userId filtering (ADR-0016): `WHERE userId IS NULL OR userId = :currentUserId` | All modules |
+| SupabaseJwtGuard | NestJS guard that verifies Supabase JWTs from the Authorization header. Fetches JWKS (cached), checks expiry, attaches userId to `request.user` | Auth |
+| @CurrentUser() | NestJS parameter decorator that extracts the authenticated userId from `request.user`. Returns `string | null` (null = unauthenticated). MUST be used with `@UseGuards(SupabaseJwtGuard)` | Auth, All modules |
+| RequireAuth | Companion guard that rejects requests where userId is null. Use after `SupabaseJwtGuard` for routes requiring a logged-in user | Auth |
+| userId (nullable) | Column on StrategyVersion, BacktestResult, LeaderboardEntry. `null` = system/shared data (loop-discovered). Non-null = user-private data. Filter: `WHERE userId IS NULL OR userId = :currentUserId` | Strategy Engine, Event Infrastructure |
+| System Data | Data with `userId = null` — shared across all users. Includes loop-discovered strategies, system backtests, and system leaderboard entries | All modules |
+| User-Private Data | Data with `userId = <uuid>` — visible only to the owning user. Includes user-created strategies, user-initiated backtests, and user leaderboard entries | All modules |
+| Equity Curve | Cumulative profit chart showing account balance growth over time, computed from `BacktestResult.trades[]` | Frontend |
 
 ## Naming Conventions
 - **API paths**: kebab-case (e.g., `/api/market-data`, `/api/strategy-backtest`)

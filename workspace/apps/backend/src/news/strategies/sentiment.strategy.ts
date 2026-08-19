@@ -11,14 +11,14 @@ import {
   DEFAULT_SENTIMENT_BUY_THRESHOLD,
   DEFAULT_SENTIMENT_SELL_THRESHOLD,
   VADER_POSITIVE_THRESHOLD,
-  VADER_NEGATIVE_THRESHOLD
+  VADER_NEGATIVE_THRESHOLD,
 } from '@crypto-strategy-lab/shared';
 import { NewsService } from '../services/news.service';
 
 export interface SentimentStrategyParams {
-  buyThreshold?: number;   // e.g., +0.5
-  sellThreshold?: number;  // e.g., -0.5
-  timeframe?: string;      // '1h' | '24h' | '7d'
+  buyThreshold?: number; // e.g., +0.5
+  sellThreshold?: number; // e.g., -0.5
+  timeframe?: string; // '1h' | '24h' | '7d'
 }
 
 @Injectable()
@@ -30,10 +30,13 @@ export class NewsSentimentStrategy implements IStrategy {
 
   constructor(
     private readonly newsService: NewsService,
-    @Optional() @Inject('SENTIMENT_STRATEGY_PARAMS') params?: SentimentStrategyParams,
+    @Optional()
+    @Inject('SENTIMENT_STRATEGY_PARAMS')
+    params?: SentimentStrategyParams,
   ) {
     this.buyThreshold = params?.buyThreshold ?? DEFAULT_SENTIMENT_BUY_THRESHOLD;
-    this.sellThreshold = params?.sellThreshold ?? DEFAULT_SENTIMENT_SELL_THRESHOLD;
+    this.sellThreshold =
+      params?.sellThreshold ?? DEFAULT_SENTIMENT_SELL_THRESHOLD;
     this.timeframe = params?.timeframe ?? '1h';
   }
 
@@ -63,7 +66,9 @@ export class NewsSentimentStrategy implements IStrategy {
     }
 
     const latestCandle = candles[candles.length - 1];
-    const coinSymbol = latestCandle.symbol ? latestCandle.symbol.replace('USDT', '') : 'BTC';
+    const coinSymbol = latestCandle.symbol
+      ? latestCandle.symbol.replace('USDT', '')
+      : 'BTC';
 
     try {
       const score = this.getLatestSentimentScoreSync(coinSymbol);
@@ -90,7 +95,9 @@ export class NewsSentimentStrategy implements IStrategy {
         metadata: { score, symbol: coinSymbol, strategy: this.getName() },
       };
     } catch (error) {
-      this.logger.warn(`Error in NewsSentimentStrategy analysis: ${error.message}. Returning HOLD fallback.`);
+      this.logger.warn(
+        `Error in NewsSentimentStrategy analysis: ${error.message}. Returning HOLD fallback.`,
+      );
       return { action: SignalAction.HOLD, confidence: 0 };
     }
   }
@@ -104,10 +111,18 @@ export class NewsSentimentStrategy implements IStrategy {
     }
 
     const latestCandle = candles[candles.length - 1];
-    const coinSymbol = latestCandle.symbol ? latestCandle.symbol.replace('USDT', '') : 'BTC';
+    const coinSymbol = latestCandle.symbol
+      ? latestCandle.symbol.replace('USDT', '')
+      : 'BTC';
 
     try {
-      const agg = await this.newsService.getAggregateSentiment(coinSymbol, this.timeframe);
+      const targetDate = new Date(latestCandle.closeTime);
+      const agg = await this.newsService.getAggregateSentiment(
+        coinSymbol,
+        this.timeframe,
+        undefined,
+        targetDate,
+      );
 
       if (agg.score >= this.buyThreshold) {
         return {
@@ -131,7 +146,9 @@ export class NewsSentimentStrategy implements IStrategy {
         metadata: { score: agg.score, label: agg.label, symbol: coinSymbol },
       };
     } catch (error) {
-      this.logger.warn(`Error in NewsSentimentStrategy analyzeAsync: ${error.message}. Returning HOLD fallback.`);
+      this.logger.warn(
+        `Error in NewsSentimentStrategy analyzeAsync: ${error.message}. Returning HOLD fallback.`,
+      );
       return { action: SignalAction.HOLD, confidence: 0 };
     }
   }

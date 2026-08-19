@@ -46,6 +46,7 @@ model TradingPair {
 
 model StrategyVersion {
   id              String   @id @default(uuid())
+  userId          String?  // null = system-discovered (shared), non-null = user-created (private). See ADR-0016
   strategyType    String
   name            String
   version         Int
@@ -65,6 +66,7 @@ model StrategyVersion {
 model BacktestResult {
   id                String   @id @default(uuid())
   jobId             String   @unique
+  userId            String?  // null = system backtest (from loop), non-null = user-initiated. See ADR-0016
   strategyVersionId String
   pair              String
   timeframe         String
@@ -123,6 +125,23 @@ model SentimentScore {
   @@index([articleId])
 }
 
+model CrawlerRule {
+  id                 String   @id @default(uuid())
+  domain             String   @unique
+  targetUrl          String
+  containerSelector  String
+  titleSelector      String
+  contentSelector    String
+  linkSelector       String
+  dateSelector       String
+  isActive           Boolean  @default(true)
+  lastDiscoveredAt   DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("crawler_rules")
+}
+
 // ──────────────────────────────────────────────
 // Event Infrastructure — kb/contracts/events.yaml
 // + kb/modules/event-infrastructure.md Section 6
@@ -131,6 +150,7 @@ model SentimentScore {
 
 model LeaderboardEntry {
   id                  String   @id @default(uuid())
+  userId              String?  // null = system entry (shared), non-null = user entry (private). See ADR-0016
   rank                Int
   strategyVersionId   String   // ID-only reference to StrategyVersion (no FK join, per MODULES.md Rule 2)
   strategyName        String

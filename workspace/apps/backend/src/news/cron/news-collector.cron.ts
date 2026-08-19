@@ -16,7 +16,9 @@ export class NewsCollectorCron implements OnApplicationBootstrap {
    * Run initial news collection when application starts up
    */
   async onApplicationBootstrap() {
-    this.logger.log('Application bootstrap: executing initial news collection...');
+    this.logger.log(
+      'Application bootstrap: executing initial news collection...',
+    );
     await this.handleCron();
   }
 
@@ -28,9 +30,13 @@ export class NewsCollectorCron implements OnApplicationBootstrap {
     this.logger.log('Executing scheduled news collection cron job...');
     try {
       const articles = await this.newsService.collectAllNews();
-      this.logger.log(`Scheduled news collection finished. Processed ${articles.length} articles.`);
+      this.logger.log(
+        `Scheduled news collection finished. Processed ${articles.length} articles.`,
+      );
     } catch (error) {
-      this.logger.error(`Error during scheduled news collection: ${error.message}`);
+      this.logger.error(
+        `Error during scheduled news collection: ${error.message}`,
+      );
     }
   }
 }

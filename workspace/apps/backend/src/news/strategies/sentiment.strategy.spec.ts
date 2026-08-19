@@ -1,7 +1,11 @@
 // NewsSentimentStrategy Unit Tests — Signal generation, thresholds & fallback HOLD
 // Owner: Thuan
 
-import { SignalAction, StrategyType, Candle } from '@crypto-strategy-lab/shared';
+import {
+  SignalAction,
+  StrategyType,
+  Candle,
+} from '@crypto-strategy-lab/shared';
 import { NewsSentimentStrategy } from './sentiment.strategy';
 import { NewsService } from '../services/news.service';
 
@@ -28,10 +32,11 @@ describe('NewsSentimentStrategy', () => {
     mockNewsService = {
       getAggregateSentiment: jest.fn(),
     };
-    strategy = new NewsSentimentStrategy(
-      mockNewsService as NewsService,
-      { buyThreshold: 0.5, sellThreshold: -0.5, timeframe: '1h' }
-    );
+    strategy = new NewsSentimentStrategy(mockNewsService as NewsService, {
+      buyThreshold: 0.5,
+      sellThreshold: -0.5,
+      timeframe: '1h',
+    });
   });
 
   it('should return correct metadata and strategy type', () => {
@@ -65,7 +70,10 @@ describe('NewsSentimentStrategy', () => {
     expect(signal.action).toBe(SignalAction.BUY);
     expect(signal.confidence).toBe(0.75);
     expect(signal.metadata?.symbol).toBe('BTC');
-    expect(mockNewsService.getAggregateSentiment).toHaveBeenCalledWith('BTC', '1h');
+    expect(mockNewsService.getAggregateSentiment).toHaveBeenCalledWith(
+      'BTC',
+      '1h',
+    );
   });
 
   it('should generate SELL signal when aggregate sentiment <= sellThreshold', async () => {
@@ -99,7 +107,7 @@ describe('NewsSentimentStrategy', () => {
 
   it('should return HOLD signal if NewsService throws an error', async () => {
     (mockNewsService.getAggregateSentiment as jest.Mock).mockRejectedValueOnce(
-      new Error('Database query connection timeout')
+      new Error('Database query connection timeout'),
     );
 
     const signal = await strategy.analyzeAsync(mockCandles);

@@ -8,8 +8,10 @@ entities:
     fields:
       initialCapital: float       # Starting capital (e.g., 10000)
       positionSizePercent: float  # % of capital per trade
-      commission: float?          # Trading fee percentage
-      slippage: float?            # Slippage simulation
+      commission: float?          # Trading fee percentage (e.g., 0.001 = 0.1%)
+      slippage: float?            # Slippage simulation rate (e.g., 0.0005 = 5bps)
+      stopLossPercent: float?     # Stop-loss as % from entry price (e.g., 0.02 = 2% below entry for LONG)
+      takeProfitPercent: float?   # Take-profit as % from entry price (e.g., 0.05 = 5% above entry for LONG)
 
   EvaluationMetrics:
     fields:
@@ -30,6 +32,7 @@ entities:
   StrategyVersion:
     fields:
       id: UUID                        # Primary key
+      userId: UUID?                   # null = system-discovered (shared), non-null = user-created (private). See ADR-0016
       strategyType: string            # e.g. "MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite"
       name: string                    # Human-readable name (e.g. "MA-20/50 Crossover")
       version: number                 # Monotonic per strategyType
@@ -45,6 +48,7 @@ entities:
     fields:
       id: UUID                        # Primary key
       jobId: UUID                     # Unique producer job ID; create-once idempotency key
+      userId: UUID?                   # null = system backtest (from loop), non-null = user-initiated. See ADR-0016
       strategyVersionId: UUID         # FK → StrategyVersion.id
       pair: string                    # e.g. "BTCUSDT"
       timeframe: string              # e.g. "1h", "4h", "1d"
@@ -56,7 +60,7 @@ entities:
       sharpeRatio: float              # Risk-adjusted return
       profitFactor: float             # Gross profit / gross loss
       totalTrades: number
-      trades: JSONB                   # Array of { entryDate, exitDate, entryPrice, exitPrice, side, pnl, quantity }
+      trades: JSONB                   # Array of Trade (see Trade entity below — includes stopLoss, takeProfit, etc.)
       executedAt: DateTime
       executionTimeMs: number
 
@@ -69,6 +73,11 @@ entities:
       side: string                    # "LONG" | "SHORT"
       pnl: float                     # Profit/loss percentage
       quantity: float
+      stopLoss: float?                # Stop-loss price for this trade (computed from BacktestConfig.stopLossPercent)
+      takeProfit: float?              # Take-profit price for this trade (computed from BacktestConfig.takeProfitPercent)
+      transactionCost: float?         # Fee charged on this trade (commission rate × trade value)
+      slippage: float?                # Actual slippage applied (slippage rate × entry price)
+      volumeUsd: float?               # Trade volume in USD (entryPrice × quantity)
 
 enums:
   StrategyType: ["MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite", "MACD", "STOCHASTIC", "ATR"]
@@ -162,7 +171,7 @@ endpoints:
     path: /api/strategies/composite
     description: "Create a composite strategy from child strategies + combiner"
     request:
-      childStrategyIds: "UUID[]"
+      childStrategyNames: "string[]"
       combinerType: '"MajorityVote" | "WeightedScore"'
       combinerWeights: "number[]?    # Required for WeightedScore"
       name: "string"
@@ -173,7 +182,7 @@ endpoints:
     path: /api/strategies/backtest
     description: "Submit a backtest request (enqueued via job queue)"
     request:
-      strategyVersionId: "UUID"
+      strategyName: "string"
       pair: "string                  # e.g. 'BTCUSDT'"
       timeframe: "string             # e.g. '1h'"
       startDate: "DateTime"

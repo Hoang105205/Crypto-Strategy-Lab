@@ -8,6 +8,8 @@ export interface BacktestConfig {
   positionSizePercent: number;
   commission?: number;
   slippage?: number;
+  stopLossPercent?: number;
+  takeProfitPercent?: number;
 }
 
 export interface EvaluationMetrics {
@@ -27,6 +29,7 @@ export interface Signal {
 
 export interface StrategyVersion {
   id: string;
+  userId?: string | null; // null = system-discovered (shared), non-null = user-created (private). See ADR-0016
   strategyType: StrategyType;
   name: string;
   version: number;
@@ -53,12 +56,18 @@ export interface Trade {
   side: string; // "LONG" | "SHORT"
   pnl: number;
   quantity: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  transactionCost?: number;
+  slippage?: number;
+  volumeUsd?: number;
 }
 
 export interface BacktestResult {
   id: string;
   /** Producer job identity used to make result persistence idempotent. */
   jobId: string;
+  userId?: string | null; // null = system backtest, non-null = user-initiated. See ADR-0016
   strategyVersionId: string;
   pair: string;
   timeframe: string;
