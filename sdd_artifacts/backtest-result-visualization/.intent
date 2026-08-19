@@ -1,0 +1,18 @@
+feature: backtest-result-visualization
+description: |
+  Add userId filtering to Strategy Engine controllers using @CurrentUser().
+  Extend Backtester output with stopLoss, takeProfit, transactionCost, slippage, and volumeUsd.
+  Integrate the EquityCurveChart and Trade Detail table on the frontend to visualize the backtest result data.
+created: 2026-08-19
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected: [Strategy Engine, Frontend]
