@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface StrategyOption {
   name: string;
@@ -25,8 +25,19 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
   onSave,
   onDelete,
 }) => {
-  const [params, setParams] = useState<Record<string, unknown>>(initialParameters);
+  const [params, setParams] = useState<Record<string, unknown>>(() => {
+    return initialParameters ? { ...initialParameters } : {};
+  });
   const [isSaved, setIsSaved] = useState(false);
+  const [childSearch, setChildSearch] = useState('');
+  const [debouncedChildSearch, setDebouncedChildSearch] = useState('');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedChildSearch(childSearch);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [childSearch]);
 
   const isComposite =
     strategyType?.toUpperCase() === 'COMPOSITE' ||
@@ -177,11 +188,21 @@ export const ParameterEditor: React.FC<ParameterEditorProps> = ({
             className="flex flex-col gap-8 bg-[#0b0e11] rounded-xl border border-[#2b3139]"
             style={{ padding: '1.25rem' }}
           >
-            <label className="block text-sm font-bold text-[#fcd535] uppercase tracking-wider border-b border-[#2b3139] pb-4 mb-2">
-              Child Strategies Selection
-            </label>
-            <div className="grid grid-cols-2 gap-5 max-h-48 overflow-y-auto">
+            <div className="flex flex-col gap-4">
+              <label className="block text-sm font-bold text-[#fcd535] uppercase tracking-wider border-b border-[#2b3139] pb-4">
+                Child Strategies Selection
+              </label>
+              <input
+                type="text"
+                placeholder="Search strategies..."
+                value={childSearch}
+                onChange={(e) => setChildSearch(e.target.value)}
+                className="w-full bg-[#1e2329] border border-[#2b3139] rounded-lg px-4 py-2 text-sm text-gray-100 focus:outline-none focus:border-[#fcd535]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-5 max-h-48 overflow-y-auto mt-2">
               {availableBaseStrategies
+                .filter((s) => s.name.toLowerCase().includes(debouncedChildSearch.toLowerCase()))
                 .filter((s) => strategyName ? !checkCircular(s.name, strategyName, availableBaseStrategies) : true)
                 .map((strat) => {
                   const isSelected = selectedChildren.includes(strat.name);
