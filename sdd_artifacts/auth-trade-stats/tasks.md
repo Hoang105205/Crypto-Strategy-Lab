@@ -22,7 +22,8 @@
 - [X] **T3.5** Create `app/register/page.tsx` — email/password register form
 - [X] **T3.6** Update `services/api-client.ts` — attach Bearer token from Supabase session
 - [X] **T3.7** Wrap layout.tsx with AuthProvider
-- [X] **T3.8** Create `components/auth/protected-route.tsx` — redirect to /login if unauthenticated. Wrap `app/page.tsx` with ProtectedRoute
+- [X] **T3.8** Create `components/auth/protected-route.tsx` — client-side route protection fallback
+- [X] **T3.9** Create `src/middleware.ts` — server-side route protection for ALL pages (dashboard, strategy, leaderboard, news). Exempts /login and /register.
 
 ## Phase 4: Trade Detail Table
 - [X] **T4.1** Create `components/trade-detail-table.tsx` — table with all Trade fields

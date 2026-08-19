@@ -59,7 +59,8 @@ Then:
 | Prisma schema (userId columns) | `schema.prisma` — `prisma db push` already applied |
 | Auth backend (guard, decorator, module) | `src/auth/` — 6 files, imported in AppModule |
 | Auth frontend (client, context, pages) | `lib/supabase-client.ts`, `contexts/auth-context.tsx`, `app/login/`, `app/register/` |
-| Route protection | `components/auth/protected-route.tsx` — wraps dashboard page |
+| Route protection (server-side) | `src/middleware.ts` — protects ALL routes, exempts /login and /register |
+| Route protection (client-side) | `components/auth/protected-route.tsx` — client-side fallback for dashboard |
 | API client Bearer header | `services/api-client.ts` — auto-attaches token from session |
 | Shared types (Trade extension) | `libs/shared/src/types/strategy.ts` — rebuilt and propagated |
 

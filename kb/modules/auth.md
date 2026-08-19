@@ -37,7 +37,8 @@ authenticated userId to other modules via a decorator.**
 | Login page | `app/login/page.tsx` | Email/password form — calls `supabase.auth.signInWithPassword()` |
 | Register page | `app/register/page.tsx` | Email/password form — calls `supabase.auth.signUp()` |
 | API client update | `services/api-client.ts` | Attaches `Authorization: Bearer <token>` from Supabase session |
-| ProtectedRoute | `components/auth/protected-route.tsx` | Wraps protected pages — redirects to /login if unauthenticated |
+| ProtectedRoute | `components/auth/protected-route.tsx` | Client-side fallback — redirects to /login if unauthenticated |
+| Middleware | `src/middleware.ts` | **Server-side route protection** — checks Supabase session cookie on every request, redirects to /login if no session. Protects ALL routes automatically. Exempts /login and /register. |
 
 ## 3. Design Patterns
 
