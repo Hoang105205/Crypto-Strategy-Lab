@@ -26,7 +26,7 @@ export class DomainGuidedGenerator implements IStrategyGenerator {
       Momentum: [],
       Volatility: [],
       Structure: [],
-      Information: [],
+      Sentiment: [],
     };
 
     allStrategies.forEach((strategy) => {
@@ -40,7 +40,7 @@ export class DomainGuidedGenerator implements IStrategyGenerator {
       } else if ([StrategyType.SR].includes(type)) {
         domainMap.Structure.push(strategy);
       } else if ([StrategyType.SENTIMENT].includes(type)) {
-        domainMap.Information.push(strategy);
+        domainMap.Sentiment.push(strategy);
       }
     });
 

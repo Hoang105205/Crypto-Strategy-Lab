@@ -58,7 +58,7 @@ export default function StrategyBuilderPage() {
   const [strategyPage, setStrategyPage] = useState(1);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState('');
-  const STRATEGIES_PER_PAGE = 8;
+  const STRATEGIES_PER_PAGE = 6;
   
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -283,51 +283,6 @@ export default function StrategyBuilderPage() {
     }
   };
 
-  const handleParametersUpdate = async (updated: Record<string, unknown>) => {
-    if (!selectedStrategy) return;
-
-    const newName = String(updated.name || selectedStrategy.name);
-    const updatedStrategy = {
-      ...selectedStrategy,
-      name: newName,
-      parameters: updated,
-    };
-    setSelectedStrategy(updatedStrategy);
-
-    // Update in strategies list so StrategyCard reflects the edited parameters live
-    setStrategies((prev) =>
-      prev.map((s) => (s.name === selectedStrategy.name ? updatedStrategy : s)),
-    );
-
-    if (selectedStrategy.type.toUpperCase() === 'COMPOSITE') {
-      const childrenString = String(updated.childStrategies || '');
-      const childrenNames = childrenString.split(',').map(s => s.trim()).filter(Boolean);
-      
-      const payload = {
-        name: String(updated.name || selectedStrategy.name),
-        childStrategyNames: childrenNames,
-        combinerType: String(updated.combinerType || 'MajorityVote'),
-        combinerWeights: updated.weights as Record<string, number>,
-      };
-
-      try {
-        await fetch(`${API_BASE_URL}/api/strategies/composite`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (payload.name !== selectedStrategy.name) {
-          await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(selectedStrategy.name)}`, {
-            method: 'DELETE',
-          });
-        }
-      } catch (err) {
-        console.error('Failed to update composite strategy', err);
-      }
-    }
-  };
-
   return (
     <div className="w-full min-h-screen strategy-builder-bg px-4 sm:px-8 pt-8 pb-24 font-sans flex flex-col items-center">
       {/* Header */}
@@ -467,12 +422,6 @@ export default function StrategyBuilderPage() {
                     strategyType={selectedStrategy.type}
                     initialParameters={selectedStrategy.parameters}
                     availableBaseStrategies={strategies}
-                    onSave={handleParametersUpdate}
-                    onDelete={
-                      selectedStrategy.type.toUpperCase() === 'COMPOSITE'
-                        ? () => handleDeleteStrategy(selectedStrategy.name)
-                        : undefined
-                    }
                   />
 
                   <button

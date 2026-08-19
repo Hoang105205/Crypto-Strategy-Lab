@@ -1,0 +1,17 @@
+feature: remove-update-strategy-api
+description: |
+  Bỏ nốt luôn API update strategy (chỉnh sửa/cập nhập các composite strategy).
+created: 2026-08-19T14:16:53Z
+status: converge-complete
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: complete
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Strategy Engine

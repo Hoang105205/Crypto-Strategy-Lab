@@ -103,10 +103,10 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
                   }`}>
                     {isChecked && <svg className="w-3.5 h-3.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path></svg>}
                   </div>
-                  <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center justify-between w-full min-w-0 gap-2">
                     <span className={`truncate text-base font-bold ${isChecked ? 'text-[#fcd535]' : 'text-gray-300'}`}>{strat.name}</span>
                     <span 
-                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700"
+                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700 shrink-0"
                       style={{ padding: '0.25rem 0.625rem' }}
                     >
                       {strat.type}
