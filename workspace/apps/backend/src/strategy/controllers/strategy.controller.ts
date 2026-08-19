@@ -82,8 +82,8 @@ export class StrategyController {
 
   @Post('composite')
   async createComposite(@Body() dto: CreateCompositeDto, @CurrentUser() userId: string | null) {
-    if (!dto || !dto.name || !dto.childStrategyNames || dto.childStrategyNames.length === 0) {
-      throw new HttpException('Invalid composite configuration payload', HttpStatus.BAD_REQUEST);
+    if (!dto || !dto.name || !dto.childStrategyNames || dto.childStrategyNames.length < 2) {
+      throw new HttpException('Composite requires at least 2 strategies', HttpStatus.BAD_REQUEST);
     }
 
     const children: IStrategy[] = [];
@@ -97,7 +97,12 @@ export class StrategyController {
 
     let combiner;
     if (dto.combinerType === CombinerType.WEIGHTED_SCORE) {
-      combiner = new WeightedScoreCombiner(dto.combinerWeights || {});
+      const weights = dto.combinerWeights || {};
+      const sum = Object.values(weights).reduce((acc, w) => acc + (typeof w === 'number' ? w : 0), 0);
+      if (Math.abs(sum - 1.0) > 0.001) {
+        throw new HttpException('Weights must sum to 1.0', HttpStatus.BAD_REQUEST);
+      }
+      combiner = new WeightedScoreCombiner(weights);
     } else {
       combiner = new MajorityVoteCombiner();
     }
