@@ -27,3 +27,44 @@ export const DEFAULT_SENTIMENT_SERVICE_URL = 'http://localhost:8000';
 export const SENTIMENT_CLIENT_TIMEOUT_MS = 500;       // 500ms strict SLA timeout per ADR-0009
 export const DEFAULT_NEWS_FETCH_LIMIT = 10;
 export const NEWS_COLLECTION_CRON_SCHEDULE = '*/15 * * * *'; // Every 15 minutes
+
+/**
+ * Default Seed RSS Feeds (ADR-0010)
+ */
+export const DEFAULT_RSS_FEEDS = [
+  {
+    name: 'CoinDesk RSS',
+    url: 'https://www.coindesk.com/arc/outboundfeeds/rss',
+  },
+  { name: 'CoinTelegraph RSS', url: 'https://cointelegraph.com/rss' },
+  { name: 'Decrypt RSS', url: 'https://decrypt.co/feed' },
+];
+
+/**
+ * Default Seed Crawler Rules (ADR-0014)
+ * Single Source of Truth for Database Seeding and Runtime Fallbacks.
+ */
+export const DEFAULT_CRAWLER_RULES = [
+  {
+    domain: 'cryptoslate.com',
+    targetUrl: 'https://cryptoslate.com/news/',
+    containerSelector:
+      'article, div.news-feed article, div.article-card, div.list-post',
+    titleSelector: 'h2, h3, a.post-title',
+    contentSelector: 'p, div.post-excerpt, div.excerpt',
+    linkSelector: 'a[href]',
+    dateSelector: 'time, span.post-date',
+    isActive: true,
+  },
+  {
+    domain: 'bitcoinmagazine.com',
+    targetUrl: 'https://bitcoinmagazine.com/articles',
+    containerSelector:
+      'div.td_module_wrap, div.td-module-meta-info, div.td-block-span12',
+    titleSelector: 'h3.entry-title a, h2 a, a',
+    contentSelector: 'div.td-excerpt, p',
+    linkSelector: 'h3.entry-title a, a[href]',
+    dateSelector: 'time, span.td-post-date',
+    isActive: true,
+  },
+];

@@ -7,6 +7,7 @@ import * as cheerio from 'cheerio';
 import {
   RawArticle,
   DEFAULT_NEWS_FETCH_LIMIT,
+  DEFAULT_CRAWLER_RULES,
 } from '@crypto-strategy-lab/shared';
 import { INewsProvider } from './news.provider.interface';
 import { PrismaService } from '../../database/prisma.service';
@@ -266,6 +267,22 @@ export class WebCrawlerProvider implements INewsProvider {
   }
 
   /**
+   * Data-Driven Coin Synonyms dictionary for accurate NLP Entity Recognition
+   */
+  private static readonly COIN_SYNONYMS: Record<string, string[]> = {
+    BTC: ['BITCOIN', 'SATOSHI'],
+    ETH: ['ETHEREUM', 'ETHER'],
+    SOL: ['SOLANA'],
+    BNB: ['BINANCE', 'BNB CHAIN'],
+    XRP: ['RIPPLE'],
+    DOGE: ['DOGECOIN', 'SHIBA'],
+    ADA: ['CARDANO'],
+    AVAX: ['AVALANCHE'],
+    DOT: ['POLKADOT'],
+    LINK: ['CHAINLINK'],
+  };
+
+  /**
    * Dynamic Coin extraction based on active TradingPair symbols (with GENERAL fallback)
    */
   private extractCoins(text: string, activeCoins: string[]): string[] {
@@ -274,90 +291,22 @@ export class WebCrawlerProvider implements INewsProvider {
 
     for (const coin of activeCoins) {
       const cleanCoin = coin.toUpperCase();
-      const wordBoundaryRegex = new RegExp(`\\b${cleanCoin}\\b`, 'i');
+      const tickerMatch = new RegExp(`\\b${cleanCoin}\\b`, 'i').test(text);
+      const synonyms = WebCrawlerProvider.COIN_SYNONYMS[cleanCoin] || [];
+      const synonymMatch = synonyms.some((syn) => uppercaseText.includes(syn));
 
-      let matches = wordBoundaryRegex.test(text);
-
-      if (!matches) {
-        if (
-          cleanCoin === 'BTC' &&
-          (uppercaseText.includes('BITCOIN') ||
-            uppercaseText.includes('SATOSHI'))
-        ) {
-          matches = true;
-        } else if (
-          cleanCoin === 'ETH' &&
-          (uppercaseText.includes('ETHEREUM') ||
-            uppercaseText.includes('ETHER'))
-        ) {
-          matches = true;
-        } else if (cleanCoin === 'SOL' && uppercaseText.includes('SOLANA')) {
-          matches = true;
-        } else if (
-          cleanCoin === 'BNB' &&
-          (uppercaseText.includes('BINANCE') ||
-            uppercaseText.includes('BNB CHAIN'))
-        ) {
-          matches = true;
-        } else if (
-          cleanCoin === 'XRP' &&
-          (uppercaseText.includes('RIPPLE') || uppercaseText.includes('XRP'))
-        ) {
-          matches = true;
-        } else if (
-          cleanCoin === 'DOGE' &&
-          (uppercaseText.includes('DOGECOIN') ||
-            uppercaseText.includes('SHIBA'))
-        ) {
-          matches = true;
-        } else if (
-          cleanCoin === 'ADA' &&
-          (uppercaseText.includes('CARDANO') || uppercaseText.includes('ADA'))
-        ) {
-          matches = true;
-        }
-      }
-
-      if (matches && !foundCoins.includes(cleanCoin)) {
+      if ((tickerMatch || synonymMatch) && !foundCoins.includes(cleanCoin)) {
         foundCoins.push(cleanCoin);
       }
     }
 
-    if (foundCoins.length === 0) {
-      return ['GENERAL'];
-    }
-
-    return foundCoins;
+    // Default to 'GENERAL' if no active coin mentioned
+    return foundCoins.length > 0 ? foundCoins : ['GENERAL'];
   }
 
   private async seedDefaultRules(): Promise<CrawlerRule[]> {
-    const defaults = [
-      {
-        domain: 'cryptoslate.com',
-        targetUrl: 'https://cryptoslate.com/news/',
-        containerSelector:
-          'article, div.news-feed article, div.article-card, div.list-post',
-        titleSelector: 'h2, h3, a.post-title',
-        contentSelector: 'p, div.post-excerpt, div.excerpt',
-        linkSelector: 'a[href]',
-        dateSelector: 'time, span.post-date',
-        isActive: true,
-      },
-      {
-        domain: 'bitcoinmagazine.com',
-        targetUrl: 'https://bitcoinmagazine.com/articles',
-        containerSelector:
-          'div.td_module_wrap, div.td-module-meta-info, div.td-block-span12',
-        titleSelector: 'h3.entry-title a, h2 a, a',
-        contentSelector: 'div.td-excerpt, p',
-        linkSelector: 'h3.entry-title a, a[href]',
-        dateSelector: 'time, span.td-post-date',
-        isActive: true,
-      },
-    ];
-
     const results: CrawlerRule[] = [];
-    for (const d of defaults) {
+    for (const d of DEFAULT_CRAWLER_RULES) {
       const saved = await this.prisma.crawlerRule.upsert({
         where: { domain: d.domain },
         create: d,

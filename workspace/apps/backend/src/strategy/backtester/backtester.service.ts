@@ -21,7 +21,8 @@ export class BacktesterService implements IBacktester {
     const commissionPct = (config.commission || 0) / 100;
     const slippagePct = (config.slippage || 0) / 100;
 
-    let openPosition: { entryPrice: number; entryDate: Date; quantity: number } | null = null;
+    let currentCapital = initialCapital;
+    let openPosition: { entryPrice: number; rawEntryPrice: number; entryDate: Date; quantity: number; entryCommission: number } | null = null;
 
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
@@ -34,15 +35,17 @@ export class BacktesterService implements IBacktester {
 
       // Open LONG position if BUY signal and no position open
       if (signal.action === SignalAction.BUY && !openPosition) {
-        const capitalToUse = initialCapital * (positionSizePercent / 100);
+        const capitalToUse = currentCapital * (positionSizePercent / 100);
         const entryPriceWithSlippage = candle.close * (1 + slippagePct);
         const commissionCost = capitalToUse * commissionPct;
         const quantity = (capitalToUse - commissionCost) / entryPriceWithSlippage;
 
         openPosition = {
           entryPrice: entryPriceWithSlippage,
+          rawEntryPrice: candle.close,
           entryDate: new Date(candle.closeTime),
           quantity,
+          entryCommission: commissionCost,
         };
       }
       // Close LONG position if SELL signal and position open
@@ -53,6 +56,11 @@ export class BacktesterService implements IBacktester {
         const exitCommission = exitValue * commissionPct;
         
         const pnl = (exitValue - entryValue) - exitCommission;
+        currentCapital += pnl;
+        
+        const volumeUsd = openPosition.entryPrice * openPosition.quantity;
+        const transactionCost = openPosition.entryCommission + exitCommission;
+        const slippageCost = ((openPosition.entryPrice - openPosition.rawEntryPrice) + (candle.close - exitPriceWithSlippage)) * openPosition.quantity;
 
         trades.push({
           entryPrice: openPosition.entryPrice,
@@ -62,6 +70,11 @@ export class BacktesterService implements IBacktester {
           side: 'LONG',
           pnl,
           quantity: openPosition.quantity,
+          stopLoss: config.stopLossPercent ? openPosition.entryPrice * (1 - config.stopLossPercent / 100) : undefined,
+          takeProfit: config.takeProfitPercent ? openPosition.entryPrice * (1 + config.takeProfitPercent / 100) : undefined,
+          transactionCost,
+          slippage: slippageCost,
+          volumeUsd,
         });
 
         openPosition = null;
@@ -77,6 +90,11 @@ export class BacktesterService implements IBacktester {
       const exitCommission = exitValue * commissionPct;
       
       const pnl = (exitValue - entryValue) - exitCommission;
+      currentCapital += pnl;
+      
+      const volumeUsd = openPosition.entryPrice * openPosition.quantity;
+      const transactionCost = openPosition.entryCommission + exitCommission;
+      const slippageCost = ((openPosition.entryPrice - openPosition.rawEntryPrice) + (lastCandle.close - exitPriceWithSlippage)) * openPosition.quantity;
 
       trades.push({
         entryPrice: openPosition.entryPrice,
@@ -86,6 +104,11 @@ export class BacktesterService implements IBacktester {
         side: 'LONG',
         pnl,
         quantity: openPosition.quantity,
+        stopLoss: config.stopLossPercent ? openPosition.entryPrice * (1 - config.stopLossPercent / 100) : undefined,
+        takeProfit: config.takeProfitPercent ? openPosition.entryPrice * (1 + config.takeProfitPercent / 100) : undefined,
+        transactionCost,
+        slippage: slippageCost,
+        volumeUsd,
       });
     }
 

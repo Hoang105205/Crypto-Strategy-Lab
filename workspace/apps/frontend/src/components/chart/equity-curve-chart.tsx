@@ -56,15 +56,29 @@ export function EquityCurveChart({ trades, initialCapital = 10000 }: EquityCurve
 
     // Compute equity curve: cumulative PnL over trade exit dates
     let balance = initialCapital;
-    const data = trades
+    
+    // 1. Sort trades chronologically
+    const sortedTrades = [...trades]
       .filter((t) => t.exitDate)
-      .map((trade) => {
-        balance += (balance * trade.pnl) / 100;
-        return {
-          time: Math.floor(new Date(trade.exitDate).getTime() / 1000) as UTCTimestamp,
-          value: balance,
-        };
-      })
+      .sort((a, b) => new Date(a.exitDate).getTime() - new Date(b.exitDate).getTime());
+
+    const dataMap = new Map<number, number>();
+    
+    // 2. Add starting point (optional, at first trade's entry)
+    if (sortedTrades.length > 0 && sortedTrades[0].entryDate) {
+      const firstEntryTime = Math.floor(new Date(sortedTrades[0].entryDate).getTime() / 1000);
+      dataMap.set(firstEntryTime, balance);
+    }
+
+    // 3. Accumulate balance and handle duplicate timestamps by overwriting with latest cumulative balance
+    for (const trade of sortedTrades) {
+      balance += trade.pnl;
+      const time = Math.floor(new Date(trade.exitDate).getTime() / 1000);
+      dataMap.set(time, balance);
+    }
+
+    const data = Array.from(dataMap.entries())
+      .map(([time, value]) => ({ time: time as UTCTimestamp, value }))
       .sort((a, b) => a.time - b.time);
 
     series.setData(data);

@@ -1,0 +1,19 @@
+feature: ui-layout-and-pagination
+description: |
+  Bây giờ, phần UI tôi muốn là biểu đồ bên trái, bảng lệnh trades bên phải ở backtest runner.
+  Tất nhiên là sẽ có dùng pagination của phần bảng lệnh trades nữa, client-side pagination.
+  Tương tự với lại trong phần Catalog, các strategy cũng nên có phần pagination để di chuyển qua lại thay vì để kéo dài xuống UI như vậy.
+created: 2026-08-19T20:13:00Z
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected: 
+    - Strategy Engine (Frontend UI)

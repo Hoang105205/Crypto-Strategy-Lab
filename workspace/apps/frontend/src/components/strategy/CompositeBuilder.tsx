@@ -9,7 +9,7 @@ export interface CompositeBuilderProps {
     childStrategyNames: string[];
     combinerType: string;
     combinerWeights?: Record<string, number>;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
@@ -20,6 +20,7 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
   const [selectedChildren, setSelectedChildren] = useState<string[]>([]);
   const [combinerType, setCombinerType] = useState('MajorityVote');
   const [weights, setWeights] = useState<Record<string, number>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleChild = (name: string) => {
     if (selectedChildren.includes(name)) {
@@ -34,21 +35,26 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
   };
 
   const handleWeightChange = (name: string, value: string) => {
-    const val = parseFloat(value) || 1.0;
-    setWeights({ ...weights, [name]: val });
+    const val = parseFloat(value);
+    setWeights({ ...weights, [name]: isNaN(val) ? 0 : val });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!compositeName || selectedChildren.length < 2) return;
+    if (!compositeName || selectedChildren.length < 2 || isSubmitting) return;
 
-    if (onBuildComposite) {
-      onBuildComposite({
-        name: compositeName,
-        childStrategyNames: selectedChildren,
-        combinerType,
-        combinerWeights: weights,
-      });
+    setIsSubmitting(true);
+    try {
+      if (onBuildComposite) {
+        await onBuildComposite({
+          name: compositeName,
+          childStrategyNames: selectedChildren,
+          combinerType,
+          combinerWeights: weights,
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -103,10 +109,10 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
                   }`}>
                     {isChecked && <svg className="w-3.5 h-3.5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path></svg>}
                   </div>
-                  <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center justify-between w-full min-w-0 gap-2">
                     <span className={`truncate text-base font-bold ${isChecked ? 'text-[#fcd535]' : 'text-gray-300'}`}>{strat.name}</span>
                     <span 
-                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700"
+                      className="text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-md border shadow-sm bg-gray-800 text-gray-300 border-gray-700 shrink-0"
                       style={{ padding: '0.25rem 0.625rem' }}
                     >
                       {strat.type}
@@ -162,11 +168,11 @@ export const CompositeBuilder: React.FC<CompositeBuilderProps> = ({
 
       <button
         type="submit"
-        disabled={!compositeName || selectedChildren.length < 2}
+        disabled={!compositeName || selectedChildren.length < 2 || isSubmitting}
         className="w-full py-5 rounded-xl bg-[#fcd535] hover:bg-[#f0b90b] text-[#0b0e11] font-black text-lg uppercase tracking-wider transition-all disabled:bg-[#1e2329] disabled:text-gray-500 disabled:border disabled:border-[#2b3139] disabled:cursor-not-allowed shadow-2xl disabled:shadow-none"
         style={{ padding: '1.25rem 2rem' }}
       >
-        BUILD COMPOSITE STRATEGY
+        {isSubmitting ? 'BUILDING...' : 'BUILD COMPOSITE STRATEGY'}
       </button>
     </form>
   );

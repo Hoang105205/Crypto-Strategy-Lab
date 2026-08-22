@@ -5,9 +5,10 @@ import {
   StrategyCard,
   ParameterEditor,
   CompositeBuilder,
-  TradeTable,
   TradeItem,
 } from '../../components/strategy';
+import { EquityCurveChart } from '../../components/chart/equity-curve-chart';
+import { TradeDetailTable } from '../../components/trade-detail-table';
 import './strategy-builder.css';
 
 interface StrategyItem {
@@ -54,6 +55,18 @@ export default function StrategyBuilderPage() {
   const [strategies, setStrategies] = useState<StrategyItem[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyItem | null>(null);
   const [activeTab, setActiveTab] = useState<'catalog' | 'composite' | 'backtest'>('catalog');
+  const [strategyPage, setStrategyPage] = useState(1);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [debouncedCatalogSearch, setDebouncedCatalogSearch] = useState('');
+  const STRATEGIES_PER_PAGE = 6;
+  
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedCatalogSearch(catalogSearch);
+      setStrategyPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [catalogSearch]);
   
   // Backtest form state
   const [pair, setPair] = useState('BTCUSDT');
@@ -91,7 +104,11 @@ export default function StrategyBuilderPage() {
         : (-0.01 - (i * 0.002)) * Math.sqrt(tfMultiplier);
       const exitPrice = entryPrice * (1 + changePercent);
       const qty = (capital * 0.15) / entryPrice;
-      const pnl = (exitPrice - entryPrice) * qty;
+      
+      const side = (i + seed) % 3 === 0 ? 'SHORT' : 'LONG';
+      const pnl = side === 'LONG' 
+        ? (exitPrice - entryPrice) * qty
+        : (entryPrice - exitPrice) * qty;
 
       const durationMs = 3600000 * tfMultiplier * (1.5 + (i % 3));
       const entry = new Date(Date.now() - (count - i) * 86400000 * (tfMultiplier > 4 ? 2 : 1));
@@ -102,7 +119,7 @@ export default function StrategyBuilderPage() {
         exitDate: exit.toISOString().replace('T', ' ').substring(0, 16),
         entryPrice,
         exitPrice,
-        side: (i + seed) % 3 === 0 ? 'SHORT' : 'LONG',
+        side,
         quantity: qty,
         pnl,
       });
@@ -125,9 +142,19 @@ export default function StrategyBuilderPage() {
     };
   }, []);
 
+  // Reset backtest state when selected strategy changes
+  useEffect(() => {
+    setBacktestStatus('');
+    setTradeResults([]);
+  }, [selectedStrategy?.name]);
+
   const handleSelectStrategy = (strat: StrategyItem) => {
     setSelectedStrategy(strat);
   };
+
+  const filteredStrategies = strategies.filter(s => s.name.toLowerCase().includes(debouncedCatalogSearch.toLowerCase()));
+  const totalStrategyPages = Math.ceil(filteredStrategies.length / STRATEGIES_PER_PAGE);
+  const currentStrategies = filteredStrategies.slice((strategyPage - 1) * STRATEGIES_PER_PAGE, strategyPage * STRATEGIES_PER_PAGE);
 
   const handleBuildComposite = async (payload: {
     name: string;
@@ -262,51 +289,6 @@ export default function StrategyBuilderPage() {
     }
   };
 
-  const handleParametersUpdate = async (updated: Record<string, unknown>) => {
-    if (!selectedStrategy) return;
-
-    const newName = String(updated.name || selectedStrategy.name);
-    const updatedStrategy = {
-      ...selectedStrategy,
-      name: newName,
-      parameters: updated,
-    };
-    setSelectedStrategy(updatedStrategy);
-
-    // Update in strategies list so StrategyCard reflects the edited parameters live
-    setStrategies((prev) =>
-      prev.map((s) => (s.name === selectedStrategy.name ? updatedStrategy : s)),
-    );
-
-    if (selectedStrategy.type.toUpperCase() === 'COMPOSITE') {
-      const childrenString = String(updated.childStrategies || '');
-      const childrenNames = childrenString.split(',').map(s => s.trim()).filter(Boolean);
-      
-      const payload = {
-        name: String(updated.name || selectedStrategy.name),
-        childStrategyNames: childrenNames,
-        combinerType: String(updated.combinerType || 'MajorityVote'),
-        combinerWeights: updated.weights as Record<string, number>,
-      };
-
-      try {
-        await fetch(`${API_BASE_URL}/api/strategies/composite`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (payload.name !== selectedStrategy.name) {
-          await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(selectedStrategy.name)}`, {
-            method: 'DELETE',
-          });
-        }
-      } catch (err) {
-        console.error('Failed to update composite strategy', err);
-      }
-    }
-  };
-
   return (
     <div className="w-full min-h-screen strategy-builder-bg px-4 sm:px-8 pt-8 pb-24 font-sans flex flex-col items-center">
       {/* Header */}
@@ -367,9 +349,18 @@ export default function StrategyBuilderPage() {
         {activeTab === 'catalog' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 w-full">
             <div className="space-y-6 w-full">
-              <h2 className="text-base font-bold text-gray-300 uppercase tracking-wider mb-6">Available Strategy Plugins</h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-base font-bold text-gray-300 uppercase tracking-wider">Available Strategy Plugins</h2>
+                <input
+                  type="text"
+                  placeholder="Search catalog..."
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  className="bg-[#0b0e11] border border-[#2b3139] rounded-lg px-4 py-2 text-sm text-gray-100 focus:outline-none focus:border-[#fcd535] w-64"
+                />
+              </div>
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                {strategies.map((strat) => (
+                {currentStrategies.map((strat) => (
                   <StrategyCard
                     key={strat.name}
                     name={strat.name}
@@ -385,6 +376,33 @@ export default function StrategyBuilderPage() {
                   />
                 ))}
               </div>
+              
+              {totalStrategyPages > 1 && (
+                <div className="flex justify-between items-center bg-[#1e2329] p-4 rounded-lg border border-[#2b3139] mt-6">
+                  <div className="text-sm text-gray-400 font-mono">
+                    Showing {(strategyPage - 1) * STRATEGIES_PER_PAGE + 1}-{Math.min(strategyPage * STRATEGIES_PER_PAGE, strategies.length)} of {strategies.length} strategies
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setStrategyPage((p) => Math.max(1, p - 1))}
+                      disabled={strategyPage === 1}
+                      className="px-4 py-2 bg-[#0b0e11] border border-[#2b3139] rounded-md text-sm text-[#fcd535] hover:bg-[#2b3139] disabled:opacity-30 disabled:hover:bg-[#0b0e11] transition-colors"
+                    >
+                      PREVIOUS
+                    </button>
+                    <span className="text-sm text-gray-300 font-mono">
+                      Page {strategyPage} / {totalStrategyPages}
+                    </span>
+                    <button
+                      onClick={() => setStrategyPage((p) => Math.min(totalStrategyPages, p + 1))}
+                      disabled={strategyPage === totalStrategyPages}
+                      className="px-4 py-2 bg-[#0b0e11] border border-[#2b3139] rounded-md text-sm text-[#fcd535] hover:bg-[#2b3139] disabled:opacity-30 disabled:hover:bg-[#0b0e11] transition-colors"
+                    >
+                      NEXT
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Parameter Inspector */}
@@ -410,12 +428,6 @@ export default function StrategyBuilderPage() {
                     strategyType={selectedStrategy.type}
                     initialParameters={selectedStrategy.parameters}
                     availableBaseStrategies={strategies}
-                    onSave={handleParametersUpdate}
-                    onDelete={
-                      selectedStrategy.type.toUpperCase() === 'COMPOSITE'
-                        ? () => handleDeleteStrategy(selectedStrategy.name)
-                        : undefined
-                    }
                   />
 
                   <button
@@ -566,17 +578,41 @@ export default function StrategyBuilderPage() {
 
               {backtestStatus && (
                 <div 
-                  className="bg-[#0ecb81]/10 border border-[#0ecb81]/30 rounded-xl text-sm font-bold text-center text-[#0ecb81] shadow-lg shadow-[#0ecb81]/5 flex items-center justify-center gap-3"
+                  className="bg-[#0ecb81]/10 border border-[#0ecb81]/30 rounded-xl text-sm font-bold text-center text-[#0ecb81] shadow-lg shadow-[#0ecb81]/5 flex items-center justify-center gap-3 min-w-0"
                   style={{ padding: '1rem 1.25rem' }}
                 >
-                  <span className="w-2 h-2 rounded-full bg-[#0ecb81] animate-pulse"></span>
-                  <span>{backtestStatus} for <span className="font-extrabold text-white">{selectedStrategy?.name || 'Selected Strategy'}</span></span>
+                  <span className="w-2 h-2 rounded-full bg-[#0ecb81] animate-pulse shrink-0"></span>
+                  <span className="truncate">{backtestStatus} for <span className="font-extrabold text-white">{selectedStrategy?.name || 'Selected Strategy'}</span></span>
                 </div>
               )}
             </div>
 
-            {/* Trade Results Table */}
-            <TradeTable trades={tradeResults} />
+            {/* Backtest Results Stacked Layout */}
+            {tradeResults.length > 0 ? (
+              <div className="flex flex-col gap-6 w-full">
+                {/* Equity Curve Chart */}
+                <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
+                  <h3 className="text-xl font-bold text-gray-100">Equity Curve</h3>
+                  <EquityCurveChart trades={tradeResults as any} initialCapital={initialCapital} />
+                </div>
+
+                {/* Trade Results Table */}
+                <div className="bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-2xl flex flex-col gap-6" style={{ padding: '2rem' }}>
+                  <h3 className="text-xl font-bold text-gray-100">Trade Details</h3>
+                  <TradeDetailTable trades={tradeResults as any} />
+                </div>
+              </div>
+            ) : backtestStatus === 'Backtest simulation completed' ? (
+              <div className="flex flex-col gap-4 w-full p-8 bg-[#1e2329] border border-[#2b3139] rounded-2xl shadow-xl text-center items-center justify-center">
+                 <svg className="w-12 h-12 text-gray-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                 </svg>
+                 <div className="text-gray-300 font-bold text-lg">No trades executed</div>
+                 <div className="text-gray-500 text-sm max-w-md">
+                   The selected strategy did not generate any trading signals during the specified period. Try adjusting the timeframe or date range.
+                 </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
