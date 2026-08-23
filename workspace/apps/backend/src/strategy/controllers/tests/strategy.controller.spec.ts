@@ -4,6 +4,7 @@ import type {
   IEventBus,
   IJobQueue,
   IStrategy,
+  IStrategyExecutionPort,
   StrategyVersion,
 } from '@crypto-strategy-lab/shared';
 import {
@@ -21,11 +22,13 @@ import { RsiStrategy } from '../../strategies/rsi.strategy';
 import { PrismaService } from '../../../database/prisma.service';
 
 describe('StrategyController', () => {
+  const USER_ID = 'f42a4238-8630-4c22-8a47-099028464d17';
   let controller: StrategyController;
   let registry: StrategyRegistry;
   let versioning: jest.Mocked<StrategyVersioningService>;
   let jobQueue: jest.Mocked<IJobQueue>;
   let eventBus: jest.Mocked<IEventBus>;
+  let executionPort: jest.Mocked<IStrategyExecutionPort>;
   let prisma: PrismaService;
   let versions: StrategyVersion[];
   let findBacktestResult: jest.Mock<() => Promise<unknown>>;
@@ -82,6 +85,9 @@ describe('StrategyController', () => {
       subscribe: jest.fn<IEventBus['subscribe']>(),
       unsubscribe: jest.fn<IEventBus['unsubscribe']>(),
     };
+    executionPort = {
+      resolveVersion: jest.fn<IStrategyExecutionPort['resolveVersion']>(),
+    };
 
     const ma = new MovingAverageStrategy(registry);
     const rsi = new RsiStrategy(registry);
@@ -100,6 +106,7 @@ describe('StrategyController', () => {
       versioning,
       jobQueue,
       eventBus,
+      executionPort,
       prisma,
     );
   });
@@ -133,7 +140,7 @@ describe('StrategyController', () => {
       timeframe: '1h',
       startDate: new Date(),
       endDate: new Date(),
-    }, null);
+    }, USER_ID);
 
     expect(result.status).toBe(JobStatusValue.QUEUED);
     expect(jobQueue.enqueue).toHaveBeenCalledWith(
@@ -142,12 +149,17 @@ describe('StrategyController', () => {
         jobId: result.jobId,
         pair: 'BTCUSDT',
         strategyVersionId: result.strategyVersionId,
+        userId: USER_ID,
       }),
       expect.any(String),
     );
     expect(eventBus.publish).toHaveBeenCalledWith(
       EventType.BacktestRequested,
-      expect.objectContaining({ jobId: result.jobId, pair: 'BTCUSDT' }),
+      expect.objectContaining({
+        jobId: result.jobId,
+        pair: 'BTCUSDT',
+        userId: USER_ID,
+      }),
       expect.any(String),
     );
     expect(jobQueue.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
@@ -158,7 +170,7 @@ describe('StrategyController', () => {
   it('GET /api/strategies/:id returns an immutable strategy version', async () => {
     const created = await controller.createComposite({
       name: 'TestVersionById',
-      childStrategyNames: ['MovingAverage'],
+      childStrategyNames: ['MovingAverage', 'RelativeStrengthIndex'],
       combinerType: CombinerType.MAJORITY_VOTE,
     }, null);
 

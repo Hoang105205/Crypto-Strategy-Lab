@@ -102,6 +102,7 @@ const CORRELATION_ID = '2660f14b-c12a-4cc1-a33f-a6e48b51ac9a';
 const LOOP_RUN_ID = 'dc492a14-ee46-4748-9ef9-3c364689d20d';
 const STRATEGY_VERSION_ID = '69e1c401-810a-431f-b2d8-d9f732e7f829';
 const RESULT_ID = '3d2be150-1ce6-451e-a8c4-2c4d1b7e4618';
+const USER_ID = 'f42a4238-8630-4c22-8a47-099028464d17';
 const START_DATE = new Date('2026-08-01T00:00:00.000Z');
 const END_DATE = new Date('2026-08-02T00:00:00.000Z');
 const EXECUTED_AT = new Date('2026-08-15T03:00:00.000Z');
@@ -121,12 +122,56 @@ const userPayload = (jobId = JOB_ID): UserBacktestRequestedPayload => ({
   },
   source: BacktestSource.USER,
   loopRunId: null,
+  userId: USER_ID,
 });
 
 const searchPayload = (jobId = JOB_ID): SearchLoopBacktestRequestedPayload => ({
   ...userPayload(jobId),
   source: BacktestSource.SEARCH_LOOP,
   loopRunId: LOOP_RUN_ID,
+  userId: null,
+});
+
+describe('Phase 1 shared ownership contract', () => {
+  it('requires nullable userId on BacktestCompleted', () => {
+    const sharedEvents = readFileSync(
+      join(__dirname, '../../../../libs/shared/src/events/index.ts'),
+      'utf8',
+    );
+    const completedContract = sharedEvents.slice(
+      sharedEvents.indexOf('export interface BacktestCompletedPayload'),
+      sharedEvents.indexOf('export interface BacktestFailedPayload'),
+    );
+
+    expect(completedContract).toMatch(/^\s*userId: string \| null;/m);
+
+    const completed = {
+      jobId: JOB_ID,
+      correlationId: CORRELATION_ID,
+      userId: null,
+      loopRunId: LOOP_RUN_ID,
+      backtestResultId: RESULT_ID,
+      strategyVersionId: STRATEGY_VERSION_ID,
+      strategyName: 'Moving Average',
+      strategyType: StrategyType.MA,
+      isComposite: false,
+      pair: 'BTCUSDT',
+      timeframe: '1h',
+      status: 'SUCCESS',
+      metrics: {
+        totalReturn: 12.5,
+        winRate: 0.6 as BacktestCompletedPayload['metrics']['winRate'],
+        maxDrawdown: -8,
+        sharpeRatio: 1.4,
+        profitFactor: 1.8,
+        totalTrades: 12,
+      },
+      executedAt: EXECUTED_AT,
+      executionTimeMs: 25,
+    } satisfies BacktestCompletedPayload;
+
+    expect(completed.userId).toBeNull();
+  });
 });
 
 const candle: Candle = {
@@ -188,6 +233,7 @@ const completedMetrics: BacktestCompletedPayload['metrics'] = {
 const savedResult = {
   id: RESULT_ID,
   jobId: JOB_ID,
+  userId: USER_ID,
   strategyVersionId: STRATEGY_VERSION_ID,
   pair: 'BTCUSDT',
   timeframe: '1h',
@@ -397,6 +443,7 @@ describe('BacktestWorker contract (T013)', () => {
         {
           jobId: JOB_ID,
           correlationId: CORRELATION_ID,
+          userId: USER_ID,
           loopRunId: null,
           backtestResultId: RESULT_ID,
           strategyVersionId: STRATEGY_VERSION_ID,
@@ -417,6 +464,30 @@ describe('BacktestWorker contract (T013)', () => {
       );
       expect(deadLetterRepository.mirror).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['USER UUID', userPayload(), USER_ID],
+      ['SEARCH_LOOP null', searchPayload(), null],
+    ] as const)(
+      'copies %s ownership into BacktestResult persistence and BacktestCompleted',
+      async (_label, payload, expectedUserId) => {
+        resultPort.save.mockImplementation(async (input) => ({
+          id: RESULT_ID,
+          ...input,
+        }));
+
+        await createWorker().process(jobFixture(payload));
+
+        expect(resultPort.save).toHaveBeenCalledWith(
+          expect.objectContaining({ userId: expectedUserId }),
+        );
+        expect(eventBus.publish).toHaveBeenCalledWith(
+          EventType.BacktestCompleted,
+          expect.objectContaining({ userId: expectedUserId }),
+          CORRELATION_ID,
+        );
+      },
+    );
 
     it('normalizes evaluator percentage winRate before persistence and publication', async () => {
       evaluator.evaluate.mockReturnValue({ ...metrics, winRate: 60 });

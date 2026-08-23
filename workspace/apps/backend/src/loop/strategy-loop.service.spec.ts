@@ -196,6 +196,7 @@ const completedEnvelope = (
   payload: {
     jobId,
     correlationId: randomUUID(),
+    userId: null,
     loopRunId,
     backtestResultId: randomUUID(),
     strategyVersionId,
@@ -487,11 +488,13 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
           source: BacktestSource.SEARCH_LOOP,
           loopRunId: activeRun.id,
           strategyVersionId: firstCandidate.strategyVersionId,
+          userId: null,
         }),
         expect.any(String),
       );
       expect(isUuid(queuePayload.jobId)).toBe(true);
       expect(queuePayload.jobId).toBe(firstCandidate.jobId);
+      expect(queuePayload.userId).toBeNull();
       expect(requestedCall?.[1]).toEqual(queuePayload);
       expect(requestedCall?.[2]).toBe(queueCorrelationId);
     });

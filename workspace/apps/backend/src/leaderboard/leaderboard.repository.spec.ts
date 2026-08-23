@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Prisma, type LeaderboardEntry } from '@prisma/client';
@@ -69,9 +69,43 @@ const EXECUTED_AT = new Date('2026-08-16T01:00:00.000Z');
 const CREATED_AT = new Date('2026-08-16T01:00:01.000Z');
 const UPDATED_AT = new Date('2026-08-16T01:00:02.000Z');
 
+describe('Phase 1 shared ownership contract', () => {
+  it('requires nullable userId on LeaderboardEntryPayload', () => {
+    const infrastructureTypes = readFileSync(
+      join(__dirname, '../../../../libs/shared/src/types/infrastructure.ts'),
+      'utf8',
+    );
+    const entryContract = infrastructureTypes.slice(
+      infrastructureTypes.indexOf('export interface LeaderboardEntryPayload'),
+      infrastructureTypes.indexOf('export interface SearchLoopConfig'),
+    );
+
+    expect(entryContract).toMatch(/^\s*userId: string \| null;/m);
+
+    const entry = {
+      rank: 1,
+      userId: null,
+      strategyVersionId: randomUUID(),
+      strategyName: 'System strategy',
+      strategyType: 'MA',
+      isComposite: false,
+      backtestResultId: randomUUID(),
+      score: 0.5,
+      totalReturn: 20,
+      winRate: normalizedRate(0.7),
+      maxDrawdown: -10,
+      sharpeRatio: 1.5,
+      totalTrades: 12,
+    } satisfies LeaderboardEntryPayload;
+
+    expect(entry.userId).toBeNull();
+  });
+});
+
 const row = (overrides: Partial<LeaderboardEntry> = {}): LeaderboardEntry => ({
   id: randomUUID(),
   rank: 0,
+  userId: null,
   strategyVersionId: randomUUID(),
   strategyName: 'Moving Average',
   strategyType: 'MA',
@@ -109,6 +143,7 @@ const createInput = (
 
 const payload = (entry: LeaderboardEntry): LeaderboardEntryPayload => ({
   rank: entry.rank,
+  userId: entry.userId,
   strategyVersionId: entry.strategyVersionId,
   strategyName: entry.strategyName,
   strategyType: entry.strategyType,

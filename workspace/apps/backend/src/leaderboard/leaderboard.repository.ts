@@ -165,6 +165,7 @@ export class LeaderboardRepository {
   private map(entry: PrismaLeaderboardEntry): LeaderboardEntryPayload {
     return {
       rank: entry.rank,
+      userId: entry.userId,
       strategyVersionId: entry.strategyVersionId,
       strategyName: entry.strategyName,
       strategyType: entry.strategyType,

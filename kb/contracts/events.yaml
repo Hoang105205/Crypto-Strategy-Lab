@@ -229,7 +229,8 @@ events:
       Published by the worker after a backtest finishes successfully. Carries an evaluation metrics
       summary so the Leaderboard and Loop Controller can rank/decide without an extra DB round-trip.
       The full trade list stays in BacktestResult, fetched on demand via
-      GET /api/strategies/backtest/:id.
+      GET /api/strategies/backtest/:id. userId is required on every payload and remains nullable:
+      null identifies a system/search-loop backtest and a UUID identifies a user-owned backtest.
     payload:
       jobId: UUID
       correlationId: UUID
@@ -252,6 +253,9 @@ events:
         totalTrades: number
       executedAt: DateTime
       executionTimeMs: number
+    contractNote: >
+      Ownership propagation is defined by
+      sdd_artifacts/per-user-leaderboard-live-toggle/contracts/userid-propagation.md.
 
   BacktestFailed:
     publisher: "Event Infrastructure (Job Queue Worker)"
@@ -295,12 +299,18 @@ events:
     description: >
       Published after the Leaderboard recomputes Top-K ranking in reaction to BacktestCompleted.
       The WebSocket Gateway relays this to all connected frontend clients on the
-      `leaderboard:update` channel (see kb/modules/event-infrastructure.md Section 7).
+      `leaderboard:update` channel (see kb/modules/event-infrastructure.md Section 7). Because this
+      event is namespace-wide, topK contains system-owned rows only (every entry has userId=null),
+      never private user rows. A private backtest may invalidate viewers by publishing a null trigger,
+      but its private result identifier and private Top-K must not be broadcast.
     payload:
       updatedAt: DateTime
-      triggeredByBacktestResultId: UUID
+      triggeredByBacktestResultId: UUID? # system result UUID, or null when revealing the trigger would leak private ownership
       rankingCriterion: string          # "score" | "totalReturn" | "winRate" | "sharpeRatio"
-      topK: LeaderboardEntryPayload[]
+      topK: LeaderboardEntryPayload[]    # system-only projection; every entry has userId=null
+    contractNote: >
+      The safe namespace-wide wire shape and frontend refresh behavior are defined by
+      sdd_artifacts/per-user-leaderboard-live-toggle/contracts/leaderboard-realtime.md.
 
   SearchLoopStarted:
     publisher: "Event Infrastructure (Loop Controller)"

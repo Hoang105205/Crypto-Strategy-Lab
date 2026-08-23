@@ -61,11 +61,12 @@ type PushGatewayConstructor = new (eventBus: IEventBus) => PushGatewayContract;
 const relayFixtures = {
   [EventType.LeaderboardUpdated]: {
     updatedAt: UPDATED_AT,
-    triggeredByBacktestResultId: BACKTEST_RESULT_ID,
+    triggeredByBacktestResultId: null,
     rankingCriterion: RankingCriterion.SCORE,
     topK: [
       {
         rank: 7,
+        userId: null,
         strategyVersionId: STRATEGY_VERSION_ID,
         strategyName: 'Moving Average',
         strategyType: 'MA',
@@ -113,6 +114,30 @@ const relayFixtures = {
     stoppedAt: STOPPED_AT,
   },
 } satisfies Pick<EventPayloadMap, RelayEventType>;
+
+describe('Phase 1 shared ownership contract', () => {
+  it('allows a nullable private trigger and requires system ownership in Top-K', () => {
+    const sharedEvents = readFileSync(
+      join(__dirname, '../../../../libs/shared/src/events/index.ts'),
+      'utf8',
+    );
+    const updatedContract = sharedEvents.slice(
+      sharedEvents.indexOf('export interface LeaderboardUpdatedPayload'),
+      sharedEvents.indexOf('export interface SearchLoopStartedPayload'),
+    );
+
+    expect(updatedContract).toMatch(
+      /^\s*triggeredByBacktestResultId: string \| null;/m,
+    );
+
+    const payload: EventPayloadMap['LeaderboardUpdated'] =
+      relayFixtures.LeaderboardUpdated;
+
+    expect(payload.triggeredByBacktestResultId).toBeNull();
+    expect(payload.topK).toHaveLength(1);
+    expect(payload.topK.every((entry) => entry.userId === null)).toBe(true);
+  });
+});
 
 const relayChannels: Readonly<Record<RelayEventType, string>> = {
   [EventType.LeaderboardUpdated]: 'leaderboard:update',
