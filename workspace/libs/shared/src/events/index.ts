@@ -65,6 +65,7 @@ export type BacktestEvaluationMetrics = Omit<EvaluationMetrics, 'winRate'> & {
 export interface BacktestCompletedPayload {
   jobId: string;
   correlationId: string;
+  userId: string | null;
   loopRunId: string | null;
   backtestResultId: string;
   strategyVersionId: string;
@@ -99,7 +100,7 @@ export interface BacktestDeadLetteredPayload {
 
 export interface LeaderboardUpdatedPayload {
   updatedAt: Date;
-  triggeredByBacktestResultId: string;
+  triggeredByBacktestResultId: string | null;
   rankingCriterion: RankingCriterion;
   topK: LeaderboardEntryPayload[];
 }

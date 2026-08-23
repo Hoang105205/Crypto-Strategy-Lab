@@ -4,8 +4,11 @@ import {
 } from '@crypto-strategy-lab/shared';
 import { BacktestResultPort } from './backtest-result.port';
 
+const USER_ID = 'f42a4238-8630-4c22-8a47-099028464d17';
+
 const input: BacktestResultCreateInput = {
   jobId: 'f3338108-2257-4e16-bf43-80ad50507ba1',
+  userId: USER_ID,
   strategyVersionId: 'version-1',
   pair: 'BTCUSDT',
   timeframe: '1h',
@@ -38,6 +41,22 @@ const strategyVersion = {
 };
 
 describe('BacktestResultPort', () => {
+  it.each([
+    ['USER UUID', USER_ID],
+    ['SEARCH_LOOP null', null],
+  ] as const)('persists and maps %s ownership unchanged', async (_label, userId) => {
+    const ownedInput = { ...input, userId };
+    const ownedStored = { id: 'result-1', ...ownedInput };
+    const prisma = mockPrisma(null);
+    prisma.backtestResult.create.mockResolvedValue(ownedStored);
+    const port = new BacktestResultPort(prisma as never);
+
+    await expect(port.save(ownedInput)).resolves.toMatchObject({ userId });
+    expect(prisma.backtestResult.create).toHaveBeenCalledWith({
+      data: { ...ownedInput, trades: ownedInput.trades },
+    });
+  });
+
   it('creates a result once using producer jobId', async () => {
     const prisma = mockPrisma(null);
     prisma.backtestResult.create.mockResolvedValue(stored);
@@ -65,6 +84,15 @@ describe('BacktestResultPort', () => {
     await expect(
       port.save({ ...input, pair: 'ETHUSDT' }),
     ).rejects.toMatchObject({
+      code: 'JOB_CONFLICT',
+    });
+  });
+
+  it('rejects idempotent jobId reuse with different nullable ownership', async () => {
+    const prisma = mockPrisma(stored);
+    const port = new BacktestResultPort(prisma as never);
+
+    await expect(port.save({ ...input, userId: null })).rejects.toMatchObject({
       code: 'JOB_CONFLICT',
     });
   });

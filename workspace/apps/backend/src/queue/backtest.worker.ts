@@ -145,6 +145,7 @@ export class BacktestWorker {
         () =>
           this.resultPort.save({
             jobId: payload.jobId,
+            userId: payload.userId,
             strategyVersionId: payload.strategyVersionId,
             pair: payload.pair,
             timeframe: payload.timeframe,
@@ -160,6 +161,7 @@ export class BacktestWorker {
       const completion: BacktestCompletedPayload = {
         jobId: payload.jobId,
         correlationId,
+        userId: payload.userId,
         loopRunId: payload.loopRunId,
         backtestResultId: saved.id,
         strategyVersionId: payload.strategyVersionId,

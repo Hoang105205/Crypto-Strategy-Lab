@@ -56,6 +56,7 @@ export class BacktestResultPort implements IBacktestResultPort {
     existing: DbBacktestResult,
   ): BacktestResult {
     const sameIdentity =
+      existing.userId === input.userId &&
       existing.strategyVersionId === input.strategyVersionId &&
       existing.pair === input.pair &&
       existing.timeframe === input.timeframe &&

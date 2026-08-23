@@ -66,6 +66,7 @@ export interface DeadLetterJob {
 
 export interface LeaderboardEntryPayload {
   rank: number;
+  userId: string | null;
   strategyVersionId: string;
   strategyName: string;
   strategyType: string;

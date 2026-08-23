@@ -1,5 +1,7 @@
 # Agent Learn Index
 
+- [Per-user Leaderboard Live Toggle Phase 1 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-1-2026-08-23.md): runtime source contract gates, nullable ownership propagation, idempotent owner identity, stale Prisma Client recovery, and real-Redis phase validation.
+
 - [Event Infrastructure Dashboard T046 - 2026-08-18](lessons/event-infrastructure-dashboard-t046-2026-08-18.md): real-Redis serial validation, lifecycle-timeout stabilization, lint `--fix` mutation control, boundary auditing, and owner-specific blocked-gate reporting.
 
 - [Event Infrastructure Dashboard T045 - 2026-08-16](lessons/event-infrastructure-dashboard-t045-2026-08-16.md): prop-driven live Leaderboard composition, exact percentage semantics, safe typed detail loading, lightweight-charts v5 primitive lifecycle, React 19 chart-series state, and honest checkpoint limitations.
