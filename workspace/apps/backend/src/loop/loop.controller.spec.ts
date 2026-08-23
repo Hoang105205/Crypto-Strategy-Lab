@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import {
@@ -19,6 +19,8 @@ import {
   type SearchLoopRun,
 } from '@crypto-strategy-lab/shared';
 import request from 'supertest';
+import { GUARDS_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 
 const CONTROLLER_FILE = join(__dirname, 'loop.controller.ts');
 const CONTROLLER_MODULE = join(__dirname, 'loop.controller');
@@ -189,7 +191,10 @@ describeWithTarget('LoopController stable REST contract', () => {
         { provide: StrategyLoopService, useValue: loopService },
         { provide: LoopStatusService, useValue: loopStatus },
       ],
-    }).compile();
+    })
+      .overrideGuard(SupabaseJwtGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
     app = module.createNestApplication();
     await app.init();
   });
@@ -392,6 +397,43 @@ describeWithTarget('LoopController stable REST contract', () => {
       );
       expect(loopStatus.getDetail).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('T018 optional-auth boundary with global loop semantics', () => {
+  const routeMethods = [
+    'start',
+    'pause',
+    'resume',
+    'stop',
+    'getCurrent',
+    'detail',
+  ] as const;
+
+  it('uses SupabaseJwtGuard and CurrentUser on every loop route without RequireAuth', () => {
+    const LoopController = loadExport<NestClass>(
+      CONTROLLER_MODULE,
+      'LoopController',
+    );
+
+    expect(Reflect.getMetadata(GUARDS_METADATA, LoopController)).toEqual([
+      SupabaseJwtGuard,
+    ]);
+
+    for (const method of routeMethods) {
+      const routeArgs = Reflect.getMetadata(
+        ROUTE_ARGS_METADATA,
+        LoopController,
+        method,
+      ) as Record<string, { index: number }> | undefined;
+      expect(
+        Object.values(routeArgs ?? {}).some(({ index }) => index === 1),
+      ).toBe(true);
+    }
+
+    const source = readFileSync(CONTROLLER_FILE, 'utf8');
+    expect(source.match(/@CurrentUser\(\)/g)).toHaveLength(routeMethods.length);
+    expect(source).not.toContain('RequireAuth');
   });
 });
 

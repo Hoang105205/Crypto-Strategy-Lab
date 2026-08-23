@@ -96,6 +96,10 @@ export function useLeaderboard(
         ) {
           return;
         }
+        realtimeWatermarkRef.current = Math.max(
+          realtimeWatermarkRef.current,
+          snapshot.updatedAt.getTime(),
+        );
         commitData(snapshot);
         setLastSuccessfulAt(snapshot.updatedAt);
         setIsStale(false);
@@ -145,13 +149,7 @@ export function useLeaderboard(
 
       realtimeWatermarkRef.current = updatedAt.getTime();
       liveRevisionRef.current += 1;
-      const next: LeaderboardSnapshot = {
-        rankingCriterion: sortByRef.current,
-        updatedAt,
-        entries: wire.topK,
-      };
-      commitData(next);
-      setLastSuccessfulAt(updatedAt);
+      void refetch();
     };
 
     socket.on('connect', handleConnect as EventHandler);

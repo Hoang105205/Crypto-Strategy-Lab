@@ -27,9 +27,11 @@ export class DashboardService {
     @Inject(IJOB_QUEUE) private readonly jobQueue: IJobQueue,
   ) {}
 
-  async getSummary(): Promise<DashboardSummary> {
+  async getSummary(
+    viewerUserId: string | null = null,
+  ): Promise<DashboardSummary> {
     const [leaderboard, loop, queue] = await Promise.all([
-      this.leaderboard.getLeaderboard(RankingCriterion.SCORE),
+      this.leaderboard.getLeaderboard(RankingCriterion.SCORE, viewerUserId),
       this.loopStatus.getCurrent(),
       this.jobQueue.getStats(),
     ]);

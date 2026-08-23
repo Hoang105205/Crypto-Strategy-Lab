@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/unbound-method -- integration assertions inspect contract fakes. */
-import { Module, type INestApplication } from '@nestjs/common';
+import {
+  Module,
+  type CanActivate,
+  type ExecutionContext,
+  type INestApplication,
+} from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
@@ -29,7 +34,10 @@ import type {
 } from '@prisma/client';
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
+import request from 'supertest';
 import { PrismaService } from '../database/prisma.service';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
+import { SupabaseService } from '../auth/supabase.service';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 import { ScoringPolicy } from '../leaderboard/scoring-policy';
 import { QueueModule } from '../queue/queue.module';
@@ -167,6 +175,7 @@ interface Harness {
   requested: BacktestRequestedPayload[];
   progress: SearchLoopProgressPayload[];
   stopped: SearchLoopStoppedPayload[];
+  authGuard: { canActivate: jest.Mock<(context: ExecutionContext) => boolean> };
 }
 
 const openHarnesses: Harness[] = [];
@@ -471,10 +480,85 @@ describe('Loop integration: generator provider replacement', () => {
   });
 });
 
+describe('T018 optional-auth identities observe one global SearchLoopRun', () => {
+  it('returns identical current/detail state and never adds viewer data to persistence calls or records', async () => {
+    const identity = restartFixture();
+    const harness = await createHarness({
+      seed: (prisma, queue) => {
+        prisma.runs.push(identity.run);
+        prisma.candidates.push(identity.candidate);
+        queue.seed(identity.candidate.jobId, JobStatusValue.QUEUED);
+      },
+    });
+    harness.authGuard.canActivate.mockClear();
+    harness.prisma.searchLoopRun.findFirst.mockClear();
+    harness.prisma.searchLoopRun.findUnique.mockClear();
+    harness.prisma.searchLoopCandidate.findMany.mockClear();
+
+    const responses: Array<{ current: unknown; detail: unknown }> = [];
+    for (const authorization of [undefined, 'Bearer user-a', 'Bearer user-b']) {
+      const currentRequest = request(harness.app.getHttpServer()).get(
+        '/api/loop/current',
+      );
+      if (authorization) {
+        currentRequest.set('Authorization', authorization);
+      }
+      const current = await currentRequest.expect(200);
+
+      const detailRequest = request(harness.app.getHttpServer()).get(
+        `/api/loop/${identity.run.id}`,
+      );
+      if (authorization) {
+        detailRequest.set('Authorization', authorization);
+      }
+      const detail = await detailRequest.expect(200);
+      responses.push({ current: current.body, detail: detail.body });
+    }
+
+    expect(responses[1]).toEqual(responses[0]);
+    expect(responses[2]).toEqual(responses[0]);
+    expect(harness.authGuard.canActivate).toHaveBeenCalledTimes(6);
+    expect(harness.prisma.searchLoopRun.findFirst).toHaveBeenCalledTimes(3);
+    expect(harness.prisma.searchLoopRun.findUnique).toHaveBeenCalledTimes(3);
+    expect(harness.prisma.searchLoopCandidate.findMany).toHaveBeenCalledTimes(
+      3,
+    );
+
+    const persistenceEvidence = JSON.stringify({
+      runReads: harness.prisma.searchLoopRun.findFirst.mock.calls,
+      detailReads: harness.prisma.searchLoopRun.findUnique.mock.calls,
+      candidateReads: harness.prisma.searchLoopCandidate.findMany.mock.calls,
+      runs: harness.prisma.runs,
+      candidates: harness.prisma.candidates,
+    });
+    expect(persistenceEvidence).not.toContain('userId');
+    expect(persistenceEvidence).not.toContain('11111111-1111-4111-8111-111111111111');
+    expect(persistenceEvidence).not.toContain('22222222-2222-4222-8222-222222222222');
+  });
+});
+
 async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   const prisma = new InMemoryLoopPrisma();
   const queue = new ContractJobQueueFake();
   const generator = options.generator ?? new ContractCandidatePortFake();
+  const authGuard: Harness['authGuard'] = {
+    canActivate: jest.fn((context: ExecutionContext) => {
+      const httpRequest = context.switchToHttp().getRequest<{
+        headers: { authorization?: string };
+        user?: { id: string | null };
+      }>();
+      const token = httpRequest.headers.authorization?.replace(/^Bearer /, '');
+      httpRequest.user = {
+        id:
+          token === 'user-a'
+            ? '11111111-1111-4111-8111-111111111111'
+            : token === 'user-b'
+              ? '22222222-2222-4222-8222-222222222222'
+              : null,
+      };
+      return true;
+    }),
+  };
   options.seed?.(prisma, queue);
 
   const module = await Test.createTestingModule({
@@ -492,6 +576,10 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
     .useValue(queue)
     .overrideProvider(ISTRATEGY_CANDIDATE_PORT)
     .useValue(generator)
+    .overrideProvider(SupabaseService)
+    .useValue({ verifyToken: jest.fn() })
+    .overrideGuard(SupabaseJwtGuard)
+    .useValue(authGuard)
     .compile();
   const app = module.createNestApplication();
   await app.init();
@@ -522,6 +610,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
     requested,
     progress,
     stopped,
+    authGuard,
   };
   openHarnesses.push(harness);
   return harness;

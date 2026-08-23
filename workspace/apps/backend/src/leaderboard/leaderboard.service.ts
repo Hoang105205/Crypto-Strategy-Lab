@@ -83,6 +83,7 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
     if (!Number.isFinite(score)) return;
 
     const created = await this.repository.create({
+      userId: normalized.userId,
       strategyVersionId: normalized.strategyVersionId,
       strategyName: normalized.strategyName,
       strategyType: normalized.strategyType,
@@ -99,14 +100,15 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
     if (!created) return;
 
     await this.repository.rerank();
-    const topK = await this.repository.getTopK(RankingCriterion.SCORE);
-    const updatedAt = await this.repository.getUpdatedAt();
+    const topK = await this.repository.getTopK(RankingCriterion.SCORE, null);
+    const updatedAt = await this.repository.getUpdatedAt(null);
 
     this.eventBus.publish(
       EventType.LeaderboardUpdated,
       {
         updatedAt,
-        triggeredByBacktestResultId: normalized.backtestResultId,
+        triggeredByBacktestResultId:
+          normalized.userId === null ? normalized.backtestResultId : null,
         rankingCriterion: RankingCriterion.SCORE,
         topK,
       },
@@ -116,9 +118,12 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
 
   async getDetail(
     strategyVersionId: string,
+    viewerUserId: string | null = null,
   ): Promise<LeaderboardDetail | null> {
-    const entry =
-      await this.repository.findBestByStrategyVersionId(strategyVersionId);
+    const entry = await this.repository.findBestByStrategyVersionId(
+      strategyVersionId,
+      viewerUserId,
+    );
     if (!entry) return null;
 
     let result: BacktestResultDetail | null;
@@ -139,9 +144,10 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
 
   async getLeaderboard(
     criterion: RankingCriterion = RankingCriterion.SCORE,
+    viewerUserId: string | null = null,
   ): Promise<LeaderboardSnapshot> {
-    const entries = await this.repository.getTopK(criterion);
-    const updatedAt = await this.repository.getUpdatedAt();
+    const entries = await this.repository.getTopK(criterion, viewerUserId);
+    const updatedAt = await this.repository.getUpdatedAt(viewerUserId);
     return { rankingCriterion: criterion, updatedAt, entries };
   }
 }

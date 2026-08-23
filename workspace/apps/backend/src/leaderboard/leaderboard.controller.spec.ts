@@ -1,5 +1,11 @@
 import { HttpException } from '@nestjs/common';
 import {
+  GUARDS_METADATA,
+  ROUTE_ARGS_METADATA,
+} from '@nestjs/common/constants';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
   RankingCriterion,
   StrategyType,
   type LeaderboardSnapshot,
@@ -14,10 +20,13 @@ import {
   StrategyEngineUnavailableError,
   type LeaderboardDetail,
 } from './leaderboard.service';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 
 const STRATEGY_VERSION_ID = '69e1c401-810a-431f-b2d8-d9f732e7f829';
 const RESULT_ID = '3d2be150-1ce6-451e-a8c4-2c4d1b7e4618';
 const UPDATED_AT = new Date('2026-08-16T03:00:00.000Z');
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
 
 const snapshot: LeaderboardSnapshot = {
   rankingCriterion: RankingCriterion.SCORE,
@@ -27,6 +36,7 @@ const snapshot: LeaderboardSnapshot = {
 
 const detail: LeaderboardDetail = {
   rank: 1,
+  userId: null,
   strategyVersionId: STRATEGY_VERSION_ID,
   strategyName: 'Moving Average',
   strategyType: 'MA',
@@ -90,8 +100,11 @@ describe('LeaderboardController', () => {
       snapshot,
     );
     await expect(controller.detail(STRATEGY_VERSION_ID)).resolves.toBe(detail);
-    expect(service.getLeaderboard).toHaveBeenCalledWith(RankingCriterion.SCORE);
-    expect(service.getDetail).toHaveBeenCalledWith(STRATEGY_VERSION_ID);
+    expect(service.getLeaderboard).toHaveBeenCalledWith(
+      RankingCriterion.SCORE,
+      null,
+    );
+    expect(service.getDetail).toHaveBeenCalledWith(STRATEGY_VERSION_ID, null);
   });
 
   it('returns stable LEADERBOARD_ENTRY_NOT_FOUND', async () => {
@@ -117,6 +130,62 @@ describe('LeaderboardController', () => {
       LeaderboardErrorCode.STRATEGY_ENGINE_UNAVAILABLE,
     );
   });
+});
+
+describe('T011 optional-auth controller scope', () => {
+  it('uses SupabaseJwtGuard and CurrentUser on every list/detail read without RequireAuth', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, LeaderboardController)).toEqual([
+      SupabaseJwtGuard,
+    ]);
+
+    const listArgs = Reflect.getMetadata(
+      ROUTE_ARGS_METADATA,
+      LeaderboardController,
+      'list',
+    ) as Record<string, { index: number }> | undefined;
+    const detailArgs = Reflect.getMetadata(
+      ROUTE_ARGS_METADATA,
+      LeaderboardController,
+      'detail',
+    ) as Record<string, { index: number }> | undefined;
+    expect(Object.values(listArgs ?? {}).some(({ index }) => index === 1)).toBe(
+      true,
+    );
+    expect(
+      Object.values(detailArgs ?? {}).some(({ index }) => index === 1),
+    ).toBe(true);
+
+    const source = readFileSync(
+      join(__dirname, 'leaderboard.controller.ts'),
+      'utf8',
+    );
+    expect(source.match(/@CurrentUser\(\)/g)).toHaveLength(2);
+    expect(source).not.toContain('RequireAuth');
+  });
+
+  it.each([
+    ['anonymous', null],
+    ['user A', USER_A],
+    ['user B', USER_B],
+  ] as const)(
+    'passes %s viewer identity unchanged to list and detail service reads',
+    async (_actor, viewerUserId) => {
+      const service = serviceFake();
+      const controller = new LeaderboardController(service as never);
+
+      await controller.list(RankingCriterion.SCORE, viewerUserId);
+      await controller.detail(STRATEGY_VERSION_ID, viewerUserId);
+
+      expect(service.getLeaderboard).toHaveBeenCalledWith(
+        RankingCriterion.SCORE,
+        viewerUserId,
+      );
+      expect(service.getDetail).toHaveBeenCalledWith(
+        STRATEGY_VERSION_ID,
+        viewerUserId,
+      );
+    },
+  );
 });
 
 function serviceFake() {

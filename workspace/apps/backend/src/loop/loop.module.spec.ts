@@ -16,6 +16,7 @@ import {
   type SearchLoopRun,
 } from '@crypto-strategy-lab/shared';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { SupabaseService } from '../auth/supabase.service';
 import { DatabaseModule } from '../database/database.module';
 import { PrismaService } from '../database/prisma.service';
 import { EventsModule } from '../events/events.module';
@@ -282,7 +283,9 @@ function compileLoopModule(): TestingModuleBuilder {
     .overrideModule(StrategyModule)
     .useModule(TestStrategyModule)
     .overrideModule(LeaderboardModule)
-    .useModule(TestScoringModule);
+    .useModule(TestScoringModule)
+    .overrideProvider(SupabaseService)
+    .useValue({ verifyToken: jest.fn() });
 }
 
 function run(overrides: Partial<SearchLoopRun> = {}): SearchLoopRun {

@@ -49,6 +49,8 @@ export interface DashboardSummaryState {
   error: Error | null;
   isStale: boolean;
   lastSuccessfulAt: Date | null;
+  isLeaderboardLive: boolean;
+  setIsLeaderboardLive(value: boolean): void;
   refetch(): Promise<void>;
 }
 
@@ -120,15 +122,28 @@ export function useDashboardSummary(
   const [error, setError] = useState<Error | null>(null);
   const [isStale, setIsStale] = useState(true);
   const [lastSuccessfulAt, setLastSuccessfulAt] = useState<Date | null>(null);
+  const [isLeaderboardLive, setIsLeaderboardLiveState] = useState(true);
   const dataRef = useRef<DashboardSummary | null>(null);
   const requestGenerationRef = useRef(0);
   const liveRevisionRef = useRef(0);
+  const leaderboardWatermarkRef = useRef(Number.NEGATIVE_INFINITY);
+  const isLeaderboardLiveRef = useRef(true);
   const mountedRef = useRef(false);
 
   const commitData = useCallback((next: DashboardSummary) => {
     dataRef.current = next;
     setData(next);
   }, []);
+
+  const updateCurrent = useCallback(
+    (updater: (current: DashboardSummary) => DashboardSummary) => {
+      const current = dataRef.current;
+      if (current === null) return;
+      liveRevisionRef.current += 1;
+      commitData(updater(current));
+    },
+    [commitData],
+  );
 
   const refetch = useCallback(async () => {
     const requestGeneration = ++requestGenerationRef.current;
@@ -143,7 +158,7 @@ export function useDashboardSummary(
       }
 
       const current = dataRef.current;
-      const next =
+      let next =
         current !== null && liveRevisionRef.current !== liveRevisionAtStart
           ? {
               ...snapshot,
@@ -154,6 +169,17 @@ export function useDashboardSummary(
               loop: mergeLoopSnapshot(current.loop, snapshot.loop),
             }
           : snapshot;
+      if (
+        snapshot.leaderboard.updatedAt.getTime() <
+        leaderboardWatermarkRef.current
+      ) {
+        if (current === null) return;
+        next = { ...next, leaderboard: current.leaderboard };
+      }
+      leaderboardWatermarkRef.current = Math.max(
+        leaderboardWatermarkRef.current,
+        next.leaderboard.updatedAt.getTime(),
+      );
       commitData(next);
       setLastSuccessfulAt(snapshot.generatedAt);
       setIsStale(false);
@@ -168,38 +194,30 @@ export function useDashboardSummary(
     }
   }, [commitData, getDashboardSummary]);
 
+  const setIsLeaderboardLive = useCallback((value: boolean) => {
+    isLeaderboardLiveRef.current = value;
+    setIsLeaderboardLiveState(value);
+  }, []);
+
+  const handleLeaderboard = useCallback(
+    (wire: LeaderboardUpdatedWire) => {
+      const updatedAt = asDate(wire.updatedAt);
+      if (updatedAt.getTime() < leaderboardWatermarkRef.current) return;
+      leaderboardWatermarkRef.current = updatedAt.getTime();
+      liveRevisionRef.current += 1;
+      void refetch();
+    },
+    [refetch],
+  );
+
   useEffect(() => {
     mountedRef.current = true;
 
-    const updateCurrent = (
-      updater: (current: DashboardSummary) => DashboardSummary,
-    ) => {
-      const current = dataRef.current;
-      if (current === null) return;
-      liveRevisionRef.current += 1;
-      commitData(updater(current));
-    };
-
     const handleConnect = () => {
       setIsStale(true);
-      void refetch();
+      if (isLeaderboardLiveRef.current) void refetch();
     };
     const handleDisconnect = () => setIsStale(true);
-    const handleLeaderboard = (wire: LeaderboardUpdatedWire) => {
-      const payload = { ...wire, updatedAt: asDate(wire.updatedAt) };
-      updateCurrent((current) =>
-        payload.updatedAt < current.leaderboard.updatedAt
-          ? current
-          : {
-              ...current,
-              leaderboard: {
-                rankingCriterion: payload.rankingCriterion,
-                updatedAt: payload.updatedAt,
-                entries: payload.topK,
-              },
-            },
-      );
-    };
     const handleLoopStarted = (wire: SearchLoopStartedWire) => {
       updateCurrent((current) => ({
         ...current,
@@ -278,24 +296,40 @@ export function useDashboardSummary(
 
     socket.on('connect', handleConnect as EventHandler);
     socket.on('disconnect', handleDisconnect as EventHandler);
-    socket.on('leaderboard:update', handleLeaderboard as EventHandler);
     socket.on('loop:started', handleLoopStarted as EventHandler);
     socket.on('loop:progress', handleLoopProgress as EventHandler);
     socket.on('loop:stopped', handleLoopStopped as EventHandler);
-    // Initial REST synchronization is the subscription effect's startup action.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refetch();
-
     return () => {
       mountedRef.current = false;
       socket.off('connect', handleConnect as EventHandler);
       socket.off('disconnect', handleDisconnect as EventHandler);
-      socket.off('leaderboard:update', handleLeaderboard as EventHandler);
       socket.off('loop:started', handleLoopStarted as EventHandler);
       socket.off('loop:progress', handleLoopProgress as EventHandler);
       socket.off('loop:stopped', handleLoopStopped as EventHandler);
     };
-  }, [commitData, refetch, socket]);
+  }, [refetch, socket, updateCurrent]);
 
-  return { data, loading, error, isStale, lastSuccessfulAt, refetch };
+  useEffect(() => {
+    if (!isLeaderboardLive) return;
+
+    socket.on('leaderboard:update', handleLeaderboard as EventHandler);
+    // Subscribe first so an event during catch-up starts a newer generation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refetch();
+
+    return () => {
+      socket.off('leaderboard:update', handleLeaderboard as EventHandler);
+    };
+  }, [handleLeaderboard, isLeaderboardLive, refetch, socket]);
+
+  return {
+    data,
+    loading,
+    error,
+    isStale,
+    lastSuccessfulAt,
+    isLeaderboardLive,
+    setIsLeaderboardLive,
+    refetch,
+  };
 }

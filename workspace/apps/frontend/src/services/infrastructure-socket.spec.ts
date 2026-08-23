@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './api-client';
 
+vi.mock('../lib/supabase-client', () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({ data: { session: null } }),
+    },
+  },
+}));
+
 const socketIoMock = vi.hoisted(() => vi.fn());
 
 vi.mock('socket.io-client', () => ({
@@ -26,6 +34,21 @@ interface InfrastructureSocketModule {
 
 class FakeClientSocket {
   readonly disconnect = vi.fn();
+  private readonly handlers = new Map<string, Set<(...args: unknown[]) => void>>();
+  readonly on = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+    const listeners = this.handlers.get(event) ?? new Set();
+    listeners.add(handler);
+    this.handlers.set(event, listeners);
+    return this;
+  });
+  readonly off = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+    this.handlers.get(event)?.delete(handler);
+    return this;
+  });
+
+  listenerCount(event: string) {
+    return this.handlers.get(event)?.size ?? 0;
+  }
 }
 
 const dashboardWireFixture = {
@@ -157,5 +180,27 @@ describe('infrastructure Socket.IO singleton contract', () => {
     expect(firstSocket.disconnect).toHaveBeenCalledTimes(1);
     expect(infrastructureSocket.getInfrastructureSocket()).toBe(secondSocket);
     expect(socketIoMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares one socket and exact listener cleanup preserves other channels', async () => {
+    const fakeSocket = new FakeClientSocket();
+    socketIoMock.mockReturnValue(fakeSocket);
+    const infrastructureSocket = await loadInfrastructureSocket();
+    const dashboardConsumer = infrastructureSocket.getInfrastructureSocket();
+    const connectionConsumer = infrastructureSocket.getInfrastructureSocket();
+    const leaderboardHandler = vi.fn();
+    const loopHandler = vi.fn();
+    const queueHandler = vi.fn();
+
+    dashboardConsumer.on('leaderboard:update', leaderboardHandler);
+    connectionConsumer.on('loop:progress', loopHandler);
+    connectionConsumer.on('queue:stats', queueHandler);
+    dashboardConsumer.off('leaderboard:update', leaderboardHandler);
+
+    expect(connectionConsumer).toBe(dashboardConsumer);
+    expect(fakeSocket.listenerCount('leaderboard:update')).toBe(0);
+    expect(fakeSocket.listenerCount('loop:progress')).toBe(1);
+    expect(fakeSocket.listenerCount('queue:stats')).toBe(1);
+    expect(fakeSocket.disconnect).not.toHaveBeenCalled();
   });
 });

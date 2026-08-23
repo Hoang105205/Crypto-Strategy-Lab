@@ -3,8 +3,24 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ReactElement, ReactNode } from 'react';
 
 vi.mock('next/link', () => ({
-  default: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
-    <a href={href} {...props}>
+  default: ({
+    href,
+    children,
+    onClick,
+    ...props
+  }: {
+    href: string;
+    children: ReactNode;
+    onClick?: () => void;
+  }) => (
+    <a
+      href={href}
+      {...props}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick?.();
+      }}
+    >
       {children}
     </a>
   ),
@@ -46,14 +62,14 @@ interface LeaderboardPreviewModule {
   LeaderboardPreview(props: LeaderboardPreviewProps): ReactElement;
 }
 
-function entry(rank: number): Entry {
+function entry(rank: number, identity = rank): Entry {
   return {
     rank,
-    strategyVersionId: `version-${rank}`,
-    strategyName: `Strategy ${rank}`,
+    strategyVersionId: `version-${identity}`,
+    strategyName: `Strategy ${identity}`,
     strategyType: 'MA',
     isComposite: false,
-    backtestResultId: `result-${rank}`,
+    backtestResultId: `result-${identity}`,
     score: 1 - rank / 10,
     totalReturn: rank * 2,
     winRate: 0.5,
@@ -77,12 +93,19 @@ async function loadPreview(): Promise<LeaderboardPreviewModule> {
 }
 
 describe('LeaderboardPreview contract', () => {
-  it('shows at most five entries in authoritative rank/order with valid full/detail navigation', async () => {
+  it('shows at most five entries with continuous view-local ranks and valid navigation', async () => {
     const { LeaderboardPreview } = await loadPreview();
     const selectStrategy = vi.fn();
     render(
       <LeaderboardPreview
-        snapshot={snapshot([entry(7), entry(2), entry(9), entry(1), entry(5), entry(3)])}
+        snapshot={snapshot([
+          entry(1, 7),
+          entry(2, 2),
+          entry(3, 9),
+          entry(4, 1),
+          entry(5, 5),
+          entry(6, 3),
+        ])}
         selectedStrategyVersionId="version-2"
         onSelectStrategy={selectStrategy}
         onRetry={vi.fn()}
@@ -94,18 +117,18 @@ describe('LeaderboardPreview contract', () => {
     expect(items).toHaveLength(5);
     expect(items.map((item) => item.textContent)).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('7'),
-        expect.stringContaining('2'),
-        expect.stringContaining('9'),
         expect.stringContaining('1'),
+        expect.stringContaining('2'),
+        expect.stringContaining('3'),
+        expect.stringContaining('4'),
         expect.stringContaining('5'),
       ]),
     );
     expect(items.map((item) => item.textContent?.match(/\d+/)?.[0])).toEqual([
-      '7',
-      '2',
-      '9',
       '1',
+      '2',
+      '3',
+      '4',
       '5',
     ]);
     const fullLeaderboard = screen.getByRole('link', {
@@ -124,12 +147,12 @@ describe('LeaderboardPreview contract', () => {
     expect(selectStrategy).toHaveBeenCalledWith('version-2');
   });
 
-  it('updates entries in place while retaining selection, stale data, and timestamp', async () => {
+  it('freezes the supplied snapshot until a caught-up continuous-rank snapshot arrives', async () => {
     const { LeaderboardPreview } = await loadPreview();
     const timestamp = new Date('2026-08-16T10:00:00.000Z');
     const { rerender } = render(
       <LeaderboardPreview
-        snapshot={snapshot([entry(1), entry(2)])}
+        snapshot={snapshot([entry(1, 1), entry(2, 2)])}
         selectedStrategyVersionId="version-2"
         isStale
         lastSuccessfulAt={timestamp}
@@ -138,8 +161,20 @@ describe('LeaderboardPreview contract', () => {
     );
     rerender(
       <LeaderboardPreview
+        snapshot={snapshot([entry(1, 1), entry(2, 2)])}
+        selectedStrategyVersionId="version-2"
+        isStale
+        lastSuccessfulAt={timestamp}
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Strategy 1')).toBeInTheDocument();
+    expect(screen.queryByText('Strategy 3')).not.toBeInTheDocument();
+
+    rerender(
+      <LeaderboardPreview
         snapshot={{
-          ...snapshot([entry(3), entry(2)]),
+          ...snapshot([entry(1, 3), entry(2, 2)]),
           updatedAt: new Date('2026-08-16T10:01:00.000Z'),
         }}
         selectedStrategyVersionId="version-2"
@@ -151,6 +186,11 @@ describe('LeaderboardPreview contract', () => {
 
     expect(screen.queryByText('Strategy 1')).not.toBeInTheDocument();
     expect(screen.getByText('Strategy 3')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('list', { name: /leaderboard preview/i }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent?.match(/^\d+/)?.[0]),
+    ).toEqual(['1', '2']);
     expect(screen.getByRole('link', { name: /strategy 2/i })).toHaveAttribute(
       'aria-current',
       'true',

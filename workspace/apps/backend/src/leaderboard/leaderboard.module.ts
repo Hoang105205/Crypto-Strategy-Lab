@@ -16,9 +16,16 @@ import {
 } from './leaderboard.repository';
 import { LeaderboardService } from './leaderboard.service';
 import { ScoringPolicy } from './scoring-policy';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, EventsModule, StrategyRuntimeModule],
+  imports: [
+    AuthModule,
+    ConfigModule,
+    DatabaseModule,
+    EventsModule,
+    StrategyRuntimeModule,
+  ],
   controllers: [LeaderboardController],
   providers: [
     ScoringPolicy,
