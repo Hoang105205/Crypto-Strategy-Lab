@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest inspects typed fakes and provider seams. */
-import { Logger, type INestApplication } from '@nestjs/common';
+import {
+  Logger,
+  type CanActivate,
+  type ExecutionContext,
+  type INestApplication,
+} from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -22,6 +27,9 @@ import { PrismaService } from '../database/prisma.service';
 import { IEVENT_BUS, IBACKTEST_RESULT_PORT } from '../shared/tokens';
 import { LeaderboardModule } from './leaderboard.module';
 import { ScoringPolicy, type IScoringPolicy } from './scoring-policy';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
+import { SupabaseService } from '../auth/supabase.service';
+import { PushGateway } from '../dashboard/push.gateway';
 
 const CORRELATION_ID = '2660f14b-c12a-4cc1-a33f-a6e48b51ac9a';
 const RESULT_A1 = '3d2be150-1ce6-451e-a8c4-2c4d1b7e4618';
@@ -34,14 +42,35 @@ const VERSION_A = '69e1c401-810a-431f-b2d8-d9f732e7f829';
 const VERSION_B = '96b5a79e-ef61-419e-b87e-a1bf55fc7dd6';
 const VERSION_C = 'e85b01ce-488c-4b37-8436-9c8589b00d52';
 const EXECUTED_AT = new Date('2026-08-16T03:00:00.000Z');
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
 
 interface CreateArguments {
   data: Omit<PrismaLeaderboardEntry, 'id' | 'createdAt' | 'updatedAt'>;
 }
 
 interface FindManyArguments {
-  where?: { strategyVersionId?: string };
+  where?: {
+    strategyVersionId?: string;
+    userId?: string | null;
+    OR?: Array<{ userId: string | null }>;
+  };
 }
+
+const optionalAuthGuard: CanActivate = {
+  canActivate(context: ExecutionContext): boolean {
+    const http = context.switchToHttp();
+    const request = http.getRequest<{
+      headers: { authorization?: string };
+      user?: { id: string | null };
+    }>();
+    const token = request.headers.authorization?.replace(/^Bearer /, '');
+    request.user = {
+      id: token === 'user-a' ? USER_A : token === 'user-b' ? USER_B : null,
+    };
+    return true;
+  },
+};
 
 class InMemoryLeaderboardPrisma {
   readonly rows: PrismaLeaderboardEntry[] = [];
@@ -88,13 +117,16 @@ class InMemoryLeaderboardPrisma {
     findMany: jest.fn(async (args?: FindManyArguments) =>
       this.rows.filter(
         (entry) =>
-          !args?.where?.strategyVersionId ||
-          entry.strategyVersionId === args.where.strategyVersionId,
+          (!args?.where?.strategyVersionId ||
+            entry.strategyVersionId === args.where.strategyVersionId) &&
+          matchesViewerWhere(entry, args?.where),
       ),
     ),
     findFirst: jest.fn(
-      async () =>
-        [...this.rows].sort(
+      async (args?: FindManyArguments) =>
+        this.rows
+          .filter((entry) => matchesViewerWhere(entry, args?.where))
+          .sort(
           (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime(),
         )[0] ?? null,
     ),
@@ -162,7 +194,11 @@ async function createHarness(scoringPolicy?: IScoringPolicy): Promise<Harness> {
     .overrideProvider(PrismaService)
     .useValue(prisma)
     .overrideProvider(IBACKTEST_RESULT_PORT)
-    .useValue(resultPort);
+    .useValue(resultPort)
+    .overrideProvider(SupabaseService)
+    .useValue({ verifyToken: jest.fn() })
+    .overrideGuard(SupabaseJwtGuard)
+    .useValue(optionalAuthGuard);
 
   if (scoringPolicy) {
     builder = builder.overrideProvider(ScoringPolicy).useValue(scoringPolicy);
@@ -186,6 +222,7 @@ function completion(
   return {
     jobId: 'b8257d6b-d9df-47fb-83c1-839b04335e6f',
     correlationId: CORRELATION_ID,
+    userId: null,
     loopRunId: null,
     backtestResultId: RESULT_A1,
     strategyVersionId: VERSION_A,
@@ -577,10 +614,200 @@ describe('Leaderboard production wiring integration (T027)', () => {
   });
 });
 
+describe('T012 private-detail anti-enumeration', () => {
+  it('returns the identical stable 404 for foreign existing and nonexistent details for A and B', async () => {
+    const harness = await createHarness();
+    const detailA = detailFixture();
+    const detailB: BacktestResultDetail = {
+      ...detailFixture(),
+      id: RESULT_B,
+      userId: USER_B,
+      strategyVersionId: VERSION_B,
+      strategyVersion: {
+        ...detailFixture().strategyVersion,
+        id: VERSION_B,
+        userId: USER_B,
+      },
+    };
+    harness.resultPort.details.set(RESULT_A1, {
+      ...detailA,
+      userId: USER_A,
+      strategyVersion: { ...detailA.strategyVersion, userId: USER_A },
+    });
+    harness.resultPort.details.set(RESULT_B, detailB);
+
+    try {
+      await publishAndWait(harness, completion({ userId: USER_A }), 1);
+      await publishAndWait(
+        harness,
+        completion({
+          userId: USER_B,
+          backtestResultId: RESULT_B,
+          strategyVersionId: VERSION_B,
+        }),
+        2,
+      );
+
+      const nonexistentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const expected = {
+        error: 'Leaderboard entry not found',
+        code: 'LEADERBOARD_ENTRY_NOT_FOUND',
+      };
+      const anonymousPrivate = await request(harness.app.getHttpServer()).get(
+        `/api/leaderboard/${VERSION_A}`,
+      );
+      const aOwn = await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${VERSION_A}`)
+        .set('Authorization', 'Bearer user-a');
+      const bOwn = await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${VERSION_B}`)
+        .set('Authorization', 'Bearer user-b');
+      const aForeign = await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${VERSION_B}`)
+        .set('Authorization', 'Bearer user-a');
+      const aMissing = await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${nonexistentId}`)
+        .set('Authorization', 'Bearer user-a');
+      const bForeign = await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${VERSION_A}`)
+        .set('Authorization', 'Bearer user-b');
+      const bMissing = await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${nonexistentId}`)
+        .set('Authorization', 'Bearer user-b');
+
+      expect(aOwn.status).toBe(200);
+      expect(aOwn.body).toMatchObject({ userId: USER_A });
+      expect(bOwn.status).toBe(200);
+      expect(bOwn.body).toMatchObject({ userId: USER_B });
+      for (const response of [
+        anonymousPrivate,
+        aForeign,
+        aMissing,
+        bForeign,
+        bMissing,
+      ]) {
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual(expected);
+      }
+      expect(aForeign.body).toEqual(aMissing.body);
+      expect(bForeign.body).toEqual(bMissing.body);
+    } finally {
+      await close(harness);
+    }
+  });
+});
+
+describe('T022 private A/B completions at the namespace-wide gateway boundary', () => {
+  it('emits only the system projection and redacts both private result IDs', async () => {
+    const harness = await createHarness();
+    const gateway = new PushGateway(harness.eventBus);
+    const server = {
+      emit: jest.fn<(channel: string, payload: unknown) => void>(),
+    };
+    gateway.server = server as never;
+    gateway.onModuleInit();
+
+    try {
+      await publishAndWait(harness, completion({ userId: null }), 1);
+      await eventually(
+        () =>
+          server.emit.mock.calls.filter(
+            ([channel]) => channel === 'leaderboard:update',
+          ).length === 1,
+      );
+      await publishAndWait(
+        harness,
+        completion({
+          userId: USER_A,
+          backtestResultId: RESULT_B,
+          strategyVersionId: VERSION_B,
+          strategyName: 'Private A',
+        }),
+        2,
+      );
+      await publishAndWait(
+        harness,
+        completion({
+          userId: USER_B,
+          backtestResultId: RESULT_C,
+          strategyVersionId: VERSION_C,
+          strategyName: 'Private B',
+        }),
+        3,
+      );
+      await eventually(
+        () =>
+          server.emit.mock.calls.filter(
+            ([channel]) => channel === 'leaderboard:update',
+          ).length === 3,
+      );
+
+      const emitted = server.emit.mock.calls
+        .filter(([channel]) => channel === 'leaderboard:update')
+        .map(([, payload]) => payload as LeaderboardUpdatedPayload);
+      const systemPayload = emitted[0];
+      expect(systemPayload).toBeDefined();
+      expect(systemPayload).toEqual({
+        updatedAt: expect.any(Date),
+        triggeredByBacktestResultId: RESULT_A1,
+        rankingCriterion: RankingCriterion.SCORE,
+        topK: [
+          expect.objectContaining({
+            userId: null,
+            backtestResultId: RESULT_A1,
+            rank: 1,
+          }),
+        ],
+      });
+
+      for (const privatePayload of emitted.slice(1)) {
+        expect(privatePayload).toEqual({
+          updatedAt: systemPayload?.updatedAt,
+          triggeredByBacktestResultId: null,
+          rankingCriterion: RankingCriterion.SCORE,
+          topK: systemPayload?.topK,
+        });
+      }
+
+      const privateWire = JSON.stringify(emitted.slice(1));
+      for (const forbidden of [
+        USER_A,
+        USER_B,
+        RESULT_B,
+        RESULT_C,
+        VERSION_B,
+        VERSION_C,
+        'Private A',
+        'Private B',
+      ]) {
+        expect(privateWire).not.toContain(forbidden);
+      }
+      expect(
+        emitted.every((payload) =>
+          payload.topK.every(({ userId }) => userId === null),
+        ),
+      ).toBe(true);
+    } finally {
+      gateway.onModuleDestroy();
+      await close(harness);
+    }
+  });
+});
+
+function matchesViewerWhere(
+  entry: PrismaLeaderboardEntry,
+  where?: FindManyArguments['where'],
+): boolean {
+  if (!where || (!Object.hasOwn(where, 'userId') && !where.OR)) return true;
+  if (where.userId === null) return entry.userId === null;
+  return where.OR?.some(({ userId }) => entry.userId === userId) ?? false;
+}
+
 function detailFixture(): BacktestResultDetail {
   return {
     id: RESULT_A1,
     jobId: 'b8257d6b-d9df-47fb-83c1-839b04335e6f',
+    userId: null,
     strategyVersionId: VERSION_A,
     pair: 'BTCUSDT',
     timeframe: '1h',
@@ -607,6 +834,7 @@ function detailFixture(): BacktestResultDetail {
     executionTimeMs: 250,
     strategyVersion: {
       id: VERSION_A,
+      userId: null,
       strategyType: StrategyType.MA,
       name: 'Moving Average',
       version: 1,

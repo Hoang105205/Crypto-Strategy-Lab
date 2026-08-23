@@ -210,6 +210,30 @@ describe('PushGateway realtime contract (T035)', () => {
     expect(server.emit).toHaveBeenCalledTimes(4);
   });
 
+  it('T021 relays the exact safe leaderboard wire payload without rooms, auth, or disconnect behavior', async () => {
+    await gateway.onModuleInit();
+    const payload = relayFixtures.LeaderboardUpdated;
+    const handler = subscribedHandler(eventBus, EventType.LeaderboardUpdated);
+
+    await handler(envelope(EventType.LeaderboardUpdated, payload));
+
+    expect(server.emit).toHaveBeenCalledWith('leaderboard:update', payload);
+    expect(server.emit.mock.calls[0]?.[1]).toBe(payload);
+    expect(Object.keys(payload)).toEqual([
+      'updatedAt',
+      'triggeredByBacktestResultId',
+      'rankingCriterion',
+      'topK',
+    ]);
+    expect(payload.triggeredByBacktestResultId).toBeNull();
+    expect(payload.topK.every(({ userId }) => userId === null)).toBe(true);
+
+    const source = readFileSync(join(__dirname, 'push.gateway.ts'), 'utf8');
+    expect(source).toContain('this.server.emit(channel, payload)');
+    expect(source).not.toMatch(/server\.to\(|\.join\(|handshake|socketAuth/);
+    expect(source).not.toContain('.disconnect(');
+  });
+
   it('isolates a socket emit failure through the production EventBus and still relays a later event', () => {
     const runtimeBus = new EventBus(new EventEmitter2());
     const PushGateway = loadPushGateway();

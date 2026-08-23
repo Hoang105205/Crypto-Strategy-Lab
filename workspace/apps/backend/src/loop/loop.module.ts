@@ -14,6 +14,7 @@ import {
   type EventSubscription,
   type IEventBus,
 } from '@crypto-strategy-lab/shared';
+import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { EventsModule } from '../events/events.module';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
@@ -27,6 +28,7 @@ import { StrategyLoopService } from './strategy-loop.service';
 
 @Module({
   imports: [
+    AuthModule,
     DatabaseModule,
     EventsModule,
     QueueModule,

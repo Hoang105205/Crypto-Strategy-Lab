@@ -4,15 +4,8 @@ import type { ReactElement, ReactNode } from 'react';
 
 const getPairsMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../services/api-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../services/api-client')>();
-  return {
-    ...actual,
-    apiClient: {
-      ...actual.apiClient,
-      getPairs: getPairsMock,
-    },
-  };
+vi.mock('../../services/api-client', () => {
+  return { apiClient: { getPairs: getPairsMock } };
 });
 
 vi.mock('../../hooks/use-websocket', () => ({
@@ -34,7 +27,7 @@ vi.mock('../chart/candlestick-chart', () => ({
 interface DashboardGridProps {
   pair: string;
   onPairChange(value: string): void;
-  loopPanel: ReactNode;
+  loopStatusPanel: ReactNode;
   queueCard: ReactNode;
   leaderboardPreview: ReactNode;
 }
@@ -74,7 +67,7 @@ describe('DashboardGrid contract', () => {
       <DashboardGrid
         pair="BTCUSDT"
         onPairChange={onPairChange}
-        loopPanel={<p>Loop panel</p>}
+        loopStatusPanel={<p>Loop panel</p>}
         queueCard={<p>Queue card</p>}
         leaderboardPreview={<p>Leaderboard preview</p>}
       />,
@@ -97,16 +90,23 @@ describe('DashboardGrid contract', () => {
     expect(onPairChange).toHaveBeenCalledWith('ETHUSDT');
   });
 
-  it('updates realtime side-rail content in place without blanking or resetting Market Data state', async () => {
+  it('keeps frozen rows while OFF, then shows caught-up continuous ranks after re-enable', async () => {
     const { DashboardGrid } = await loadDashboardGrid();
     const { rerender } = render(
       <DashboardGrid
         pair="BTCUSDT"
         onPairChange={vi.fn()}
-        loopPanel={<p>Loop iteration 2</p>}
+        loopStatusPanel={<p>Loop iteration 2 · Live updates ON</p>}
         queueCard={<p>Queue healthy</p>}
-        leaderboardPreview={<p>Leader version-1</p>}
+        leaderboardPreview={<p>1 Leader version-1</p>}
       />,
+    );
+    await waitFor(() =>
+      expect(
+        within(
+          screen.getByRole('combobox', { name: /trading pair/i }),
+        ).getByText('ETH/USDT'),
+      ).toBeInTheDocument(),
     );
 
     const marketRegion = screen.getByRole('region', { name: /market data/i });
@@ -118,14 +118,36 @@ describe('DashboardGrid contract', () => {
       <DashboardGrid
         pair="BTCUSDT"
         onPairChange={vi.fn()}
-        loopPanel={<p>Loop iteration 3</p>}
+        loopStatusPanel={<p>Loop iteration 3 · Live updates OFF</p>}
         queueCard={<p>Queue healthy</p>}
-        leaderboardPreview={<p>Leader version-2</p>}
+        leaderboardPreview={<p>1 Leader version-1</p>}
       />,
     );
 
-    expect(screen.getByText('Loop iteration 3')).toBeInTheDocument();
-    expect(screen.getByText('Leader version-2')).toBeInTheDocument();
+    expect(screen.getByText(/Loop iteration 3/)).toBeInTheDocument();
+    expect(screen.getByText('1 Leader version-1')).toBeInTheDocument();
+    expect(screen.queryByText(/version-2/)).not.toBeInTheDocument();
+
+    rerender(
+      <DashboardGrid
+        pair="BTCUSDT"
+        onPairChange={vi.fn()}
+        loopStatusPanel={<p>Loop iteration 3 · Live updates ON</p>}
+        queueCard={<p>Queue healthy</p>}
+        leaderboardPreview={
+          <ol aria-label="Caught-up leaderboard">
+            <li>1 Leader version-2</li>
+            <li>2 Leader version-1</li>
+          </ol>
+        }
+      />,
+    );
+
+    expect(
+      within(screen.getByRole('list', { name: /caught-up leaderboard/i }))
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['1 Leader version-2', '2 Leader version-1']);
     expect(within(marketRegion).getAllByTestId('candlestick-chart')).toHaveLength(4);
     expect(within(marketRegion).getAllByRole('combobox')[0]).toHaveValue('1m');
   });

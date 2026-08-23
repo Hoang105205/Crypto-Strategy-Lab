@@ -7,9 +7,12 @@ import {
   Param,
   Post,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import type { SearchLoopRun } from '@crypto-strategy-lab/shared';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 import {
   LoopApiErrorCode,
   LoopRunIdPipe,
@@ -26,6 +29,7 @@ import {
 import type { LoopRunDetail } from './loop.repository';
 
 @Controller('api/loop')
+@UseGuards(SupabaseJwtGuard)
 export class LoopController {
   constructor(
     private readonly loop: StrategyLoopService,
@@ -36,6 +40,7 @@ export class LoopController {
   @HttpCode(HttpStatus.CREATED)
   async start(
     @Body(StartLoopDtoPipe) input: StartLoopInput,
+    @CurrentUser() _currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
     const run = await this.execute(() => this.loop.start(input));
     return commandResponse(run);
@@ -45,6 +50,7 @@ export class LoopController {
   @HttpCode(HttpStatus.OK)
   async pause(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
+    @CurrentUser() _currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
     const run = await this.execute(() => this.status.pause(loopRunId));
     return commandResponse(run);
@@ -54,6 +60,7 @@ export class LoopController {
   @HttpCode(HttpStatus.OK)
   async resume(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
+    @CurrentUser() _currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
     const run = await this.execute(() => this.status.resume(loopRunId));
     return commandResponse(run);
@@ -63,6 +70,7 @@ export class LoopController {
   @HttpCode(HttpStatus.OK)
   async stop(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
+    @CurrentUser() _currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
     const run = await this.execute(() => this.status.stop(loopRunId));
     return commandResponse(run);
@@ -71,7 +79,10 @@ export class LoopController {
   // Keep the literal route before the parameter route so "current" is never
   // interpreted as a loopRunId.
   @Get('current')
-  async getCurrent(@Res() response: Response): Promise<void> {
+  async getCurrent(
+    @Res() response: Response,
+    @CurrentUser() _currentUserId: string | null,
+  ): Promise<void> {
     const current = await this.execute(() => this.status.getCurrent());
     response.status(HttpStatus.OK).json(current);
   }
@@ -79,6 +90,7 @@ export class LoopController {
   @Get(':loopRunId')
   async detail(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
+    @CurrentUser() _currentUserId: string | null,
   ): Promise<LoopRunDetail> {
     const detail = await this.execute(() => this.status.getDetail(loopRunId));
     if (!detail) {

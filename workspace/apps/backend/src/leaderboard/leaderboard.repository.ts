@@ -14,6 +14,7 @@ import { ScoringPolicy } from './scoring-policy';
 export const DEFAULT_LEADERBOARD_TOP_K = 10;
 
 export interface LeaderboardCreateInput {
+  userId: string | null;
   strategyVersionId: string;
   strategyName: string;
   strategyType: string;
@@ -87,26 +88,37 @@ export class LeaderboardRepository {
 
   async getTopK(
     criterion: RankingCriterion,
+    viewerUserId: string | null = null,
   ): Promise<LeaderboardEntryPayload[]> {
-    const entries = await this.prisma.leaderboardEntry.findMany();
+    const entries = await this.prisma.leaderboardEntry.findMany({
+      where: visibilityWhere(viewerUserId),
+    });
     const bestPerVersion = this.bestPerStrategyVersion(entries, criterion);
-    return bestPerVersion.slice(0, this.topK).map((entry) => this.map(entry));
+    return bestPerVersion
+      .slice(0, this.topK)
+      .map((entry, index) => this.map(entry, index + 1));
   }
 
   async findBestByStrategyVersionId(
     strategyVersionId: string,
+    viewerUserId: string | null = null,
   ): Promise<LeaderboardEntryPayload | null> {
     const entries = await this.prisma.leaderboardEntry.findMany({
-      where: { strategyVersionId },
+      where: visibilityWhere(viewerUserId),
     });
-    const best = [...entries].sort((left, right) =>
-      this.compare(left, right, RankingCriterion.SCORE),
-    )[0];
-    return best ? this.map(best) : null;
+    const ranked = this.bestPerStrategyVersion(
+      entries,
+      RankingCriterion.SCORE,
+    );
+    const index = ranked.findIndex(
+      (entry) => entry.strategyVersionId === strategyVersionId,
+    );
+    return index >= 0 ? this.map(ranked[index], index + 1) : null;
   }
 
-  async getUpdatedAt(): Promise<Date> {
+  async getUpdatedAt(viewerUserId: string | null = null): Promise<Date> {
     const latest = await this.prisma.leaderboardEntry.findFirst({
+      where: visibilityWhere(viewerUserId),
       orderBy: { updatedAt: 'desc' },
     });
     return latest?.updatedAt ?? new Date(0);
@@ -162,9 +174,12 @@ export class LeaderboardRepository {
     }
   }
 
-  private map(entry: PrismaLeaderboardEntry): LeaderboardEntryPayload {
+  private map(
+    entry: PrismaLeaderboardEntry,
+    rank: number = entry.rank,
+  ): LeaderboardEntryPayload {
     return {
-      rank: entry.rank,
+      rank,
       userId: entry.userId,
       strategyVersionId: entry.strategyVersionId,
       strategyName: entry.strategyName,
@@ -179,6 +194,14 @@ export class LeaderboardRepository {
       totalTrades: entry.totalTrades,
     };
   }
+}
+
+function visibilityWhere(
+  viewerUserId: string | null,
+): Prisma.LeaderboardEntryWhereInput {
+  return viewerUserId === null
+    ? { userId: null }
+    : { OR: [{ userId: null }, { userId: viewerUserId }] };
 }
 
 function isUniqueConflict(error: unknown): boolean {

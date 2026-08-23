@@ -1,4 +1,6 @@
 import {
+  type CanActivate,
+  type ExecutionContext,
   HttpException,
   HttpStatus,
   Logger,
@@ -44,6 +46,8 @@ import { DashboardController } from './dashboard.controller';
 import { DashboardModule } from './dashboard.module';
 import { DashboardService } from './dashboard.service';
 import { PushGateway } from './push.gateway';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
+import { SupabaseService } from '../auth/supabase.service';
 
 const UPDATED_AT = new Date('2026-08-16T12:59:00.000Z');
 const STARTED_AT = new Date('2026-08-16T12:00:00.000Z');
@@ -51,6 +55,22 @@ const STOPPED_AT = new Date('2026-08-16T12:10:00.000Z');
 const LOOP_RUN_ID = '2446ece1-efb0-440f-86e4-01f3c5cc0e15';
 const STRATEGY_VERSION_ID = '39c76876-c8ec-451d-ae50-53b5e4a4804c';
 const BACKTEST_RESULT_ID = 'f784cab5-f7a3-486f-8166-4d9f13326edc';
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
+
+const optionalAuthGuard: CanActivate = {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<{
+      headers: { authorization?: string };
+      user?: { id: string | null };
+    }>();
+    const token = request.headers.authorization?.replace(/^Bearer /, '');
+    request.user = {
+      id: token === 'user-a' ? USER_A : token === 'user-b' ? USER_B : null,
+    };
+    return true;
+  },
+};
 
 type RelayEventType =
   | typeof EventType.LeaderboardUpdated
@@ -377,6 +397,31 @@ describe('DashboardModule integration (T038)', () => {
   });
 });
 
+describe('T016 dashboard optional-auth integration', () => {
+  it('passes anonymous/A/B only to leaderboard while loop and queue queries stay global', async () => {
+    const harness = await createHarness();
+    const server = harness.app.getHttpServer() as Parameters<typeof request>[0];
+
+    await request(server).get('/api/dashboard/summary').expect(200);
+    await request(server)
+      .get('/api/dashboard/summary')
+      .set('Authorization', 'Bearer user-a')
+      .expect(200);
+    await request(server)
+      .get('/api/dashboard/summary')
+      .set('Authorization', 'Bearer user-b')
+      .expect(200);
+
+    expect(harness.leaderboard.getLeaderboard.mock.calls).toEqual([
+      [RankingCriterion.SCORE, null],
+      [RankingCriterion.SCORE, USER_A],
+      [RankingCriterion.SCORE, USER_B],
+    ]);
+    expect(harness.loop.getCurrent.mock.calls).toEqual([[], [], []]);
+    expect(harness.queue.getStats.mock.calls).toEqual([[], [], []]);
+  });
+});
+
 async function createHarness(listen = false): Promise<Harness> {
   const module = await Test.createTestingModule({
     imports: [EventEmitterModule.forRoot(), DashboardModule],
@@ -387,6 +432,10 @@ async function createHarness(listen = false): Promise<Harness> {
     .useModule(ContractLoopModule)
     .overrideModule(QueueModule)
     .useModule(ContractQueueModule)
+    .overrideProvider(SupabaseService)
+    .useValue({ verifyToken: jest.fn() })
+    .overrideGuard(SupabaseJwtGuard)
+    .useValue(optionalAuthGuard)
     .compile();
   const app = module.createNestApplication();
   if (listen) await app.listen(0, '127.0.0.1');
@@ -419,6 +468,7 @@ function leaderboardSnapshot(entryCount: number): LeaderboardSnapshot {
 function leaderboardEntry(index: number): LeaderboardEntryPayload {
   return {
     rank: index + 11,
+    userId: null,
     strategyVersionId: `strategy-version-${index + 1}`,
     strategyName: `Strategy ${index + 1}`,
     strategyType: 'MA',

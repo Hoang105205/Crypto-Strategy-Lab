@@ -15,6 +15,7 @@ const TARGET_MODULE = join(__dirname, 'leaderboard.repository');
 const TARGET_EXISTS = existsSync(TARGET_FILE);
 
 interface LeaderboardCreateInput {
+  userId: string | null;
   strategyVersionId: string;
   strategyName: string;
   strategyType: string;
@@ -37,12 +38,19 @@ interface LeaderboardRepositoryApi {
     backtestResultId: string,
   ): Promise<LeaderboardEntryPayload | null>;
   rerank(): Promise<void>;
-  getTopK(criterion: RankingCriterion): Promise<LeaderboardEntryPayload[]>;
+  getTopK(
+    criterion: RankingCriterion,
+    viewerUserId?: string | null,
+  ): Promise<LeaderboardEntryPayload[]>;
   findBestByStrategyVersionId(
     strategyVersionId: string,
+    viewerUserId?: string | null,
   ): Promise<LeaderboardEntryPayload | null>;
-  getUpdatedAt(): Promise<Date>;
+  getUpdatedAt(viewerUserId?: string | null): Promise<Date>;
 }
+
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
 
 type LeaderboardRepositoryConstructor = new (
   prisma: PrismaService,
@@ -126,6 +134,7 @@ const row = (overrides: Partial<LeaderboardEntry> = {}): LeaderboardEntry => ({
 const createInput = (
   overrides: Partial<LeaderboardCreateInput> = {},
 ): LeaderboardCreateInput => ({
+  userId: null,
   strategyVersionId: randomUUID(),
   strategyName: 'Moving Average',
   strategyType: 'MA',
@@ -407,8 +416,8 @@ describe('LeaderboardRepository contract (T022)', () => {
         const repository = new Repository(prisma);
 
         await expect(repository.getTopK(criterion)).resolves.toEqual([
-          payload(higher),
-          payload(lower),
+          { ...payload(higher), rank: 1 },
+          { ...payload(lower), rank: 2 },
         ]);
       },
     );
@@ -430,9 +439,12 @@ describe('LeaderboardRepository contract (T022)', () => {
       const repository = new Repository(prisma);
 
       await expect(repository.getTopK(RankingCriterion.SCORE)).resolves.toEqual(
-        [payload(bestAttempt), payload(otherVersion)],
+        [
+          { ...payload(bestAttempt), rank: 1 },
+          { ...payload(otherVersion), rank: 2 },
+        ],
       );
-      expect(findManyMock).toHaveBeenCalledWith();
+      expect(findManyMock).toHaveBeenCalledWith({ where: { userId: null } });
     });
 
     it('uses Top-K 10 by default and honors a configured K', async () => {
@@ -470,9 +482,9 @@ describe('LeaderboardRepository contract (T022)', () => {
 
       await expect(
         repository.findBestByStrategyVersionId(strategyVersionId),
-      ).resolves.toEqual(payload(best));
+      ).resolves.toEqual({ ...payload(best), rank: 1 });
       expect(findManyMock).toHaveBeenCalledWith({
-        where: { strategyVersionId },
+        where: { userId: null },
       });
     });
 
@@ -500,3 +512,195 @@ describe('LeaderboardRepository contract (T022)', () => {
     });
   });
 });
+
+describe('T008 viewer-scoped leaderboard lists', () => {
+  it.each([
+    ['anonymous', null, [null, null, null]],
+    ['user A', USER_A, [null, USER_A, null]],
+    ['user B', USER_B, [USER_B, null, USER_B]],
+  ] as const)(
+    'returns system plus own rows for %s and fills Top-K after filtering',
+    async (_actor, viewerUserId, expectedOwners) => {
+      const sharedVersion = 'shared-version';
+      const rows = [
+        row({
+          userId: USER_B,
+          strategyVersionId: sharedVersion,
+          score: 1,
+          backtestResultId: 'b-private-best',
+        }),
+        row({
+          userId: viewerUserId === USER_B ? USER_A : USER_B,
+          strategyVersionId: 'foreign-version',
+          score: 0.95,
+          backtestResultId: 'foreign-private',
+        }),
+        row({
+          userId: viewerUserId,
+          strategyVersionId: 'own-version',
+          score: 0.8,
+          backtestResultId: 'own-or-system',
+        }),
+        row({
+          userId: null,
+          strategyVersionId: sharedVersion,
+          score: 0.7,
+          backtestResultId: 'system-shared-version',
+        }),
+        row({
+          userId: null,
+          strategyVersionId: 'second-system-version',
+          score: 0.9,
+          backtestResultId: 'system-second',
+        }),
+      ];
+      const { prisma, findMany } = scopedPrisma(rows);
+      const Repository = loadTarget();
+      const repository = new Repository(prisma as never, 3);
+
+      const result = await repository.getTopK(
+        RankingCriterion.SCORE,
+        viewerUserId,
+      );
+
+      expect(result.map(({ userId }) => userId)).toEqual(expectedOwners);
+      expect(result).toHaveLength(3);
+      expect(result.map(({ backtestResultId }) => backtestResultId)).not.toContain(
+        'foreign-private',
+      );
+      if (viewerUserId !== USER_B) {
+        expect(result.map(({ backtestResultId }) => backtestResultId)).toContain(
+          'system-shared-version',
+        );
+        expect(result.map(({ backtestResultId }) => backtestResultId)).not.toContain(
+          'b-private-best',
+        );
+      }
+      expect(findMany).toHaveBeenCalledWith({
+        where: visibilityWhere(viewerUserId),
+      });
+    },
+  );
+});
+
+describe('T009 scoped detail, timestamp, Top-K, and response ranks', () => {
+  it('computes detail rank from the visible view and hides foreign/nonexistent IDs identically', async () => {
+    const system = row({
+      userId: null,
+      strategyVersionId: 'system-version',
+      score: 0.9,
+      rank: 20,
+    });
+    const owned = row({
+      userId: USER_A,
+      strategyVersionId: 'owned-version',
+      score: 0.7,
+      rank: 99,
+    });
+    const foreign = row({
+      userId: USER_B,
+      strategyVersionId: 'foreign-version',
+      score: 1,
+      rank: 1,
+    });
+    const { prisma } = scopedPrisma([foreign, owned, system]);
+    const Repository = loadTarget();
+    const repository = new Repository(prisma as never);
+
+    await expect(
+      repository.findBestByStrategyVersionId('owned-version', USER_A),
+    ).resolves.toMatchObject({ userId: USER_A, rank: 2 });
+    await expect(
+      repository.findBestByStrategyVersionId('foreign-version', USER_A),
+    ).resolves.toBeNull();
+    await expect(
+      repository.findBestByStrategyVersionId('missing-version', USER_A),
+    ).resolves.toBeNull();
+  });
+
+  it.each([
+    ['anonymous', null, new Date('2026-08-16T01:00:03.000Z')],
+    ['user A', USER_A, new Date('2026-08-16T01:00:04.000Z')],
+    ['user B', USER_B, new Date('2026-08-16T01:00:05.000Z')],
+  ] as const)(
+    'derives updatedAt only from %s-visible entries',
+    async (_actor, viewerUserId, expected) => {
+      const rows = [
+        row({ userId: null, updatedAt: new Date('2026-08-16T01:00:03.000Z') }),
+        row({ userId: USER_A, updatedAt: new Date('2026-08-16T01:00:04.000Z') }),
+        row({ userId: USER_B, updatedAt: new Date('2026-08-16T01:00:05.000Z') }),
+      ];
+      const { prisma, findFirst } = scopedPrisma(rows);
+      const Repository = loadTarget();
+      const repository = new Repository(prisma as never);
+
+      await expect(repository.getUpdatedAt(viewerUserId)).resolves.toEqual(
+        expected,
+      );
+      expect(findFirst).toHaveBeenCalledWith({
+        where: visibilityWhere(viewerUserId),
+        orderBy: { updatedAt: 'desc' },
+      });
+    },
+  );
+
+  it('returns contiguous 1..N ranks after visibility, best-per-version, sort, and Top-K', async () => {
+    const rows = [
+      row({ userId: USER_B, score: 1, rank: 1 }),
+      row({ userId: null, score: 0.8, rank: 8, strategyVersionId: 'system' }),
+      row({ userId: USER_A, score: 0.7, rank: 12, strategyVersionId: 'owned' }),
+    ];
+    const { prisma } = scopedPrisma(rows);
+    const Repository = loadTarget();
+    const repository = new Repository(prisma as never, 10);
+
+    const result = await repository.getTopK(RankingCriterion.SCORE, USER_A);
+
+    expect(result.map(({ rank }) => rank)).toEqual([1, 2]);
+    expect(result.map(({ userId }) => userId)).toEqual([null, USER_A]);
+  });
+});
+
+function visibilityWhere(viewerUserId: string | null): object {
+  return viewerUserId === null
+    ? { userId: null }
+    : { OR: [{ userId: null }, { userId: viewerUserId }] };
+}
+
+function scopedPrisma(rows: LeaderboardEntry[]): {
+  prisma: object;
+  findMany: jest.Mock;
+  findFirst: jest.Mock;
+} {
+  const scopedRows = (where?: Record<string, unknown>): LeaderboardEntry[] =>
+    rows.filter(
+      (entry) =>
+        matchesVisibility(entry, where) &&
+        (typeof where?.strategyVersionId !== 'string' ||
+          entry.strategyVersionId === where.strategyVersionId),
+    );
+  const findMany = jest.fn(async (args?: { where?: Record<string, unknown> }) =>
+    scopedRows(args?.where),
+  );
+  const findFirst = jest.fn(
+    async (args?: { where?: Record<string, unknown> }) =>
+      [...scopedRows(args?.where)].sort(
+        (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime(),
+      )[0] ?? null,
+  );
+  return {
+    prisma: { leaderboardEntry: { findMany, findFirst } },
+    findMany,
+    findFirst,
+  };
+}
+
+function matchesVisibility(
+  entry: LeaderboardEntry,
+  where?: Record<string, unknown>,
+): boolean {
+  if (!where) return true;
+  if (where.userId === null) return entry.userId === null;
+  const clauses = where.OR as Array<{ userId: string | null }> | undefined;
+  return clauses?.some(({ userId }) => entry.userId === userId) ?? true;
+}

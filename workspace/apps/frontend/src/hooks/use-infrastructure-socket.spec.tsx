@@ -32,11 +32,16 @@ class FakeEmitter {
   serverEmit(event: string, ...args: unknown[]) {
     this.handlers.get(event)?.forEach((handler) => handler(...args));
   }
+
+  listenerCount(event: string) {
+    return this.handlers.get(event)?.size ?? 0;
+  }
 }
 
 class FakeSocket extends FakeEmitter {
   readonly io = new FakeEmitter();
   readonly removeAllListeners = vi.fn();
+  readonly disconnect = vi.fn();
 }
 
 async function loadHook(): Promise<InfrastructureSocketHookModule> {
@@ -99,5 +104,32 @@ describe('useInfrastructureSocket contract', () => {
       expect(socket.io.off).toHaveBeenCalledWith(event, handler);
     }
     expect(socket.removeAllListeners).not.toHaveBeenCalled();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('preserves leaderboard, loop, and queue listeners owned by other consumers', async () => {
+    const { useInfrastructureSocket } = await loadHook();
+    const socket = new FakeSocket();
+    const leaderboardHandler = vi.fn();
+    const loopHandler = vi.fn();
+    const queueHandler = vi.fn();
+    socket.on('leaderboard:update', leaderboardHandler);
+    socket.on('loop:progress', loopHandler);
+    socket.on('queue:stats', queueHandler);
+
+    const { unmount } = renderHook(() => useInfrastructureSocket({ socket }));
+    unmount();
+
+    expect(socket.listenerCount('leaderboard:update')).toBe(1);
+    expect(socket.listenerCount('loop:progress')).toBe(1);
+    expect(socket.listenerCount('queue:stats')).toBe(1);
+    socket.serverEmit('leaderboard:update', {});
+    socket.serverEmit('loop:progress', {});
+    socket.serverEmit('queue:stats', {});
+    expect(leaderboardHandler).toHaveBeenCalledTimes(1);
+    expect(loopHandler).toHaveBeenCalledTimes(1);
+    expect(queueHandler).toHaveBeenCalledTimes(1);
+    expect(socket.removeAllListeners).not.toHaveBeenCalled();
+    expect(socket.disconnect).not.toHaveBeenCalled();
   });
 });

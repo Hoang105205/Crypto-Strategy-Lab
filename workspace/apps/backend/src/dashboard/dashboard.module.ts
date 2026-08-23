@@ -11,9 +11,10 @@ import { InfrastructureErrorFilter } from '../shared/infrastructure-error.filter
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
 import { PushGateway } from './push.gateway';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [EventsModule, LeaderboardModule, LoopModule, QueueModule],
+  imports: [AuthModule, EventsModule, LeaderboardModule, LoopModule, QueueModule],
   controllers: [DashboardController],
   providers: [DashboardService, PushGateway, InfrastructureErrorFilter],
 })

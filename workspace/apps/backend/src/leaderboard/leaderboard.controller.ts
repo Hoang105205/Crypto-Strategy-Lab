@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Param,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   RankingCriterion,
@@ -20,7 +21,10 @@ import {
   StrategyEngineUnavailableError,
   type LeaderboardDetail,
 } from './leaderboard.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 
+@UseGuards(SupabaseJwtGuard)
 @Controller('api/leaderboard')
 export class LeaderboardController {
   constructor(private readonly leaderboard: LeaderboardService) {}
@@ -28,17 +32,22 @@ export class LeaderboardController {
   @Get()
   list(
     @Query('sortBy', LeaderboardSortPipe) sortBy: RankingCriterion,
+    @CurrentUser() viewerUserId: string | null = null,
   ): Promise<LeaderboardSnapshot> {
-    return this.leaderboard.getLeaderboard(sortBy);
+    return this.leaderboard.getLeaderboard(sortBy, viewerUserId);
   }
 
   @Get(':strategyVersionId')
   async detail(
     @Param('strategyVersionId', LeaderboardStrategyVersionIdPipe)
     strategyVersionId: string,
+    @CurrentUser() viewerUserId: string | null = null,
   ): Promise<LeaderboardDetail> {
     try {
-      const detail = await this.leaderboard.getDetail(strategyVersionId);
+      const detail = await this.leaderboard.getDetail(
+        strategyVersionId,
+        viewerUserId,
+      );
       if (detail) return detail;
       throw stableError(
         HttpStatus.NOT_FOUND,

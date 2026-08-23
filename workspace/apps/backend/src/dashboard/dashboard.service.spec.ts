@@ -17,8 +17,10 @@ import {
 } from '@nestjs/common';
 import {
   EXCEPTION_FILTERS_METADATA,
+  GUARDS_METADATA,
   METHOD_METADATA,
   PATH_METADATA,
+  ROUTE_ARGS_METADATA,
 } from '@nestjs/common/constants';
 import {
   afterEach,
@@ -30,9 +32,12 @@ import {
 } from '@jest/globals';
 import type { LeaderboardService } from '../leaderboard/leaderboard.service';
 import type { LoopStatusService } from '../loop/loop-status.service';
+import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 
 const NOW = new Date('2026-08-16T13:00:00.000Z');
 const LEADERBOARD_UPDATED_AT = new Date('2026-08-16T12:59:00.000Z');
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
 
 type LeaderboardReader = Pick<LeaderboardService, 'getLeaderboard'>;
 type LoopReader = Pick<LoopStatusService, 'getCurrent'>;
@@ -45,7 +50,7 @@ interface DashboardSummaryContract {
 }
 
 interface DashboardServiceContract {
-  getSummary(): Promise<DashboardSummaryContract>;
+  getSummary(viewerUserId?: string | null): Promise<DashboardSummaryContract>;
 }
 
 type DashboardServiceConstructor = new (
@@ -112,6 +117,7 @@ describe('DashboardService BFF contract (T035)', () => {
     expect(leaderboard.getLeaderboard).toHaveBeenCalledTimes(1);
     expect(leaderboard.getLeaderboard).toHaveBeenCalledWith(
       RankingCriterion.SCORE,
+      null,
     );
     expect(summary.leaderboard).toEqual({
       rankingCriterion: RankingCriterion.SCORE,
@@ -192,6 +198,49 @@ describe('DashboardService BFF contract (T035)', () => {
     expect(loopStatus.getCurrent.mock.results[0]?.value).toBeDefined();
     expect(queue).toEqual(queueStats());
   });
+});
+
+describe('T016 dashboard leaderboard viewer scope', () => {
+  it.each([
+    ['anonymous', null],
+    ['user A', USER_A],
+    ['user B', USER_B],
+  ] as const)(
+    'scopes leaderboard metadata for %s while loop and queue remain global',
+    async (_actor, viewerUserId) => {
+      const leaderboard: jest.Mocked<LeaderboardReader> = {
+        getLeaderboard: jest
+          .fn<LeaderboardReader['getLeaderboard']>()
+          .mockResolvedValue(leaderboardSnapshot(2)),
+      };
+      const loopStatus: jest.Mocked<LoopReader> = {
+        getCurrent: jest
+          .fn<LoopReader['getCurrent']>()
+          .mockResolvedValue(activeLoop()),
+      };
+      const jobQueue = {
+        enqueue: jest.fn<IJobQueue['enqueue']>(),
+        getStatus: jest.fn<IJobQueue['getStatus']>(),
+        retry: jest.fn<IJobQueue['retry']>(),
+        deadLetter: jest.fn<IJobQueue['deadLetter']>(),
+        getStats: jest
+          .fn<IJobQueue['getStats']>()
+          .mockResolvedValue(queueStats()),
+      };
+      const DashboardService = loadDashboardService();
+      const service = new DashboardService(leaderboard, loopStatus, jobQueue);
+
+      const summary = await service.getSummary(viewerUserId);
+
+      expect(leaderboard.getLeaderboard).toHaveBeenCalledWith(
+        RankingCriterion.SCORE,
+        viewerUserId,
+      );
+      expect(summary.leaderboard.updatedAt).toBe(LEADERBOARD_UPDATED_AT);
+      expect(loopStatus.getCurrent).toHaveBeenCalledWith();
+      expect(jobQueue.getStats).toHaveBeenCalledWith();
+    },
+  );
 });
 
 describe('Infrastructure error boundary contract (T035)', () => {
@@ -304,6 +353,17 @@ describe('DashboardController HTTP contract (T035)', () => {
     expect(
       Reflect.getMetadata(EXCEPTION_FILTERS_METADATA, DashboardController),
     ).toEqual([InfrastructureErrorFilter]);
+    expect(Reflect.getMetadata(GUARDS_METADATA, DashboardController)).toEqual([
+      SupabaseJwtGuard,
+    ]);
+    const routeArgs = Reflect.getMetadata(
+      ROUTE_ARGS_METADATA,
+      DashboardController,
+      'getSummary',
+    ) as Record<string, { index: number }> | undefined;
+    expect(Object.values(routeArgs ?? {}).some(({ index }) => index === 0)).toBe(
+      true,
+    );
   });
 });
 
@@ -389,6 +449,7 @@ function leaderboardSnapshot(entryCount: number): LeaderboardSnapshot {
 function leaderboardEntry(index: number): LeaderboardEntryPayload {
   return {
     rank: index + 11,
+    userId: null,
     strategyVersionId: `strategy-version-${index + 1}`,
     strategyName: `Strategy ${index + 1}`,
     strategyType: 'MA',

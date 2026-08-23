@@ -8,7 +8,7 @@ import { StatusIndicator } from '../status-indicator';
 export interface DashboardGridProps {
   pair: string;
   onPairChange(value: string): void;
-  loopPanel: ReactNode;
+  loopStatusPanel: ReactNode;
   queueCard: ReactNode;
   leaderboardPreview: ReactNode;
 }
@@ -16,7 +16,7 @@ export interface DashboardGridProps {
 export function DashboardGrid({
   pair,
   onPairChange,
-  loopPanel,
+  loopStatusPanel,
   queueCard,
   leaderboardPreview,
 }: DashboardGridProps) {
@@ -54,7 +54,7 @@ export function DashboardGrid({
         aria-label="Infrastructure status"
         className="flex min-w-0 flex-col gap-6 md:col-span-4"
       >
-        {loopPanel}
+        {loopStatusPanel}
         {queueCard}
         {leaderboardPreview}
       </aside>

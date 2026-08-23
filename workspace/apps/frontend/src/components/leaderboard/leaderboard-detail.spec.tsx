@@ -3,6 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import { API_BASE_URL } from '../../lib/constants';
 
+vi.mock('../../lib/supabase-client', () => ({
+  supabase: {
+    auth: {
+      getSession: async () => ({ data: { session: null } }),
+    },
+  },
+}));
+
 interface LeaderboardDetailProps {
   strategyVersionId: string;
 }

@@ -1,6 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('../services/api-client', () => ({
+  apiClient: { getLeaderboard: vi.fn() },
+}));
+
+vi.mock('../services/infrastructure-socket', () => ({
+  getInfrastructureSocket: vi.fn(),
+}));
+
 type Handler = (...args: unknown[]) => void;
 type RankingCriterion =
   | 'score'
@@ -162,46 +170,110 @@ describe('useLeaderboard contract', () => {
     expect(result.current.isStale).toBe(false);
   });
 
-  it('ignores a snapshot older than the latest realtime updatedAt watermark', async () => {
+  it('treats leaderboard:update as an invalidation and never trusts its system-only rows', async () => {
     const { useLeaderboard } = await loadHook();
     const socket = new FakeSocket();
-    const staleRequest = deferred<LeaderboardSnapshot>();
+    const refresh = deferred<LeaderboardSnapshot>();
     const getLeaderboard = vi
       .fn<(sortBy: RankingCriterion) => Promise<LeaderboardSnapshot>>()
       .mockResolvedValueOnce(snapshotFixture('2026-08-16T10:00:00.000Z'))
-      .mockReturnValueOnce(staleRequest.promise);
+      .mockReturnValueOnce(refresh.promise);
     const { result } = renderHook(() =>
       useLeaderboard({ getLeaderboard, socket }),
     );
     await waitFor(() => expect(result.current.data).not.toBeNull());
 
-    let refetchPromise!: Promise<void>;
     act(() => {
-      refetchPromise = result.current.refetch();
+      result.current.setSortBy('sharpeRatio');
+      result.current.setSelectedStrategyVersionId('version-1');
     });
-    const realtimeEntries = [entryFixture('version-realtime')];
+    const untrustedSystemRows = [entryFixture('wire-system-only')];
     act(() =>
       socket.serverEmit('leaderboard:update', {
         updatedAt: '2026-08-16T10:05:00.000Z',
-        triggeredByBacktestResultId: 'result-realtime',
+        triggeredByBacktestResultId: null,
         rankingCriterion: 'score',
-        topK: realtimeEntries,
+        topK: untrustedSystemRows,
       }),
     );
-    expect(result.current.data?.entries).toEqual(realtimeEntries);
+    expect(getLeaderboard).toHaveBeenLastCalledWith('sharpeRatio');
+    expect(result.current.data?.entries).not.toEqual(untrustedSystemRows);
+
+    const scopedRows = [entryFixture('rest-system'), entryFixture('rest-owner', 2)];
+    await act(async () =>
+      refresh.resolve(
+        snapshotFixture(
+          '2026-08-16T10:06:00.000Z',
+          scopedRows,
+          'sharpeRatio',
+        ),
+      ),
+    );
+    await waitFor(() => expect(result.current.data?.entries).toEqual(scopedRows));
+    expect(result.current.sortBy).toBe('sharpeRatio');
+    expect(result.current.selectedStrategyVersionId).toBe('version-1');
+    act(() =>
+      socket.serverEmit('leaderboard:update', {
+        updatedAt: '2026-08-16T10:05:30.000Z',
+        triggeredByBacktestResultId: null,
+        rankingCriterion: 'score',
+        topK: [],
+      }),
+    );
+    expect(getLeaderboard).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps request-generation and realtime-watermark protection during invalidation refetches', async () => {
+    const { useLeaderboard } = await loadHook();
+    const socket = new FakeSocket();
+    const initialRequest = deferred<LeaderboardSnapshot>();
+    const invalidationRequest = deferred<LeaderboardSnapshot>();
+    const getLeaderboard = vi
+      .fn<(sortBy: RankingCriterion) => Promise<LeaderboardSnapshot>>()
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(invalidationRequest.promise);
+    const { result } = renderHook(() =>
+      useLeaderboard({ getLeaderboard, socket }),
+    );
+    await waitFor(() => expect(getLeaderboard).toHaveBeenCalledTimes(1));
+
+    act(() =>
+      socket.serverEmit('leaderboard:update', {
+        updatedAt: '2026-08-16T10:05:00.000Z',
+        triggeredByBacktestResultId: null,
+        rankingCriterion: 'score',
+        topK: [entryFixture('wire-row')],
+      }),
+    );
+    expect(getLeaderboard).toHaveBeenCalledTimes(2);
 
     await act(async () =>
-      staleRequest.resolve(
-        snapshotFixture('2026-08-16T10:03:00.000Z', [
-          entryFixture('version-stale'),
+      invalidationRequest.resolve(
+        snapshotFixture('2026-08-16T10:04:00.000Z', [
+          entryFixture('older-than-watermark'),
         ]),
       ),
     );
-    await refetchPromise;
-    expect(result.current.data?.updatedAt).toEqual(
-      new Date('2026-08-16T10:05:00.000Z'),
+    expect(result.current.data).toBeNull();
+
+    await act(async () =>
+      initialRequest.resolve(
+        snapshotFixture('2026-08-16T10:06:00.000Z', [
+          entryFixture('obsolete-generation'),
+        ]),
+      ),
     );
-    expect(result.current.data?.entries).toEqual(realtimeEntries);
+    expect(result.current.data).toBeNull();
+
+    act(() =>
+      socket.serverEmit('leaderboard:update', {
+        updatedAt: '2026-08-16T10:04:59.000Z',
+        triggeredByBacktestResultId: null,
+        rankingCriterion: 'score',
+        topK: [],
+      }),
+    );
+    expect(getLeaderboard).toHaveBeenCalledTimes(2);
   });
 
   it('rejects an older request generation that resolves after a newer request', async () => {
@@ -233,7 +305,7 @@ describe('useLeaderboard contract', () => {
     expect(result.current.data).toEqual(newer);
   });
 
-  it('preserves the user sort and selected Strategy across realtime merges', async () => {
+  it('preserves the user sort and selected Strategy across manual refreshes', async () => {
     const { useLeaderboard } = await loadHook();
     const socket = new FakeSocket();
     const getLeaderboard = vi
@@ -248,20 +320,10 @@ describe('useLeaderboard contract', () => {
       result.current.setSortBy('sharpeRatio');
       result.current.setSelectedStrategyVersionId('version-1');
     });
-    act(() =>
-      socket.serverEmit('leaderboard:update', {
-        updatedAt: '2026-08-16T10:05:00.000Z',
-        triggeredByBacktestResultId: 'result-2',
-        rankingCriterion: 'score',
-        topK: [entryFixture('version-2'), entryFixture('version-1', 2)],
-      }),
-    );
+    await act(async () => result.current.refetch());
 
     expect(result.current.sortBy).toBe('sharpeRatio');
     expect(result.current.selectedStrategyVersionId).toBe('version-1');
-    expect(result.current.data?.entries).toEqual([
-      entryFixture('version-2'),
-      entryFixture('version-1', 2),
-    ]);
+    expect(getLeaderboard).toHaveBeenLastCalledWith('sharpeRatio');
   });
 });

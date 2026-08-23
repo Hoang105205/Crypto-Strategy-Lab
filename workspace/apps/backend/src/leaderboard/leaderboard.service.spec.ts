@@ -15,6 +15,7 @@ import {
   type IBacktestResultPort,
   type IEventBus,
   type LeaderboardEntryPayload,
+  type LeaderboardSnapshot,
   type NormalizedRate,
 } from '@crypto-strategy-lab/shared';
 
@@ -29,8 +30,11 @@ const RESULT_ID = '3d2be150-1ce6-451e-a8c4-2c4d1b7e4618';
 const SECOND_RESULT_ID = '1442da60-339d-40a6-bf87-0ba333919831';
 const EXECUTED_AT = new Date('2026-08-15T03:00:00.000Z');
 const UPDATED_AT = new Date('2026-08-15T03:00:01.000Z');
+const USER_A = '11111111-1111-4111-8111-111111111111';
+const USER_B = '22222222-2222-4222-8222-222222222222';
 
 interface LeaderboardCreateInput {
+  userId: string | null;
   strategyVersionId: string;
   strategyName: string;
   strategyType: string;
@@ -53,10 +57,14 @@ interface LeaderboardRepositoryApi {
     input: LeaderboardCreateInput,
   ): Promise<LeaderboardEntryPayload | null>;
   rerank(): Promise<void>;
-  getTopK(criterion: RankingCriterion): Promise<LeaderboardEntryPayload[]>;
-  getUpdatedAt(): Promise<Date>;
+  getTopK(
+    criterion: RankingCriterion,
+    viewerUserId?: string | null,
+  ): Promise<LeaderboardEntryPayload[]>;
+  getUpdatedAt(viewerUserId?: string | null): Promise<Date>;
   findBestByStrategyVersionId(
     strategyVersionId: string,
+    viewerUserId?: string | null,
   ): Promise<LeaderboardEntryPayload | null>;
 }
 
@@ -76,13 +84,17 @@ interface LeaderboardServiceApi {
   handleBacktestCompleted(
     envelope: EventEnvelope<BacktestCompletedPayload, 'BacktestCompleted'>,
   ): Promise<void>;
-  getDetail(strategyVersionId: string): Promise<
+  getDetail(strategyVersionId: string, viewerUserId?: string | null): Promise<
     | (LeaderboardEntryPayload & {
         trades: BacktestResult['trades'];
         executedAt: Date;
       })
     | null
   >;
+  getLeaderboard(
+    criterion?: RankingCriterion,
+    viewerUserId?: string | null,
+  ): Promise<LeaderboardSnapshot>;
 }
 
 type LeaderboardServiceConstructor = new (
@@ -113,6 +125,7 @@ const completedPayload = (
 ): BacktestCompletedPayload => ({
   jobId: 'b8257d6b-d9df-47fb-83c1-839b04335e6f',
   correlationId: CORRELATION_ID,
+  userId: null,
   loopRunId: null,
   backtestResultId: RESULT_ID,
   strategyVersionId: STRATEGY_VERSION_ID,
@@ -150,6 +163,7 @@ const leaderboardEntry = (
   overrides: Partial<LeaderboardEntryPayload> = {},
 ): LeaderboardEntryPayload => ({
   rank: 1,
+  userId: null,
   strategyVersionId: STRATEGY_VERSION_ID,
   strategyName: 'Moving Average',
   strategyType: 'MA',
@@ -398,7 +412,10 @@ describe('LeaderboardService Observer contract (T021)', () => {
 
       expect(repository.create).toHaveBeenCalledTimes(1);
       expect(repository.rerank).toHaveBeenCalledTimes(1);
-      expect(repository.getTopK).toHaveBeenCalledWith(RankingCriterion.SCORE);
+      expect(repository.getTopK).toHaveBeenCalledWith(
+        RankingCriterion.SCORE,
+        null,
+      );
       expect(eventBus.published[0]?.payload).toMatchObject({
         topK: bestPerVersionTopK,
       });
@@ -579,6 +596,7 @@ describe('LeaderboardService Observer contract (T021)', () => {
       });
       expect(repository.findBestByStrategyVersionId).toHaveBeenCalledWith(
         STRATEGY_VERSION_ID,
+        null,
       );
       expect(resultPort.getById).toHaveBeenCalledWith(RESULT_ID);
     });
@@ -599,6 +617,192 @@ describe('LeaderboardService Observer contract (T021)', () => {
       await expect(service.getDetail(STRATEGY_VERSION_ID)).resolves.toBeNull();
       expect(resultPort.getById).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('T010 viewer-scoped service delegation and owner propagation', () => {
+  it.each([
+    ['anonymous', null],
+    ['user A', USER_A],
+    ['user B', USER_B],
+  ] as const)(
+    'delegates list Top-K and updatedAt with the %s viewer',
+    async (_actor, viewerUserId) => {
+      const trace: string[] = [];
+      const repository = makeRepository(trace);
+      const Service = loadTarget();
+      const service = new Service(
+        new EventBusFake(trace),
+        repository,
+        { calculateScore: jest.fn(() => 0.46) },
+        makeResultPort(),
+      );
+
+      await service.getLeaderboard(RankingCriterion.SCORE, viewerUserId);
+
+      expect(repository.getTopK).toHaveBeenCalledWith(
+        RankingCriterion.SCORE,
+        viewerUserId,
+      );
+      expect(repository.getUpdatedAt).toHaveBeenCalledWith(viewerUserId);
+    },
+  );
+
+  it.each([
+    ['anonymous', null],
+    ['user A', USER_A],
+    ['user B', USER_B],
+  ] as const)(
+    'delegates detail visibility with the %s viewer before crossing the result port',
+    async (_actor, viewerUserId) => {
+      const trace: string[] = [];
+      const repository = makeRepository(trace);
+      repository.findBestByStrategyVersionId.mockResolvedValue(null);
+      const resultPort = makeResultPort();
+      const Service = loadTarget();
+      const service = new Service(
+        new EventBusFake(trace),
+        repository,
+        { calculateScore: jest.fn(() => 0.46) },
+        resultPort,
+      );
+
+      await expect(
+        service.getDetail(STRATEGY_VERSION_ID, viewerUserId),
+      ).resolves.toBeNull();
+      expect(repository.findBestByStrategyVersionId).toHaveBeenCalledWith(
+        STRATEGY_VERSION_ID,
+        viewerUserId,
+      );
+      expect(resultPort.getById).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['USER UUID', USER_A],
+    ['SEARCH_LOOP null', null],
+  ] as const)(
+    'copies %s completion ownership into LeaderboardEntry creation',
+    async (_label, userId) => {
+      const trace: string[] = [];
+      const repository = makeRepository(trace);
+      const Service = loadTarget();
+      const service = new Service(
+        new EventBusFake(trace),
+        repository,
+        { calculateScore: jest.fn(() => 0.46) },
+        makeResultPort(),
+      );
+
+      await service.handleBacktestCompleted(
+        envelope(completedPayload({ userId })),
+      );
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId }),
+      );
+    },
+  );
+});
+
+describe('T020 privacy-safe namespace-wide publisher branches', () => {
+  it('publishes a system completion with system Top-K, system watermark, and its allowed trigger ID', async () => {
+    const trace: string[] = [];
+    const systemTopK = [leaderboardEntry({ userId: null })];
+    const repository = makeRepository(trace, systemTopK);
+    const eventBus = new EventBusFake(trace);
+    const Service = loadTarget();
+    const service = new Service(
+      eventBus,
+      repository,
+      { calculateScore: jest.fn(() => 0.46) },
+      makeResultPort(),
+    );
+
+    await service.handleBacktestCompleted(
+      envelope(completedPayload({ userId: null })),
+    );
+
+    expect(repository.getTopK).toHaveBeenCalledWith(
+      RankingCriterion.SCORE,
+      null,
+    );
+    expect(repository.getUpdatedAt).toHaveBeenCalledWith(null);
+    expect(eventBus.published).toEqual([
+      {
+        eventType: EventType.LeaderboardUpdated,
+        payload: {
+          updatedAt: UPDATED_AT,
+          triggeredByBacktestResultId: RESULT_ID,
+          rankingCriterion: RankingCriterion.SCORE,
+          topK: systemTopK,
+        },
+        correlationId: CORRELATION_ID,
+      },
+    ]);
+  });
+
+  it('persists a private completion but broadcasts only system rows/watermark and a null trigger', async () => {
+    const trace: string[] = [];
+    const systemUpdatedAt = new Date('2026-08-15T03:00:01.000Z');
+    const privateUpdatedAt = new Date('2026-08-15T03:00:09.000Z');
+    const systemTopK = [leaderboardEntry({ userId: null })];
+    const privateTopK = [
+      leaderboardEntry({
+        userId: USER_A,
+        strategyVersionId: SECOND_STRATEGY_VERSION_ID,
+        backtestResultId: SECOND_RESULT_ID,
+        score: 0.99,
+      }),
+    ];
+    const repository = makeRepository(trace);
+    repository.getTopK.mockImplementation((_criterion, viewerUserId) =>
+      Promise.resolve(viewerUserId === null ? systemTopK : privateTopK),
+    );
+    repository.getUpdatedAt.mockImplementation((viewerUserId) =>
+      Promise.resolve(
+        viewerUserId === null ? systemUpdatedAt : privateUpdatedAt,
+      ),
+    );
+    const eventBus = new EventBusFake(trace);
+    const Service = loadTarget();
+    const service = new Service(
+      eventBus,
+      repository,
+      { calculateScore: jest.fn(() => 0.46) },
+      makeResultPort(),
+    );
+
+    await service.handleBacktestCompleted(
+      envelope(
+        completedPayload({
+          userId: USER_A,
+          strategyVersionId: SECOND_STRATEGY_VERSION_ID,
+          backtestResultId: SECOND_RESULT_ID,
+        }),
+      ),
+    );
+
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: USER_A }),
+    );
+    expect(repository.getTopK).toHaveBeenCalledWith(
+      RankingCriterion.SCORE,
+      null,
+    );
+    expect(repository.getUpdatedAt).toHaveBeenCalledWith(null);
+    expect(eventBus.published[0]).toEqual({
+      eventType: EventType.LeaderboardUpdated,
+      payload: {
+        updatedAt: systemUpdatedAt,
+        triggeredByBacktestResultId: null,
+        rankingCriterion: RankingCriterion.SCORE,
+        topK: systemTopK,
+      },
+      correlationId: CORRELATION_ID,
+    });
+    expect(JSON.stringify(eventBus.published)).not.toContain(USER_A);
+    expect(JSON.stringify(eventBus.published)).not.toContain(SECOND_RESULT_ID);
   });
 });
 
