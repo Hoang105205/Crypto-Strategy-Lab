@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-12
+> **Last Updated**: 2026-08-24
 
 ## 1. Overview
 - **Responsibility**: The system's nervous system — event bus, Redis-backed BullMQ job queue, leaderboard, search loop orchestration, and dashboard BFF
@@ -24,12 +24,13 @@
 | RedisConnection | Validates and owns BullMQ producer/worker Redis connections and shutdown lifecycle | Infrastructure Adapter | `apps/backend/src/queue/redis.connection.ts` |
 | BacktestWorker | Consumes BullMQ jobs from Redis, calls `IMarketDataService` + `IBacktester` + `IEvaluator`, persists result, publishes `BacktestCompleted`/`BacktestFailed` | Worker | `apps/backend/src/queue/backtest.worker.ts` |
 | DeadLetterRepository | Mirrors terminal BullMQ failures to PostgreSQL for stable audit/REST inspection and recovery | Repository | `apps/backend/src/queue/dead-letter.repository.ts` |
-| LeaderboardService | Subscribes to `BacktestCompleted`, computes score, maintains Top-K, publishes `LeaderboardUpdated` | Observer | `apps/backend/src/leaderboard/leaderboard.service.ts` |
+| LeaderboardService | Subscribes to `BacktestCompleted`, persists scored entries, computes caller-scoped REST rankings and a system-only event Top-K, publishes `LeaderboardUpdated` | Observer | `apps/backend/src/leaderboard/leaderboard.service.ts` |
 | LeaderboardRepository | Persists/queries `LeaderboardEntry` rows | Repository | `apps/backend/src/leaderboard/leaderboard.repository.ts` |
-| StrategyLoopService | Orchestrates the search loop: generate → enqueue → collect → decide next step, entirely through events/interfaces | Orchestrator / State Machine | `apps/backend/src/loop/strategy-loop.service.ts` |
-| LoopStatusService | Tracks `SearchLoopRun` state, exposes progress for REST + WebSocket | State Store | `apps/backend/src/loop/loop-status.service.ts` |
-| DashboardController / DashboardService | REST API composition for the frontend (leaderboard, loop status, queue stats) | BFF | `apps/backend/src/dashboard/dashboard.controller.ts`, `apps/backend/src/dashboard/dashboard.service.ts` |
-| PushGateway | WebSocket gateway pushing `LeaderboardUpdated`, `SearchLoopProgress`, `SearchLoopStarted/Stopped` to the frontend | Gateway / Observer | `apps/backend/src/dashboard/push.gateway.ts` |
+| StrategyLoopService | Orchestrates the one global system search loop: generate → enqueue → collect → decide next step, entirely through events/interfaces and independently of browser lifecycle | Orchestrator / State Machine | `apps/backend/src/loop/strategy-loop.service.ts` |
+| LoopStatusService | Tracks global `SearchLoopRun` state and exposes read-only progress for REST + WebSocket viewers | State Store | `apps/backend/src/loop/loop-status.service.ts` |
+| DashboardController / DashboardService | REST API composition for the frontend; leaderboard projections use current-user scope while loop/queue status remains global | BFF | `apps/backend/src/dashboard/dashboard.controller.ts`, `apps/backend/src/dashboard/dashboard.service.ts` |
+| PushGateway | Relays privacy-safe `LeaderboardUpdated` invalidations and global loop progress on the existing infrastructure socket; it does not establish user rooms or socket auth | Gateway / Observer | `apps/backend/src/dashboard/push.gateway.ts` |
+| App-level Leaderboard Live Provider (Frontend dependency) | Mounted below `AuthProvider` and `InfrastructureProvider`; owns cross-route Live updates preference/cache, current-session REST reconciliation, identity-generation invalidation, and exactly one `leaderboard:update` handler | Provider / Safe Invalidation Consumer | Frontend app root/provider layer |
 
 ### Component Diagram
 
@@ -114,7 +115,7 @@ flowchart TD
 ### Observer — ADR-0011
 - **Where**: `LeaderboardService` subscribes to `BacktestCompleted`; `LoopController` also subscribes to `BacktestCompleted`/`BacktestFailed`
 - **Why**: The Strategy Engine and the Job Queue worker must never know the Leaderboard or the Loop Controller exist. Ranking logic and search orchestration are reactive side effects of "a backtest finished" — not part of the backtest's own responsibility (Single Responsibility Principle applied across module boundaries).
-- **How**: On startup, `LeaderboardModule` calls `eventBus.subscribe('BacktestCompleted', handler)`. The handler is idempotent on `backtestResultId` (an `UNIQUE` constraint on `LeaderboardEntry.backtestResultId` at the DB level — a duplicate delivery of the same event is a silent no-op, not an error). It computes `score` (Section on scoring in `kb/flows/leaderboard-update.md`), inserts/updates the entry, re-sorts, trims to Top-K, and publishes `LeaderboardUpdated` with the fresh Top-K snapshot.
+- **How**: On startup, `LeaderboardModule` calls `eventBus.subscribe('BacktestCompleted', handler)`. The handler is idempotent on `backtestResultId`, computes `score`, and persists the nullable-owner entry. Caller-scoped REST reads filter before ranking/Top-K; the handler publishes `LeaderboardUpdated` with only the system Top-K so the namespace-wide payload is a safe invalidation.
 - **Trade-offs**:
   - Positive: adding a second observer (e.g., a future "Strategy Performance Alerts" module) requires zero changes to the Job Queue or Strategy Engine — just another `subscribe('BacktestCompleted', ...)` call.
   - Positive: changing the scoring formula only touches `LeaderboardService` — Backtester and Evaluator are untouched (extensibility scenario #4/#6 from the spec).
@@ -123,8 +124,15 @@ flowchart TD
 ### BFF (Backend-for-Frontend)
 - **Where**: `DashboardService` / `DashboardController`
 - **Why**: The frontend dashboard needs leaderboard + loop status + queue health in shapes convenient for rendering, without knowing that they come from three internal services owned by the same module.
-- **How**: `DashboardService` composes `LeaderboardService.getLeaderboard(RankingCriterion.SCORE)`, `LoopStatusService.getCurrent()`, and `IJobQueue.getStats()` into one coherent response. It preserves authoritative metadata and order, projects the first five Leaderboard entries with `slice(0, 5)`, and fails the whole snapshot when any dependency read fails (Section 7).
+- **How**: `DashboardService` receives the identity verified under `kb/contracts/auth.yaml`, obtains a leaderboard projection scoped before Top-K/rank/`updatedAt` calculation (anonymous = system only; A = system + A), and composes it with global `LoopStatusService.getCurrent()` plus global queue stats. A private entry outside the caller scope is never fetched and cannot influence exposed metadata.
 - **Trade-offs**: Positive — frontend makes one call instead of three; Negative — `DashboardService` has a small amount of coupling to the shape of all three sub-services, acceptable since all four live in the same module.
+
+### Cross-route Safe Invalidation Provider
+- **Where**: Frontend root tree below both `AuthProvider` and `InfrastructureProvider`, above route consumers such as Dashboard and Leaderboard.
+- **Why**: Dashboard mount lifetime is shorter than application/session lifetime. Owning state in a page hook would miss events off-route, reset OFF on navigation, and allow duplicate listeners.
+- **How**: The provider owns Live updates state, caller-scoped cache, request generation, and one exact `leaderboard:update` handler while ON. The user's choice is browser-persisted (`crypto-strategy-lab:leaderboard-live`) and defaults to OFF when absent. The namespace-wide event is only a system-safe invalidation; ON refetches REST with the current session even when Dashboard is absent. OFF removes the exact handler and freezes the snapshot across navigation/reload/restart/reconnect. Only explicit user action changes the choice.
+- **Identity boundary**: Before A → B or A → anonymous renders, clear A's cache, abort/invalidate A requests, advance the request generation, then fetch for the new session. Late responses from the old identity are discarded.
+- **Constraint**: Keep the existing socket/channel wire contract. Do not add rooms, socket handshake/auth, namespace changes, client privacy filtering, or private data to the broadcast payload.
 
 ## 4. Internal Data Flow
 
@@ -205,7 +213,10 @@ sequenceDiagram
     LB->>LB: compute score, upsert entry, re-sort Top-K
     LB->>EB: publish(LeaderboardUpdated, topK)
     EB->>WS: deliver LeaderboardUpdated
-    WS-->>FE: WS push leaderboard:update
+    WS-->>FE: WS push leaderboard:update (system-safe invalidation)
+    FE->>FE: app-level provider checks Live updates + current identity
+    FE->>LB: GET scoped leaderboard with current session
+    LB-->>FE: system + current-user snapshot
 ```
 
 ### Job Retry and Dead-Letter
@@ -233,18 +244,19 @@ sequenceDiagram
     JQ->>EB: publish BacktestDeadLettered exactly once
 ```
 
-### Search Loop Iteration
+### Global System Search Loop Iteration
 
 ```mermaid
 sequenceDiagram
-    participant U as User (Frontend)
+    participant SYS as System / Operator Lifecycle
     participant LC as LoopController
     participant SG as IStrategyGenerator
     participant EB as EventBus
     participant JQ as JobQueue
     participant WS as PushGateway
+    participant FE as Frontend (read-only status)
 
-    U->>LC: POST /api/loop/start (config)
+    SYS->>LC: start/reconcile one global run (system config)
     LC->>LC: create SearchLoopRun (status=RUNNING)
     LC->>EB: publish(SearchLoopStarted)
     loop until stop condition met
@@ -257,23 +269,25 @@ sequenceDiagram
         LC->>LC: record result, evaluate stop conditions
         LC->>EB: publish(SearchLoopProgress)
         EB->>WS: deliver SearchLoopProgress
-        WS-->>U: WS push loop:progress
+        WS-->>FE: WS push loop:progress (global read-only status)
     end
-    LC->>LC: set SearchLoopRun status (COMPLETED/STOPPED_BY_USER/FAILED)
+    LC->>LC: set terminal global SearchLoopRun status
     LC->>EB: publish(SearchLoopStopped)
     EB->>WS: deliver SearchLoopStopped
-    WS-->>U: WS push loop:stopped
+    WS-->>FE: WS push loop:stopped
 ```
+
+Navigation, Dashboard mount/unmount, authentication transitions, and leaderboard Live updates ON/OFF do not appear as loop commands in this sequence. They never control the global process.
 
 ## 6. Data Model
 | Entity | Fields | Relationships |
 |--------|--------|---------------|
-| LeaderboardEntry | `id (UUID, PK)`, `strategyVersionId (FK)`, `backtestResultId (UUID, UNIQUE)`, `rank (int)`, `score (float)`, `totalReturn (float)`, `winRate (float)`, `maxDrawdown (float)`, `sharpeRatio (float)`, `totalTrades (int)`, `createdAt`, `updatedAt` | Many-to-one → `StrategyVersion` (Strategy Engine); one-to-one → `BacktestResult` (Strategy Engine) via `backtestResultId` |
+| LeaderboardEntry | `id (UUID, PK)`, `userId (UUID, nullable; null = system)`, `strategyVersionId (FK)`, `backtestResultId (UUID, UNIQUE)`, `rank (int)`, `score (float)`, `totalReturn (float)`, `winRate (float)`, `maxDrawdown (float)`, `sharpeRatio (float)`, `totalTrades (int)`, `createdAt`, `updatedAt` | Caller-visible reads apply system + current-user scope before Top-K/rank/time metadata; many-to-one → `StrategyVersion`; one-to-one → `BacktestResult` |
 | SearchLoopRun | `id (UUID, PK)`, `status (enum: RUNNING\|PAUSED\|COMPLETED\|STOPPED_BY_USER\|FAILED)`, `generatorType (enum: RANDOM\|DOMAIN_GUIDED)`, `iteration (int)`, `testedCandidates (int)`, `maxCandidates (int, nullable)`, `maxDurationMs (int, nullable)`, `stopOnNoImprovementIterations (int, default 50)`, `currentCandidateStrategyVersionId (UUID, nullable)`, `bestStrategyVersionId (UUID, nullable)`, `bestScore (float, nullable)`, `stopReason (string, nullable)`, `startedAt`, `pausedAt (nullable)`, `stoppedAt (nullable)` | One-to-many → `SearchLoopCandidate` |
 | SearchLoopCandidate | `id (UUID, PK)`, `loopRunId (FK)`, `strategyVersionId (FK)`, `backtestResultId (UUID, nullable)`, `iteration (int)`, `score (float, nullable)`, `status (enum: GENERATING\|BACKTESTING\|EVALUATED\|FAILED)`, `createdAt` | Many-to-one → `SearchLoopRun`; many-to-one → `StrategyVersion` |
 | DeadLetterJob | `id (UUID, PK)`, `jobId (UUID)`, `jobType (string)`, `payload (JSONB)`, `attempts (int)`, `lastError (string)`, `deadLetteredAt`, `resolvedAt (nullable)` | Standalone — inspected via `GET /api/queue/dead-letter` |
 
-> `LeaderboardEntry` and `SearchLoopRun`/`SearchLoopCandidate` live in tables owned by Event Infrastructure. They reference `StrategyVersion`/`BacktestResult` (owned by Strategy Engine) by ID only — never via a foreign-key join across module-owned schemas in application code, per `kb/MODULES.md` Rule 2 ("No direct database access across module boundaries"). Prisma model definitions written by Hoàng (who owns `shared/` + the Prisma schema), using the entity shapes defined here as the spec.
+> `LeaderboardEntry` and `SearchLoopRun`/`SearchLoopCandidate` live in tables owned by Event Infrastructure. `LeaderboardEntry.userId` implements the existing nullable ownership model; no migration or new ownership field is introduced by this KB update. `SearchLoopRun` and `SearchLoopCandidate` remain global system data and never gain per-user ownership. Cross-module references remain by ID only per `kb/MODULES.md` Rule 2.
 
 ## 7. API Surface
 See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owned by this module:
@@ -281,34 +295,34 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 ### REST
 | Method | Path | Description | Response |
 |--------|------|--------------|----------|
-| GET | `/api/leaderboard` | Current Top-K leaderboard, sortable | `{ rankingCriterion, updatedAt, entries: LeaderboardEntryPayload[] }` |
-| GET | `/api/leaderboard?sortBy=sharpeRatio` | Re-sort by a different metric (client-side re-rank of the same Top-K set; does not re-run backtests) | same shape as above |
-| GET | `/api/leaderboard/:strategyVersionId` | Detail for one leaderboard entry, including trade list (proxied from Strategy Engine's `BacktestResult`) | `LeaderboardEntryPayload & { trades: Trade[] }` |
-| POST | `/api/loop/start` | Start a new search loop run | `{ loopRunId, status: "RUNNING" }` |
-| POST | `/api/loop/:loopRunId/pause` | Pause a running loop | `{ loopRunId, status: "PAUSED" }` |
-| POST | `/api/loop/:loopRunId/resume` | Resume a paused loop | `{ loopRunId, status: "RUNNING" }` |
-| POST | `/api/loop/:loopRunId/stop` | Stop a loop (running or paused) | `{ loopRunId, status: "STOPPED_BY_USER" }` |
+| GET | `/api/leaderboard` | Caller-scoped Top-K, sortable; scope/rank/`updatedAt` are computed before projection | `{ rankingCriterion, updatedAt, entries: LeaderboardEntryPayload[] }` |
+| GET | `/api/leaderboard?sortBy=sharpeRatio` | Re-rank the caller-visible system + current-user dataset; no backtest rerun | same shape as above |
+| GET | `/api/leaderboard/:strategyVersionId` | Caller-scoped detail; out-of-scope private data is indistinguishable from not found | `LeaderboardEntryPayload & { trades: Trade[] }` |
+| POST | `/api/loop/start` | Existing operational compatibility surface for the global loop; not called by Live updates or route UI | `{ loopRunId, status: "RUNNING" }` |
+| POST | `/api/loop/:loopRunId/pause` | Existing operational compatibility surface; not an end-user/per-viewer control | `{ loopRunId, status: "PAUSED" }` |
+| POST | `/api/loop/:loopRunId/resume` | Existing operational compatibility surface; not an end-user/per-viewer control | `{ loopRunId, status: "RUNNING" }` |
+| POST | `/api/loop/:loopRunId/stop` | Existing operational compatibility surface for the one global run | `{ loopRunId, status: "STOPPED_BY_USER" }` |
 | GET | `/api/loop/:loopRunId` | Current status/progress of a loop run | `SearchLoopRun` shape |
 | GET | `/api/loop/current` | Status of the currently active loop run, if any | `SearchLoopRun \| null` |
 | GET | `/api/queue/stats` | Queue depth, in-flight, dead-letter counts | `QueueStats` (see `kb/contracts/events.yaml`) |
 | GET | `/api/queue/dead-letter` | List dead-lettered jobs for operator inspection | `DeadLetterJob[]` |
 | POST | `/api/queue/dead-letter/:jobId/retry` | Re-enqueue a dead-lettered job | `{ jobId, status: "QUEUED" }` |
-| GET | `/api/dashboard/summary` | BFF composite: leaderboard Top-5 + current loop status + queue health in one call | `{ leaderboard, loop, queue, generatedAt }`; dependency failures use stable `{ error, code }` bodies from `sdd_artifacts/event-infrastructure-dashboard/contracts/dashboard-realtime.md` |
+| GET | `/api/dashboard/summary` | BFF composite: caller-scoped leaderboard Top-5 + global loop status + global queue health | `{ leaderboard, loop, queue, generatedAt }`; dependency failures use stable `{ error, code }` bodies from `sdd_artifacts/event-infrastructure-dashboard/contracts/dashboard-realtime.md` |
 
 ### WebSocket (channels pushed by `PushGateway`)
 Namespace: `/infrastructure` by default, configurable at process/module bootstrap with `INFRASTRUCTURE_WS_NAMESPACE`. This namespace is independent from the existing `market-data` namespace.
 
 | Channel | Event payload | Trigger |
 |---------|---------------|---------|
-| `leaderboard:update` | `LeaderboardUpdated` payload | Every `LeaderboardUpdated` bus event |
+| `leaderboard:update` | Existing `LeaderboardUpdated` wire payload: system-only `topK`, nullable private trigger ID | Safe invalidation for the app-level provider; while ON it refetches scoped REST |
 | `loop:started` | `SearchLoopStarted` payload | Loop start |
 | `loop:progress` | `SearchLoopProgress` payload | After every candidate evaluation |
 | `loop:stopped` | `SearchLoopStopped` payload | Loop completes/stops/fails |
 | `connection:status` | `{ status: "connected" \| "reconnecting" }` | On connect/reconnect (client-side, mirrors DESIGN.md realtime UX rules) |
 
 ## 8. Quality Attributes
-- **Security**: No auth in MVP (per `kb/CONSTITUTION.md`). Loop start/stop/pause endpoints are unauthenticated but rate-limited (max 1 active loop run at a time, enforced server-side — a second `POST /api/loop/start` while one is `RUNNING`/`PAUSED` returns `409 Conflict`). Error responses never leak stack traces to the client — only `{ error: string, code: string }`.
-- **Performance**: BullMQ worker concurrency is configurable (default 3). USER priority prevents a search loop from indefinitely delaying interactive work. `GET /api/leaderboard` reads from the denormalized `LeaderboardEntry` table (already Top-K, already sorted) — never recomputes ranking on read.
+- **Security**: Leaderboard REST uses `SupabaseJwtGuard`/`@CurrentUser()` semantics from `kb/contracts/auth.yaml`: anonymous sees system rows; A sees system + A. Filtering precedes Top-K, ranks, detail lookup, and timestamp calculation. Namespace-wide `leaderboard:update` never contains private rows; clients refetch instead of applying a privacy filter. Loop/queue status remains global.
+- **Performance**: BullMQ worker concurrency is configurable (default 3). USER priority prevents the global search loop from indefinitely delaying interactive work. Scoped leaderboard indexes/queries bound work before Top-K projection; an event causes at most one app-provider reconciliation path rather than one handler per mounted route.
 - **Reliability**: Redis AOF plus BullMQ durable job state, three total attempts with 1s/4s retry delays, stalled-job recovery, graceful worker shutdown, and PostgreSQL dead-letter audit (`kb/contracts/events.yaml`). Worker side effects and subscribers are idempotent because stalled/redelivered jobs can execute at least once. EventEmitter2 remains process-local and is not claimed as a durable event log.
 - **Observability**: `correlationId` propagates through `BacktestRequested → BacktestCompleted/Failed → LeaderboardUpdated` and through `SearchLoopStarted → BacktestRequested → SearchLoopProgress → SearchLoopStopped`, enabling full request tracing in logs. `GET /api/queue/stats` and `GET /api/dashboard/summary` expose live counts (queued, processing, dead-lettered, current loop iteration) so the demo can show "Loop is running: 125 candidates tested" without inspecting logs.
 - **Scalability**: BullMQ/Redis is the accepted target (ADR-0013). Increasing in-process concurrency is configuration-only. Horizontal worker processes additionally require replacing the process-local `IEventBus`; this prerequisite must be completed before claiming multi-process completion-event delivery.
@@ -318,13 +332,16 @@ Namespace: `/infrastructure` by default, configurable at process/module bootstra
   - `EventBus`: publish wraps payload in a valid `EventEnvelope`; a throwing subscriber does not affect other subscribers or the publisher.
   - `BullMqJobQueue`/`BacktestWorker`: enqueue preserves `jobId`; duplicate IDs conflict; USER priority and equal-priority FIFO hold; attempts/delays are correct; retention is bounded; terminal failures mirror once to `DeadLetterJob`; `getStats()` maps BullMQ states correctly.
   - `LeaderboardService`: score computation is correct for known inputs; duplicate `BacktestCompleted` (same `backtestResultId`) does not create a duplicate entry; Top-K trimming keeps exactly K entries sorted correctly.
-  - `LoopController`: stop conditions trigger correctly (`maxCandidates` reached, `maxDurationMs` elapsed, `stopOnNoImprovementIterations` reached, user-requested stop); pause prevents new candidates from being generated; resume continues from the same `loopRunId`.
+  - `LeaderboardService`/BFF reads: anonymous, A, and B isolation is applied before Top-K/rank/`updatedAt`; out-of-scope detail returns not found.
+  - App-level provider: default OFF without stored choice; explicit ON/OFF persistence across remount/reload; one handler while ON; OFF snapshot freeze across navigation/reload/reconnect; exact cleanup; and A → B/A → anonymous cache/request invalidation before render.
+  - `StrategyLoopService`: system-configured bounds and restart reconciliation work without a mounted browser; navigation/toggle tests assert zero loop lifecycle calls and no per-user run state.
 - **Integration tests**:
   - Redis-backed queue flow: await `IJobQueue.enqueue` with Redis and Strategy/Market Data test doubles, publish the notification, and assert the BullMQ job is consumed and `BacktestCompleted` is correct.
   - Restart recovery: enqueue waiting/delayed jobs, restart NestJS without stopping Redis, and assert jobs resume without changing identity.
   - Stalled/idempotency path: simulate worker loss and prove recovered execution does not duplicate `BacktestResult`, terminal events, or dead-letter records.
-  - Dashboard/Infrastructure realtime: boot production Dashboard/EventBus behavior with public dependency-module replacements, call `GET /api/dashboard/summary`, connect a real Socket.IO client to `/infrastructure`, assert all four exact relay channels/payloads, and verify listener cleanup on application shutdown.
-  - Full search loop: start a loop with `maxCandidates: 5` against test doubles → assert exactly 5 `BacktestRequested` events are published and the loop reaches `COMPLETED` with `stopReason: "max_candidates_reached"`.
+  - Dashboard/Infrastructure realtime: boot production behavior, verify `leaderboard:update` remains system-safe, and prove the app-level consumer treats it as invalidation followed by current-session REST even when Dashboard is not mounted.
+  - Cross-route/identity integration: navigate Dashboard ↔ Leaderboard with ON and OFF, reconnect in each state, then switch A → B and A → anonymous; assert one-or-zero listener as selected, no stale request commit, and no A data in the new viewer cache.
+  - Full search loop: start the global system loop with `maxCandidates: 5` against test doubles → assert exactly 5 `BacktestRequested` events with `userId: null`, terminal completion, and no dependency on navigation or Live updates.
   - Dead-letter path: force `IBacktester.run()` to throw on every attempt → assert the job ends in `DEAD_LETTER` status and both `BacktestFailed` and `BacktestDeadLettered` are published exactly once.
 - **Manual/demo verification**: enqueue jobs, restart NestJS while Redis stays up, and show waiting work resumes; demonstrate USER priority, retry/backoff, DLQ recovery, Redis outage/recovery, and WebSocket reconnection.
 

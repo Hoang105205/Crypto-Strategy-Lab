@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-18
-> **Status**: Active — Added ADR-0014 LLM-Assisted Adaptive Web Crawler with Selector Caching & Self-Healing
+> **Last Updated**: 2026-08-24
+> **Status**: Active — Cross-route live leaderboard synchronized; explicit ON/OFF persists and defaults OFF
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
@@ -37,4 +37,4 @@ read from here before generating any artifacts or code.
 - **Domain**: Crypto trading strategy analysis, composition, and evaluation
 - **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, CrawlerRule, SearchLoopRun
 - **Modules**: Market Data (Hoàng), Strategy Engine (Huy), News & Sentiment (Thuận), Event Infrastructure (Phương — Event Bus + Job Queue + Leaderboard + Loop + Dashboard)
-- **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop, News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update
+- **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop (global system process), News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update (cross-route safe invalidation + scoped REST reconciliation)
