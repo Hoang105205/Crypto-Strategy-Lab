@@ -11,6 +11,8 @@ import {
   SentimentLabel,
   VADER_POSITIVE_THRESHOLD,
   VADER_NEGATIVE_THRESHOLD,
+  AggregateSentiment,
+  ManualCrawlResult,
 } from '@crypto-strategy-lab/shared';
 import {
   INewsProvider,
@@ -22,6 +24,9 @@ import { SentimentClient } from './sentiment.client';
 export class NewsService {
   private readonly logger = new Logger(NewsService.name);
   
+  // Concurrency control: Mutex lock to prevent overlapping crawler jobs
+  private isCrawling: boolean = false;
+
   // In-memory cache to prevent O(N) database queries during backtesting loops
   private backtestCache: Map<string, NewsArticle[]> = new Map();
   private cacheExpiresAt: number = 0;
@@ -34,149 +39,259 @@ export class NewsService {
   ) {}
 
   /**
+   * Check whether a crawling process is currently running
+   */
+  public isCrawlInProgress(): boolean {
+    return this.isCrawling;
+  }
+
+  /**
+   * Manual on-demand news collection trigger
+   */
+  /**
+   * Manual on-demand news collection trigger
+   */
+  async triggerManualCrawl(): Promise<ManualCrawlResult> {
+    if (this.isCrawling) {
+      throw new Error('Crawl in progress. Please wait for current execution to finish.');
+    }
+
+    const { newlyInsertedCount, reAnalyzedCount, totalFetched } =
+      await this.collectNewsWithMetrics();
+
+    let message = 'Feeds are up to date. No new articles found.';
+    if (newlyInsertedCount > 0 && reAnalyzedCount > 0) {
+      message = `Ingestion complete! Added ${newlyInsertedCount} new & re-scored ${reAnalyzedCount} historical articles.`;
+    } else if (newlyInsertedCount > 0) {
+      message = `Ingestion successful! Added ${newlyInsertedCount} new articles.`;
+    } else if (reAnalyzedCount > 0) {
+      message = `Re-scored ${reAnalyzedCount} historical articles with real VADER ML.`;
+    }
+
+    return {
+      success: true,
+      count: newlyInsertedCount + reAnalyzedCount,
+      message,
+    };
+  }
+
+  /**
    * Collect all news from active INewsProvider instances, normalize, enrich with ML sentiment score, deduplicate, and persist to DB
    */
   async collectAllNews(): Promise<NewsArticle[]> {
-    this.logger.log(
-      `Starting news collection across ${this.providers.length} registered providers...`,
-    );
-    const allRawArticles: RawArticle[] = [];
+    const { savedArticles } = await this.collectNewsWithMetrics();
+    return savedArticles;
+  }
 
-    // Query active trading pairs from PostgreSQL to extract matching coins dynamically
-    let activeCoins: string[] = [
-      'BTC',
-      'ETH',
-      'SOL',
-      'BNB',
-      'XRP',
-      'DOGE',
-      'ADA',
-    ];
+  /**
+   * Internal ingestion worker tracking detailed insertion & re-scoring metrics
+   */
+  async collectNewsWithMetrics(): Promise<{
+    savedArticles: NewsArticle[];
+    newlyInsertedCount: number;
+    reAnalyzedCount: number;
+    totalFetched: number;
+  }> {
+    if (this.isCrawling) {
+      this.logger.warn('Crawl already in progress, skipping duplicate execution.');
+      return {
+        savedArticles: [],
+        newlyInsertedCount: 0,
+        reAnalyzedCount: 0,
+        totalFetched: 0,
+      };
+    }
+
+    this.isCrawling = true;
     try {
-      const activePairs = await this.prisma.tradingPair.findMany({
-        where: { isActive: true },
-        select: { baseAsset: true },
-      });
-      if (activePairs.length > 0) {
-        activeCoins = activePairs.map((p) => p.baseAsset.toUpperCase());
-      }
-    } catch (err) {
-      this.logger.warn(
-        `Failed to fetch active TradingPairs from DB: ${err.message}. Using default coin list.`,
+      this.logger.log(
+        `Starting news collection across ${this.providers.length} registered providers...`,
       );
-    }
+      const allRawArticles: RawArticle[] = [];
 
-    // Fetch from all provider adapters concurrently (Fault isolation per ADR-0010)
-    for (const provider of this.providers) {
+      // Query active trading pairs from PostgreSQL to extract matching coins dynamically
+      let activeCoins: string[] = [
+        'BTC',
+        'ETH',
+        'SOL',
+        'BNB',
+        'XRP',
+        'DOGE',
+        'ADA',
+      ];
       try {
-        const rawList = await provider.fetchLatest(20, undefined, activeCoins);
-        allRawArticles.push(...rawList);
-      } catch (err) {
-        this.logger.error(`Error in provider fetch: ${err.message}`);
-      }
-    }
-
-    const savedArticles: NewsArticle[] = [];
-    const now = new Date();
-
-    // Deduplicate, sentiment enrich, and persist
-    for (const raw of allRawArticles) {
-      try {
-        // Deduplication by URL (Unique constraint in PostgreSQL DB)
-        const existing = await this.prisma.newsArticle.findUnique({
-          where: { url: raw.url },
+        const activePairs = await this.prisma.tradingPair.findMany({
+          where: { isActive: true },
+          select: { baseAsset: true },
         });
+        if (activePairs.length > 0) {
+          activeCoins = activePairs.map((p) => p.baseAsset.toUpperCase());
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to fetch active TradingPairs from DB: ${err.message}. Using default coin list.`,
+        );
+      }
 
-        if (existing) {
-          // If existing article has neutral/default label, re-analyze with Python VADER ML
-          if (
-            existing.sentimentScore === 0 ||
-            existing.sentimentLabel === 'NEUTRAL' ||
-            !existing.sentimentScore
-          ) {
-            const textToAnalyze = `${raw.title}. ${raw.content}`;
-            const sentimentResult =
-              await this.sentimentClient.analyzeText(textToAnalyze);
-            if (
-              sentimentResult.score !== 0.0 ||
-              sentimentResult.label !== SentimentLabel.NEUTRAL
-            ) {
-              const updated = await this.prisma.newsArticle.update({
-                where: { id: existing.id },
-                data: {
-                  sentimentScore: sentimentResult.score,
-                  sentimentLabel: sentimentResult.label,
-                },
-              });
-              await this.prisma.sentimentScore.create({
-                data: {
-                  articleId: existing.id,
-                  score: sentimentResult.score,
-                  label: sentimentResult.label,
-                  model: 'VADER',
-                  scoredAt: now,
-                },
-              });
-              this.logger.log(
-                `Re-analyzed existing article [${existing.id}] with real VADER ML: ${sentimentResult.label} (${sentimentResult.score})`,
-              );
-              savedArticles.push(updated as unknown as NewsArticle);
-              continue;
-            }
+      // Fetch from all provider adapters concurrently (Fault isolation per ADR-0010)
+      const providerResults = await Promise.allSettled(
+        this.providers.map((provider) =>
+          provider.fetchLatest(20, undefined, activeCoins),
+        ),
+      );
+
+      for (const res of providerResults) {
+        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+          allRawArticles.push(...res.value);
+        } else if (res.status === 'rejected') {
+          this.logger.error(`Error in provider fetch: ${res.reason?.message || res.reason}`);
+        }
+      }
+
+      const savedArticles: NewsArticle[] = [];
+      let newlyInsertedCount = 0;
+      let reAnalyzedCount = 0;
+      const now = new Date();
+
+      // Deduplicate, sentiment enrich, and persist
+      for (const raw of allRawArticles) {
+        try {
+          // Deduplication by URL (Unique constraint in PostgreSQL DB)
+          const existing = await this.prisma.newsArticle.findUnique({
+            where: { url: raw.url },
+          });
+
+          if (existing) {
+            this.logger.verbose(`Skipping existing article: ${raw.title}`);
+            savedArticles.push(existing as unknown as NewsArticle);
+            continue;
           }
 
-          this.logger.verbose(`Skipping existing article: ${raw.title}`);
-          savedArticles.push(existing as unknown as NewsArticle);
-          continue;
+          // Enrich with VADER Sentiment ML Score (Graceful degradation handled by SentimentClient)
+          const textToAnalyze = `${raw.title}. ${raw.content}`;
+          const sentimentResult =
+            await this.sentimentClient.analyzeText(textToAnalyze);
+
+          // Normalize and save with explicit GENERAL fallback tag
+          const relatedCoins =
+            raw.relatedCoins && raw.relatedCoins.length > 0
+              ? raw.relatedCoins
+              : ['GENERAL'];
+          const article = await this.prisma.newsArticle.create({
+            data: {
+              source: raw.source,
+              title: raw.title,
+              content: raw.content,
+              url: raw.url,
+              publishedAt: new Date(raw.publishedAt),
+              crawledAt: now,
+              relatedCoins,
+              sentimentScore: sentimentResult.score,
+              sentimentLabel: sentimentResult.label,
+            },
+          });
+
+          // Also persist SentimentScore audit record
+          await this.prisma.sentimentScore.create({
+            data: {
+              articleId: article.id,
+              score: sentimentResult.score,
+              label: sentimentResult.label,
+              model: 'VADER',
+              scoredAt: now,
+            },
+          });
+
+          this.logger.log(
+            `Ingested article [${article.id}]: ${article.title} (Sentiment: ${sentimentResult.label} ${sentimentResult.score})`,
+          );
+          newlyInsertedCount++;
+          savedArticles.push(article as unknown as NewsArticle);
+        } catch (error) {
+          this.logger.error(
+            `Failed to persist article ${raw.url}: ${error.message}`,
+          );
         }
+      }
 
-        // Enrich with VADER Sentiment ML Score (Graceful degradation handled by SentimentClient)
-        const textToAnalyze = `${raw.title}. ${raw.content}`;
-        const sentimentResult =
-          await this.sentimentClient.analyzeText(textToAnalyze);
-
-        // Normalize and save with explicit GENERAL fallback tag
-        const relatedCoins =
-          raw.relatedCoins && raw.relatedCoins.length > 0
-            ? raw.relatedCoins
-            : ['GENERAL'];
-        const article = await this.prisma.newsArticle.create({
-          data: {
-            source: raw.source,
-            title: raw.title,
-            content: raw.content,
-            url: raw.url,
-            publishedAt: new Date(raw.publishedAt),
-            crawledAt: now,
-            relatedCoins,
-            sentimentScore: sentimentResult.score,
-            sentimentLabel: sentimentResult.label,
+      // Batch Re-scoring: scan and re-analyze historical articles lacking a VADER audit record
+      try {
+        const historicalUnscored = await this.prisma.newsArticle.findMany({
+          where: {
+            OR: [
+              { sentimentScores: { none: { model: 'VADER' } } },
+              { sentimentScore: null },
+            ],
           },
+          take: 100, // Batch up to 100 historical articles per cycle
+          orderBy: { publishedAt: 'desc' },
         });
 
-        // Also persist SentimentScore audit record
-        await this.prisma.sentimentScore.create({
-          data: {
-            articleId: article.id,
-            score: sentimentResult.score,
-            label: sentimentResult.label,
-            model: 'VADER',
-            scoredAt: now,
-          },
-        });
+        if (historicalUnscored.length > 0) {
+          const CHUNK_SIZE = 20;
+          for (let i = 0; i < historicalUnscored.length; i += CHUNK_SIZE) {
+            const chunk = historicalUnscored.slice(i, i + CHUNK_SIZE);
+            await Promise.all(
+              chunk.map(async (item) => {
+                try {
+                  const textToAnalyze = `${item.title}. ${item.content}`;
+                  const sentimentResult =
+                    await this.sentimentClient.analyzeText(textToAnalyze);
 
-        this.logger.log(
-          `Ingested article [${article.id}]: ${article.title} (Sentiment: ${sentimentResult.label} ${sentimentResult.score})`,
-        );
-        savedArticles.push(article as unknown as NewsArticle);
-      } catch (error) {
-        this.logger.error(
-          `Failed to persist article ${raw.url}: ${error.message}`,
+                  await this.prisma.newsArticle.update({
+                    where: { id: item.id },
+                    data: {
+                      sentimentScore: sentimentResult.score,
+                      sentimentLabel: sentimentResult.label,
+                    },
+                  });
+
+                  await this.prisma.sentimentScore.create({
+                    data: {
+                      articleId: item.id,
+                      score: sentimentResult.score,
+                      label: sentimentResult.label,
+                      model: 'VADER',
+                      scoredAt: now,
+                    },
+                  });
+
+                  if (
+                    sentimentResult.score !== 0.0 ||
+                    sentimentResult.label !== SentimentLabel.NEUTRAL
+                  ) {
+                    reAnalyzedCount++;
+                  }
+                } catch {
+                  // Graceful continue on single item failure
+                }
+              }),
+            );
+          }
+
+          if (reAnalyzedCount > 0) {
+            this.logger.log(
+              `Successfully re-scored ${reAnalyzedCount} historical articles with real VADER ML compound scores.`,
+            );
+            // Invalidate in-memory cache to immediately reflect updated scores
+            this.backtestCache.clear();
+          }
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Historical batch re-scoring encountered an error: ${err.message}`,
         );
       }
-    }
 
-    return savedArticles;
+      return {
+        savedArticles,
+        newlyInsertedCount,
+        reAnalyzedCount,
+        totalFetched: allRawArticles.length,
+      };
+    } finally {
+      this.isCrawling = false;
+    }
   }
 
   /**
@@ -263,19 +378,14 @@ export class NewsService {
   }
 
   /**
-   * Get aggregate sentiment score and label for a coin / multi-coins over a timeframe ('1h', '24h', '7d')
+   * Get aggregate sentiment score, label, and distribution breakdown for a coin / multi-coins over a timeframe ('1h', '24h', '7d')
    */
   async getAggregateSentiment(
     coin?: string,
     timeframe: string = '24h',
     coins?: string[],
     targetDate: Date = new Date(),
-  ): Promise<{
-    score: number;
-    label: SentimentLabel;
-    articleCount: number;
-    updatedAt: string;
-  }> {
+  ): Promise<AggregateSentiment> {
     let timeframeMs = 86400000; // 24h default
     if (timeframe === '1h') timeframeMs = 3600000;
     if (timeframe === '7d') timeframeMs = 604800000;
@@ -302,9 +412,42 @@ export class NewsService {
         score: SENTIMENT_NEUTRAL_SCORE,
         label: SentimentLabel.NEUTRAL,
         articleCount: 0,
+        positiveCount: 0,
+        neutralCount: 0,
+        negativeCount: 0,
+        positiveRatio: 0,
+        neutralRatio: 100,
+        negativeRatio: 0,
         updatedAt: new Date().toISOString(),
       };
     }
+
+    let positiveCount = 0;
+    let neutralCount = 0;
+    let negativeCount = 0;
+
+    for (const a of articles) {
+      if (
+        a.sentimentLabel === SentimentLabel.POSITIVE ||
+        (a.sentimentLabel as string) === 'POSITIVE'
+      ) {
+        positiveCount++;
+      } else if (
+        a.sentimentLabel === SentimentLabel.NEGATIVE ||
+        (a.sentimentLabel as string) === 'NEGATIVE'
+      ) {
+        negativeCount++;
+      } else {
+        neutralCount++;
+      }
+    }
+
+    const total = articles.length;
+    const positiveRatio = Number(((positiveCount / total) * 100).toFixed(1));
+    const neutralRatio = Number(((neutralCount / total) * 100).toFixed(1));
+    const negativeRatio = Number(
+      Math.max(0, 100 - positiveRatio - neutralRatio).toFixed(1),
+    );
 
     const sumScore = articles.reduce(
       (acc, a) => acc + (a.sentimentScore ?? 0),
@@ -320,8 +463,15 @@ export class NewsService {
     return {
       score: avgScore,
       label,
-      articleCount: articles.length,
+      articleCount: total,
+      positiveCount,
+      neutralCount,
+      negativeCount,
+      positiveRatio,
+      neutralRatio,
+      negativeRatio,
       updatedAt: new Date().toISOString(),
     };
   }
 }
+

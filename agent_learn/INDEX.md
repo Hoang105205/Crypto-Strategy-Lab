@@ -1,5 +1,7 @@
 # Agent Learn Index
 
+- [News Manual Crawl Breakdown - 2026-08-25](lessons/news-manual-crawl-breakdown-2026-08-25.md): on-demand crawler trigger, 120s cooldown anti-spam rate limiting with HTTP 429, mutex lock concurrency protection with HTTP 409, 3-color sentiment distribution breakdown bar, and 5-minute background cron schedule.
+
 - [Per-user Leaderboard Live Toggle Phase 1 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-1-2026-08-23.md): runtime source contract gates, nullable ownership propagation, idempotent owner identity, stale Prisma Client recovery, and real-Redis phase validation.
 
 - [Event Infrastructure Dashboard T046 - 2026-08-18](lessons/event-infrastructure-dashboard-t046-2026-08-18.md): real-Redis serial validation, lifecycle-timeout stabilization, lint `--fix` mutation control, boundary auditing, and owner-specific blocked-gate reporting.

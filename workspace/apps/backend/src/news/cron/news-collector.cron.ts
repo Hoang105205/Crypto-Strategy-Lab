@@ -23,7 +23,7 @@ export class NewsCollectorCron implements OnApplicationBootstrap {
   }
 
   /**
-   * Periodic cron job executing every 15 minutes
+   * Periodic cron job executing every 5 minutes
    */
   @Cron(NEWS_COLLECTION_CRON_SCHEDULE)
   async handleCron() {

@@ -22,6 +22,12 @@ export interface AggregateSentiment {
   score: number;
   label: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
   articleCount: number;
+  positiveCount?: number;
+  neutralCount?: number;
+  negativeCount?: number;
+  positiveRatio?: number; // 0-100%
+  neutralRatio?: number;  // 0-100%
+  negativeRatio?: number; // 0-100%
   updatedAt: string;
 }
 
@@ -34,6 +40,8 @@ export interface NewsFeedProps {
 
 const DEFAULT_AVAILABLE_COINS = ['ALL', 'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'GENERAL'];
 const DEFAULT_PAGE_SIZE = 10;
+const COOLDOWN_DURATION_SEC = 120;
+const CRAWL_STORAGE_KEY = 'news_last_crawl_timestamp';
 
 export const NewsFeed: React.FC<NewsFeedProps> = ({
   selectedCoin = 'ALL',
@@ -45,6 +53,11 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState<number>(0);
+
+  // Manual Ingestion & Cooldown States (OP.GG style)
+  const [isCrawling, setIsCrawling] = useState<boolean>(false);
+  const [crawlCooldown, setCrawlCooldown] = useState<number>(0);
+  const [crawlMessage, setCrawlMessage] = useState<string | null>(null);
 
   // Dynamic Available Coins from TradingPair DB
   const [availableCoins, setAvailableCoins] = useState<string[]>(DEFAULT_AVAILABLE_COINS);
@@ -98,6 +111,79 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
       ignore = true;
     };
   }, []);
+
+  // Hydrate last crawl timestamp from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(CRAWL_STORAGE_KEY);
+      if (stored) {
+        const lastTime = parseInt(stored, 10);
+        const elapsedSec = Math.floor((Date.now() - lastTime) / 1000);
+        if (elapsedSec < COOLDOWN_DURATION_SEC) {
+          setCrawlCooldown(COOLDOWN_DURATION_SEC - elapsedSec);
+        }
+      }
+    } catch {
+      // Ignore localStorage read errors in SSR/strict sandbox
+    }
+  }, []);
+
+  // Countdown timer ticker (1s interval)
+  useEffect(() => {
+    if (crawlCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCrawlCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [crawlCooldown]);
+
+  // Format seconds to mm:ss
+  const formatCountdown = (sec: number): string => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // Manual Crawl Trigger (OP.GG style)
+  const handleManualCrawl = async () => {
+    if (isCrawling || crawlCooldown > 0) return;
+    setIsCrawling(true);
+    setCrawlMessage(null);
+    try {
+      const res = await fetch('http://localhost:3001/api/news/crawl', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const now = Date.now();
+        try {
+          localStorage.setItem(CRAWL_STORAGE_KEY, now.toString());
+        } catch {
+          // Ignore localStorage write error
+        }
+        setCrawlCooldown(COOLDOWN_DURATION_SEC);
+        setCrawlMessage(`✅ ${data.message || (data.count > 0 ? `Ingestion successful! Added ${data.count} new articles.` : 'Feeds are up to date. No new articles found.')}`);
+        // Trigger re-fetch for articles and aggregate mood
+        setRetryCount((prev) => prev + 1);
+      } else if (res.status === 429) {
+        const retrySec = data.retryAfterSeconds || COOLDOWN_DURATION_SEC;
+        setCrawlCooldown(retrySec);
+        setCrawlMessage(`⏳ Cooldown active. Available in ${retrySec}s.`);
+      } else {
+        setCrawlMessage(`⚠️ ${data.error || 'News ingestion failed'}`);
+      }
+    } catch {
+      setCrawlMessage('❌ Connection error to news ingestion service.');
+    } finally {
+      setIsCrawling(false);
+    }
+  };
 
   // Effect A: Synchronize News Articles when filter, page or retry trigger changes
   useEffect(() => {
@@ -428,29 +514,113 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
       {/* 1. Header Bar — Binance Dark & Gold Card */}
       <div
         className="w-full rounded-2xl bg-[#1e2329] border border-[#2b313a] shadow-xl flex flex-col md:flex-row items-center justify-between gap-8 overflow-hidden"
-        style={{ padding: '36px 44px' }}
+        style={{ padding: '32px 40px' }}
       >
-        <div className="space-y-3 text-center md:text-left max-w-3xl">
+        <div className="space-y-3 text-center md:text-left max-w-2xl">
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
             Crypto News & <span className="text-[#fcd535]">Sentiment Analytics</span>
           </h1>
           <p className="text-sm sm:text-base text-[#929aa5] leading-relaxed font-normal">
             Real-time multi-source crypto RSS/Crawler ingestion powered by VADER ML NLP Analysis
           </p>
+
+          {/* On-Demand Crawl Action with OP.GG-style Cooldown Timer */}
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2">
+            <button
+              onClick={handleManualCrawl}
+              disabled={isCrawling || crawlCooldown > 0}
+              className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-200 flex items-center gap-2 shadow-md cursor-pointer ${
+                isCrawling
+                  ? 'bg-[#2b313a] text-[#929aa5] cursor-not-allowed border border-[#474d57]'
+                  : crawlCooldown > 0
+                  ? 'bg-[#2b313a]/80 text-[#707a8a] cursor-not-allowed border border-[#363c45]'
+                  : 'bg-[#fcd535] hover:bg-[#fcd535]/90 text-[#181a20] font-bold border border-[#fcd535] hover:shadow-[0_0_15px_rgba(252,213,53,0.3)]'
+              }`}
+            >
+              {isCrawling ? (
+                <>
+                  <span className="inline-block w-4 h-4 border-2 border-[#929aa5] border-t-transparent rounded-full animate-spin"></span>
+                  <span>Crawling & Analyzing VADER...</span>
+                </>
+              ) : crawlCooldown > 0 ? (
+                <>
+                  <span>⏱️</span>
+                  <span>
+                    Available in:{' '}
+                    <span className="font-mono text-[#fcd535] font-bold">
+                      {formatCountdown(crawlCooldown)}
+                    </span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>⚡</span>
+                  <span>Fetch Latest News</span>
+                </>
+              )}
+            </button>
+
+            {crawlMessage && (
+              <span className="text-xs font-medium text-[#eaecef] bg-[#181a20] px-3 py-1.5 rounded-md border border-[#2b313a] animate-fade-in">
+                {crawlMessage}
+              </span>
+            )}
+          </div>
         </div>
 
         {aggregate && (
           <div
-            className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 rounded-xl bg-[#181a20] border border-[#2b313a] shadow-lg shrink-0"
-            style={{ padding: '18px 28px' }}
+            className="flex flex-col items-center sm:items-end gap-3 rounded-xl bg-[#181a20] border border-[#2b313a] shadow-lg shrink-0 w-full md:w-auto"
+            style={{ padding: '20px 26px' }}
           >
-            <div className="text-center sm:text-right">
+            <div className="text-center sm:text-right w-full">
               <div className="text-xs text-[#707a8a] uppercase tracking-wider font-semibold">
                 Aggregate Mood ({isMultiCoinMode && selectedCoins.length > 0 ? selectedCoins.join(', ') : activeTab} · {selectedTimeframe})
               </div>
-              <div className="text-2xl font-bold text-[#fcd535] mt-1">
-                Score: {aggregate.score > 0 ? `+${aggregate.score}` : aggregate.score}
+              <div className="text-2xl font-bold text-[#fcd535] mt-1 flex items-center justify-center sm:justify-end gap-3">
+                <span>Score: {aggregate.score > 0 ? `+${aggregate.score}` : aggregate.score}</span>
+                {getSentimentBadge(aggregate.label)}
               </div>
+
+              {/* 3-Color Sentiment Distribution Breakdown Bar */}
+              {aggregate.articleCount > 0 && (
+                <div className="mt-3 w-full min-w-[260px] max-w-[340px] mx-auto sm:ml-auto sm:mr-0 bg-[#1e2329]/80 p-2.5 rounded-lg border border-[#2b313a]">
+                  <div className="flex justify-between items-center text-[11px] font-semibold mb-1.5">
+                    <span className="text-[#0ecb81]">
+                      🟢 {aggregate.positiveRatio ?? 0}%
+                    </span>
+                    <span className="text-[#fcd535]">
+                      🟡 {aggregate.neutralRatio ?? 0}%
+                    </span>
+                    <span className="text-[#f6465d]">
+                      🔴 {aggregate.negativeRatio ?? 0}%
+                    </span>
+                  </div>
+                  {/* Visual 3-Segment Bar */}
+                  <div className="w-full h-2.5 rounded-full overflow-hidden flex bg-[#2b313a]">
+                    <div
+                      style={{ width: `${aggregate.positiveRatio ?? 0}%` }}
+                      className="h-full bg-[#0ecb81] transition-all duration-500"
+                      title={`Positive: ${aggregate.positiveCount ?? 0} articles (${aggregate.positiveRatio ?? 0}%)`}
+                    />
+                    <div
+                      style={{ width: `${aggregate.neutralRatio ?? 0}%` }}
+                      className="h-full bg-[#fcd535] transition-all duration-500"
+                      title={`Neutral: ${aggregate.neutralCount ?? 0} articles (${aggregate.neutralRatio ?? 0}%)`}
+                    />
+                    <div
+                      style={{ width: `${aggregate.negativeRatio ?? 0}%` }}
+                      className="h-full bg-[#f6465d] transition-all duration-500"
+                      title={`Negative: ${aggregate.negativeCount ?? 0} articles (${aggregate.negativeRatio ?? 0}%)`}
+                    />
+                  </div>
+                  <div className="text-[10px] text-[#707a8a] mt-1.5 flex justify-between">
+                    <span>{aggregate.positiveCount ?? 0} Positive · {aggregate.negativeCount ?? 0} Negative</span>
+                    <span>{aggregate.articleCount} articles</span>
+                  </div>
+                </div>
+              )}
+
               {/* Timeframe Selector Pills */}
               <div className="flex items-center gap-2 mt-3 justify-center sm:justify-end flex-wrap">
                 {(['1h', '24h', '7d'] as TimeframeOption[]).map((tf) => {
@@ -464,7 +634,7 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                           ? 'bg-[#fcd535] text-[#181a20] font-bold border-[#fcd535] shadow-sm'
                           : 'bg-[#1e2329] text-[#929aa5] hover:text-[#eaecef] hover:bg-[#2b313a] border-[#2b313a]'
                       }`}
-                      style={{ padding: '5px 14px' }}
+                      style={{ padding: '4px 12px' }}
                     >
                       <span>⏱️</span>
                       <span>{tf}</span>
@@ -473,7 +643,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({
                 })}
               </div>
             </div>
-            {getSentimentBadge(aggregate.label)}
           </div>
         )}
       </div>
