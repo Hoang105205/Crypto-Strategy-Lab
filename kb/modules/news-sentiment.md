@@ -2,15 +2,15 @@
 
 > **Owner**: Thuận  
 > **Status**: Active  
-> **Last Updated**: 2026-08-18
+> **Last Updated**: 2026-08-25
 
 ## 1. Overview
-- **Responsibility**: Collect crypto news articles from external data providers (RSS multi-feeds and LLM-assisted adaptive web crawlers), normalize into a standardized news schema (`NewsArticle`), analyze sentiment via an isolated Python FastAPI ML service, and expose sentiment analysis both as a dashboard feed and as a pluggable trading strategy (`NewsSentimentStrategy`).
-- **Layer**: Backend (NestJS + Python FastAPI)
+- **Responsibility**: Collect crypto news articles from external data providers (RSS multi-feeds and LLM-assisted adaptive web crawlers), normalize into a standardized news schema (`NewsArticle`), analyze sentiment via an isolated Python FastAPI ML service, and expose sentiment analysis both as a dashboard feed (with 24h sentiment breakdown ratios and on-demand crawl trigger with 2-minute cooldown anti-spam) and as a pluggable trading strategy (`NewsSentimentStrategy`).
+- **Layer**: Backend (NestJS + Python FastAPI) + Frontend (Next.js `NewsFeed` component)
 - **Depends on**: Shared types + `IEventBus`
-- **Depended by**: Strategy Engine (via `NewsSentimentStrategy` registration in `StrategyRegistry`), Frontend (via REST API for News Feed & Sentiment Gauge)
+- **Depended by**: Strategy Engine (via `NewsSentimentStrategy` registration in `StrategyRegistry`), Frontend (via REST API for News Feed, Sentiment Breakdown & On-demand Crawler Trigger)
 - **Contracts**: `kb/contracts/news.yaml`
-- **Source files**: `apps/backend/src/news/`, `apps/sentiment/`
+- **Source files**: `apps/backend/src/news/`, `apps/sentiment/`, `apps/frontend/src/components/news/`
 - **Related ADRs**: `kb/ADR/0009-sentiment-service-as-separate-process.md`, `kb/ADR/0010-news-provider-adapter-pattern.md`, `kb/ADR/0014-llm-assisted-crawler-selector-caching.md`
 
 ---
@@ -25,11 +25,13 @@
 | `RSSProvider` | Fetches and parses crypto news from public RSS feeds (CoinDesk, CoinTelegraph, Decrypt) | Adapter | `apps/backend/src/news/providers/rss.provider.ts` |
 | `WebCrawlerProvider` | High-performance adaptive crawler using cached DB selectors and fast HTML parsing | Adapter + Cache | `apps/backend/src/news/providers/crawler.provider.ts` |
 | `CrawlerRule` | Persistent database entity storing LLM-discovered CSS selectors per domain | SSoT Entity / Schema | `prisma/schema.prisma` |
-| `NewsCollectorCron` | Scheduled cron job to collect, normalize, deduplicate, and store news | Scheduler / Cron | `apps/backend/src/news/cron/news-collector.cron.ts` |
+| `NewsCollectorCron` | Scheduled cron job to collect, normalize, deduplicate, and store news every 5 minutes (`*/5 * * * *`) | Scheduler / Cron | `apps/backend/src/news/cron/news-collector.cron.ts` |
+| `NewsController` | Exposes REST APIs: `GET /api/news`, `GET /api/sentiment/aggregate` (with breakdown ratios), `POST /api/news/crawl` (with 120s cooldown & mutex lock) | Controller | `apps/backend/src/news/news.controller.ts` |
 | `NewsService` | High-level orchestrator for news ingestion, normalization, and sentiment enrichment | Service | `apps/backend/src/news/services/news.service.ts` |
 | `SentimentClient` | NestJS HTTP client connecting to isolated Python FastAPI service | Client / HTTP | `apps/backend/src/news/services/sentiment.client.ts` |
 | `FastAPI Sentiment App` | Python process running VADER sentiment analysis model | Process Isolation | `apps/sentiment/app.py`, `analyzer.py`, `models.py` |
 | `NewsSentimentStrategy` | Pluggable trading strategy implementing `IStrategy`; generates BUY/SELL/HOLD | Strategy + Graceful Degradation | `apps/backend/src/news/strategies/sentiment.strategy.ts` |
+| `NewsFeed` | Frontend component rendering news cards, 24h sentiment breakdown % bar, coin filter tabs, and on-demand "Cào tin ngay" button with 2-minute countdown timer | Frontend UI | `apps/frontend/src/components/news/NewsFeed.tsx` |
 
 ### Component Diagram
 
@@ -116,37 +118,38 @@
 
 ## 4. Internal Data Flow
 
-1. `NewsCollectorCron` triggers every 15 minutes.
-2. `NewsService` queries all active `INewsProvider` implementations (`RSSProvider`, `WebCrawlerProvider`).
-3. For web crawler sources, `WebCrawlerProvider` retrieves active `CrawlerRule` records from PostgreSQL.
-4. If a rule exists, it parses raw HTML via `cheerio` and extracts articles; if not, it triggers LLM selector discovery, saves the rule to DB, and extracts articles.
-5. Providers return standardized `RawArticle[]` with dynamically tagged `relatedCoins` (or `GENERAL`).
-6. `NewsService` deduplicates articles by URL/hash, assigns `crawledAt` timestamp, and saves unique records to PostgreSQL.
-7. `NewsService` sends article text to `SentimentClient` for Python VADER ML analysis.
-8. `NewsService` stores the resulting `SentimentScore`.
-9. `NewsSentimentStrategy` computes aggregate sentiment for active pairs and emits `BUY`, `SELL`, or `HOLD` signals.
+1. **Scheduled Ingestion**: `NewsCollectorCron` triggers automatically every 5 minutes (`*/5 * * * *`).
+2. **On-Demand Ingestion**: User or operator hits `POST /api/news/crawl`. Backend verifies the 120s cooldown timer and mutex lock. If cooldown is violated, it returns `429 Too Many Requests` with `retryAfterSeconds`; if another crawl is running, it returns `409 Conflict`.
+3. `NewsService` queries all active `INewsProvider` implementations (`RSSProvider`, `WebCrawlerProvider`).
+4. For web crawler sources, `WebCrawlerProvider` retrieves active `CrawlerRule` records from PostgreSQL.
+5. If a rule exists, it parses raw HTML via `cheerio` and extracts articles; if not, it triggers LLM selector discovery, saves the rule to DB, and extracts articles.
+6. Providers return standardized `RawArticle[]` with dynamically tagged `relatedCoins` (or `GENERAL`).
+7. `NewsService` deduplicates articles by URL/hash, assigns `crawledAt` timestamp, and saves unique records to PostgreSQL.
+8. `NewsService` sends article text to `SentimentClient` for Python VADER ML analysis.
+9. `NewsService` stores the resulting `SentimentScore`.
+10. `NewsSentimentStrategy` computes aggregate sentiment for active pairs and emits `BUY`, `SELL`, or `HOLD` signals.
 
 ---
 
 ## 5. Sequence Diagrams
 
-### Adaptive Web Crawler & Sentiment Pipeline
+### Adaptive Web Crawler & Sentiment Pipeline (Scheduled + On-Demand)
 
 ```text
-Cron/User      WebCrawlerProvider      PostgreSQL(Rules)        LLM Provider        Cheerio Parser       NewsService
-    │                 │                       │                       │                   │               │
-    │──1. crawl()────>│                       │                       │                   │               │
-    │                 │──2. getRule(domain)──>│                       │                   │               │
-    │                 │<──3. rule or null─────│                       │                   │               │
-    │                 │                                               │                   │               │
-    │                 │──[If null: 4. discoverSelectors(htmlSample)]─>│                   │               │
-    │                 │<──[5. return CSS Selectors JSON]──────────────│                   │               │
-    │                 │──[6. save CrawlerRule to DB]─────────────────>│                   │               │
-    │                 │                                                                   │               │
-    │                 │──7. parseWithRule(html, rule)────────────────────────────────────>│               │
-    │                 │<──8. return raw items─────────────────────────────────────────────│               │
-    │                 │──9. normalize to RawArticle[] ───────────────────────────────────────────────────>│
-    │                 │                                                                                   │
+User / Cron      NewsController       NewsService         WebCrawlerProvider       FastAPI (VADER)      PostgreSQL DB
+    │                   │                  │                      │                       │                   │
+    │──1. POST /crawl──>│                  │                      │                       │                   │
+    │  (or 5m Cron)     │──2. checkLock()──│                      │                       │                   │
+    │                   │   & cooldown(120s)                      │                       │                   │
+    │                   │──3. collect()───>│                      │                       │                   │
+    │                   │                  │──4. fetchLatest()───>│                       │                   │
+    │                   │                  │<──5. RawArticle[]────│                       │                   │
+    │                   │                  │──6. POST /analyze (batch text)──────────────>│                   │
+    │                   │                  │<──7. return {score, label}───────────────────│                   │
+    │                   │                  │──8. persist articles + sentiment scores─────────────────────────>│
+    │                   │<──9. saved count─│                                                                  │
+    │<──10. 200 OK──────│                  │                                                                  │
+    │   {success, count}│                  │                                                                  │
 ```
 
 ---
@@ -165,7 +168,8 @@ Cron/User      WebCrawlerProvider      PostgreSQL(Rules)        LLM Provider    
 See `kb/contracts/news.yaml`.
 
 - **`GET /api/news?limit=10&offset=0&coin=BTC&coins=BTC,ETH`**: Returns paginated news articles with sentiment scores.
-- **`GET /api/sentiment/aggregate?timeframe=1h&coin=BTC`**: Returns aggregate sentiment score for requested asset pairs.
+- **`GET /api/sentiment/aggregate?timeframe=1h&coin=BTC`**: Returns aggregate sentiment score and distribution ratios (`positiveRatio`, `neutralRatio`, `negativeRatio`, `positiveCount`, `neutralCount`, `negativeCount`).
+- **`POST /api/news/crawl`**: On-demand manual trigger for news collection with 120s rate-limiting cooldown and mutex lock protection (returns 200, 429, or 409).
 - **`POST /analyze`** *(Internal Python FastAPI)*: Receives article text and returns ML sentiment score & label.
 
 ---
@@ -173,6 +177,8 @@ See `kb/contracts/news.yaml`.
 ## 8. Quality Attributes
 - **Extensibility**: Adding new news providers requires 1 adapter class implementing `INewsProvider`. Adding new web portals requires 0 code changes (auto-discovered via LLM and cached in DB).
 - **Cost & Performance Efficiency**: 99%+ reduction in LLM costs via Database Selector Caching; parsing runs in <50ms with Cheerio.
+- **Rate-Limiting & Anti-Spam (120s Cooldown)**: `POST /api/news/crawl` enforces a 2-minute cooldown on both backend (in-memory timestamp check + HTTP 429) and frontend UI (OP.GG-style countdown timer with `localStorage` persistence).
+- **Concurrency Safety (Mutex Lock)**: An in-memory mutex flag ensures only one crawling job executes at any given time, rejecting duplicate concurrent triggers with HTTP `409 Conflict`.
 - **Reliability & Graceful Degradation**: If Python service is down, `SentimentClient` returns neutral score (`0`), and `NewsSentimentStrategy` outputs `HOLD`, keeping main charts and trading loop safe.
 
 ---

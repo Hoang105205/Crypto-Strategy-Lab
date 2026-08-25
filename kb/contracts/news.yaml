@@ -83,7 +83,36 @@ endpoints:
       score: number # average score -1.0 to 1.0
       label: string # POSITIVE | NEGATIVE | NEUTRAL
       articleCount: number
+      positiveCount: number
+      neutralCount: number
+      negativeCount: number
+      positiveRatio: number # 0 to 100 percentage
+      neutralRatio: number # 0 to 100 percentage
+      negativeRatio: number # 0 to 100 percentage
       updatedAt: string (ISO8601)
+
+  - method: POST
+    path: /api/news/crawl
+    description: "Manually trigger on-demand news collection across registered providers with 2-minute cooldown rate-limiting and mutex locking."
+    rate_limiting:
+      cooldown_seconds: 120 # 2 minutes cooldown between manual crawl triggers
+      enforcement: "Backend in-memory timestamp check + mutex lock"
+    responses:
+      200:
+        description: "News collection completed successfully"
+        body:
+          success: boolean
+          count: number # Number of processed/ingested articles
+          message: string
+      429:
+        description: "Rate limit exceeded (cooldown active)"
+        body:
+          error: string # "Rate limit exceeded. Please wait before crawling again."
+          retryAfterSeconds: number # Remaining seconds until next allowed crawl
+      409:
+        description: "Concurrent crawl conflict"
+        body:
+          error: string # "Crawl in progress. Please wait for current execution to finish."
 
 internal_service:
   python_sentiment_api:
