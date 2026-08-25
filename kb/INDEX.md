@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-18
-> **Status**: Active — Added ADR-0014 LLM-Assisted Adaptive Web Crawler with Selector Caching & Self-Healing
+> **Last Updated**: 2026-08-25
+> **Status**: Active — Updated News & Sentiment with on-demand crawl API (POST /api/news/crawl with 120s cooldown), 5-minute cron schedule, and 24h sentiment breakdown ratios
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
