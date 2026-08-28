@@ -3,7 +3,10 @@
 # This file is the sole Single Source of Truth for all typed event names, publishers,
 # subscribers, and complete payload shapes on the bus. Module contracts reference these
 # definitions and must not duplicate reduced payload schemas.
-# See also: kb/modules/event-infrastructure.md, ADR-0005, ADR-0006, ADR-0011, ADR-0013
+# See also: kb/modules/event-infrastructure.md, kb/flows/leaderboard-update.md,
+# kb/flows/strategy-search-loop.md, ADR-0005, ADR-0006, ADR-0011, ADR-0013
+# Reviewed 2026-08-24 for cross-route live leaderboard/global-loop consistency:
+# event names and payload fields remain unchanged; no room/handshake/namespace semantics were added.
 
 # ---------------------------------------------------------------------------
 # Shared envelope — every event published on IEventBus is wrapped in this
@@ -315,7 +318,9 @@ events:
   SearchLoopStarted:
     publisher: "Event Infrastructure (Loop Controller)"
     subscribersOnBus: ["WebSocket Gateway"]
-    description: "Published when a user starts a new search loop run."
+    description: >
+      Published when the system/operator lifecycle starts one global search loop run. Frontend
+      navigation and the leaderboard Live updates toggle never publish or control this event.
     payload:
       loopRunId: UUID
       config:
@@ -345,7 +350,10 @@ events:
   SearchLoopStopped:
     publisher: "Event Infrastructure (Loop Controller)"
     subscribersOnBus: ["WebSocket Gateway"]
-    description: "Published when a loop run finishes, is stopped by the user, or fails."
+    description: >
+      Published when the global system loop finishes, is stopped through an authorized operational
+      compatibility path, or fails. Existing status/stopReason wire values are retained unchanged;
+      they do not make SearchLoopRun per-user or expose lifecycle control through the Live toggle.
     payload:
       loopRunId: UUID
       status: LoopStatus                # "COMPLETED" | "STOPPED_BY_USER" | "FAILED"

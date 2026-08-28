@@ -9,7 +9,7 @@
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
 | News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
 | Event Infrastructure | Phương | Event bus, BullMQ/Redis backtest queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) + Redis |
-| Frontend | All (shell: Phương) | Dashboard, builder, leaderboard, news feed | Frontend | REST + WebSocket APIs |
+| Frontend | All (shell: Phương) | Dashboard, builder, leaderboard, news feed; app-level cross-route leaderboard live state | Frontend | Auth session + REST + shared WebSocket infrastructure |
 
 ## Module Details
 
@@ -46,7 +46,7 @@
 ### Event Infrastructure (Phương)
 - **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
 - **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs
-- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry queries, loop start/stop toggle per user)
+- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry reads only). `SearchLoopRun` remains one global system process and is not user-scoped.
 - **Module doc**: `kb/modules/event-infrastructure.md`
 - **Contracts**: `kb/contracts/events.yaml`
 
@@ -54,6 +54,7 @@
 - Market Data → Event Infrastructure: publishes `MarketDataUpdated` (reserved; not yet consumed — see `kb/contracts/events.yaml`)
 - Strategy Engine → Event Infrastructure: awaits `IJobQueue.enqueue` for USER work, then publishes observational `BacktestRequested`
 - Event Infrastructure Loop Controller → Job Queue: awaits `IJobQueue.enqueue` for SEARCH_LOOP work, then publishes observational `BacktestRequested`
+- Event Infrastructure → Frontend: broadcasts system-safe `leaderboard:update`; the app-level provider refetches caller-scoped REST while ON and never filters private broadcast rows client-side
 - Event Infrastructure → Redis: BullMQ persists queue state, priorities, delays, locks, and bounded job history
 - Event Infrastructure → Strategy Engine: publishes `BacktestCompleted` / `BacktestFailed`
 - Event Infrastructure → Market Data: calls `IMarketDataService.getCandlesRange()` (interface only) from the BullMQ worker to fetch candles for backtesting

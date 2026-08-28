@@ -2,19 +2,20 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-12
+> **Last Updated**: 2026-08-24
 
 ## 1. Overview
-- **Description**: When a backtest completes, the leaderboard re-ranks the Top-K strategies and pushes the update to the frontend in real time
+- **Description**: When a backtest completes, the leaderboard persists the result and emits a privacy-safe `leaderboard:update` invalidation. An app-level provider owns live leaderboard state across client-side routes and refetches the caller-scoped REST snapshot when Live updates is ON.
 - **Primary Actor**: Event Infrastructure (triggered by `BacktestCompleted` event)
 - **Business Value**: Users watch strategy rankings evolve live without polling — this is the visual payoff of the entire generate → backtest → evaluate → rank loop (spec Section 21–23)
-- **Modules Involved**: Event Infrastructure (Job Queue Worker, LeaderboardService, PushGateway), Strategy Engine (source of `BacktestCompleted`), Frontend
+- **Modules Involved**: Event Infrastructure (Job Queue Worker, LeaderboardService, PushGateway), Strategy Engine (source of `BacktestCompleted`), Auth (current session/identity), Frontend (app-level live provider and route consumers)
 
 ## 2. Preconditions
 - A `BacktestRequested` job has been enqueued and picked up by a worker (see `kb/flows/strategy-backtest.md`)
 - The backtest completed successfully — i.e. `BacktestCompleted` was published, not `BacktestFailed`
 - `LeaderboardService` is subscribed to `BacktestCompleted` on `EventBus` (subscription happens at module bootstrap)
-- The frontend has an open WebSocket connection subscribed to the `leaderboard:update` channel (if disconnected, the client falls back to `GET /api/leaderboard` on reconnect — see Error Flows)
+- The root frontend tree mounts one app-level leaderboard live provider below `AuthProvider` and `InfrastructureProvider`; it survives client-side route navigation and is the sole owner of this feature's `leaderboard:update` handler.
+- Leaderboard REST requests use the current Supabase session. Anonymous reads contain system entries only; authenticated user A reads contain system entries plus A's entries, per `kb/contracts/auth.yaml`.
 - A Top-K value (`K`) and a ranking/scoring formula are configured (see Business Rules)
 
 ## 3. Flow Steps
@@ -23,22 +24,24 @@
 3. `LeaderboardService` checks idempotency — if a `LeaderboardEntry` with this `backtestResultId` already exists (duplicate event delivery), the handler exits without side effects
 4. `LeaderboardService` computes `score` from the metrics using the configured scoring formula (Business Rules, BR-2)
 5. Entry is inserted (or, for a re-run of an existing `strategyVersionId`, a new entry is inserted alongside the previous one — see Business Rules, BR-4) — Event Infrastructure → PostgreSQL
-6. All entries are re-sorted by the active `rankingCriterion`, ranks (`1..N`) are reassigned, and the list is trimmed to Top-K — Event Infrastructure (internal)
-7. `LeaderboardUpdated` published with the fresh Top-K snapshot and the triggering `backtestResultId` — Event Infrastructure → EventBus
-8. `PushGateway` relays `LeaderboardUpdated` on the `leaderboard:update` WebSocket channel — Event Infrastructure → Frontend
-9. Leaderboard table re-renders with the new ranking; if the new entry now appears in the visible Top-K, it is highlighted briefly — Frontend
+6. The service computes the system-only Top-K used by the safe event. For REST, visibility is applied first and each caller-visible dataset is independently sorted, ranked `1..N`, timestamped, and trimmed to Top-K.
+7. `LeaderboardUpdated` is published using the existing `kb/contracts/events.yaml` wire shape. Its namespace-wide payload is privacy-safe: `topK` is system-only and a private trigger uses `triggeredByBacktestResultId: null`.
+8. `PushGateway` relays the event on the existing `leaderboard:update` channel. The event is a safe invalidation signal, not an authoritative per-viewer snapshot; no room, socket-auth handshake, namespace, or client-side privacy filter is introduced.
+9. If Live updates is ON, the app-level provider's one handler refetches the relevant leaderboard REST snapshot with the current session even when Dashboard is not mounted. Race/watermark protection prevents an older request from overwriting a newer snapshot.
+10. Route consumers render the provider cache. For viewer A, that cache may contain only system entries plus A's private entries; anonymous cache may contain only system entries. Existing sort/selection is preserved when still visible.
 
 ## 4. Postconditions
 - Exactly one `LeaderboardEntry` exists for the triggering `backtestResultId` (no duplicates, even under repeated event delivery)
-- The Top-K set in the database matches the Top-K set most recently broadcast via `LeaderboardUpdated`
-- Every connected frontend client has received the update over WebSocket, or will receive the current state via `GET /api/leaderboard` on next load/reconnect
+- The event's `topK` matches the current system-only Top-K. Private rows remain persisted but never appear in the namespace-wide payload.
+- Every client with Live updates ON either reconciles through caller-scoped REST after invalidation or does so after reconnect; a client with Live updates OFF keeps its frozen snapshot.
+- Client-side navigation does not duplicate the handler, reset the Live updates preference, or couple the preference to Dashboard mount state.
 - The leaderboard is queryable by any of the supported sort criteria without re-running any backtest
 
 ## 5. Alternative Paths
 
 ### Candidate does not qualify for Top-K
-- At step 6, if the new entry's rank after re-sorting is greater than `K`, it is still persisted (all results are kept, per Business Rules BR-5) but excluded from the `topK` array in `LeaderboardUpdated`
-- The full (non-Top-K) result remains reachable via `GET /api/strategies/backtest/:id` (Strategy Engine) for transparency, even though it never appears on the leaderboard
+- At step 6, the entry is still persisted (all results are kept, per BR-5). It may be absent from one viewer's caller-scoped Top-K while present in another's; a private entry is always absent from event `topK`.
+- The full result remains reachable only through an ownership-scoped detail/backtest read. An out-of-scope identifier returns not found and discloses no ownership metadata.
 
 ### User re-sorts by a different metric
 - User selects "Sort by Sharpe Ratio" instead of the default `score` — Frontend → `GET /api/leaderboard?sortBy=sharpeRatio`
@@ -50,6 +53,16 @@
 
 ### Search-loop-originated result
 - Steps are identical whether `BacktestCompleted` originated from a manual user backtest or from `LoopController` (`source: "SEARCH_LOOP"` in the originating `BacktestRequested`) — the Leaderboard does not distinguish the source, per the Observer pattern's decoupling goal
+- Search-loop entries remain system-owned (`userId = null`). The loop is a global system process; route navigation and the Live updates toggle only affect the browser view and never start, pause, resume, or stop the loop (see `kb/flows/strategy-search-loop.md`).
+
+### Live updates turned OFF or ON
+- Turning OFF removes only this feature's exact `leaderboard:update` handler. It does not disconnect the shared infrastructure socket, issue a loop command, clear the cache, or alter the frozen snapshot.
+- The user's explicit ON/OFF choice is persisted in browser `localStorage`. A first-time browser with no stored choice defaults to OFF; client-side navigation, full reload, browser restart, events, and reconnects never silently switch the preference to ON.
+- Turning ON restores exactly one handler and performs a current-session REST catch-up. Listener-first/refetch reconciliation plus request ordering protection prevents both missed updates and rollback to an older snapshot.
+
+### Viewer identity transition
+- Before A → B or A → anonymous renders the new viewer, the app-level provider clears A's cached leaderboard data, invalidates/aborts A-scoped in-flight requests, and advances its request generation so late A responses are ignored.
+- The provider then fetches with the new current session. B can cache only system + B; anonymous can cache only system. Live updates preference remains a view preference and does not control the global loop.
 
 ## 6. Error & Exception Flows
 
@@ -69,7 +82,12 @@
 
 ### Frontend WebSocket disconnected
 - `PushGateway` has no active connection for a client — the broadcast is simply not received by that client (no error, no retry queue for offline clients)
-- On reconnect, the frontend's `WebSocketProvider` sets `connection:status = "reconnecting"` then `"connected"`, and re-fetches `GET /api/leaderboard` to resync full state (this is the "catch-up on reconnect" behavior — WebSocket is a live-update channel, REST is always the source of truth for full state)
+- On reconnect while Live updates is ON, the app-level provider keeps exactly one handler and refetches the caller-scoped REST snapshot using the current session.
+- On reconnect while Live updates is OFF, it does not reattach the leaderboard handler, refetch solely for live reconciliation, or mutate the frozen snapshot. The shared socket may reconnect for other infrastructure consumers without changing this preference.
+
+### Scoped REST refetch fails or completes after identity changes
+- A failed catch-up keeps the last valid snapshot for the same viewer visible and exposes a retryable stale/error state; listener ownership still matches the ON/OFF preference.
+- A response created under a previous identity/request generation is discarded and cannot repopulate the cache after logout or user switch.
 
 ### Tie in ranking
 - Two entries compute an identical `score` — see Business Rules BR-3 for the deterministic tie-break rule
@@ -79,13 +97,18 @@
 - **BR-2**: Default scoring formula: `score = 0.5 × normalizedReturn + 0.2 × winRate + 0.3 × riskScore`, where `riskScore = 1 - min(abs(maxDrawdown) / 50, 1)` (a 50%+ drawdown floors the risk score at 0) and `normalizedReturn = clamp(totalReturn / 100, -1, 1)`. All inputs are normalized to a `[-1, 1]` or `[0, 1]` range before weighting so no single metric dominates purely due to scale. This formula is configurable per Constitution Principle IV (Simplicity) — start simple, revisit if evaluation shows it ranks poorly.
 - **BR-3**: Ties in `score` (to 4 decimal places) are broken by: (1) higher `sharpeRatio`, then (2) lower `maxDrawdown` (less negative), then (3) earlier `executedAt` (first-in wins, rewarding earlier discovery of an equally good strategy)
 - **BR-4**: Re-backtesting the same `strategyVersionId` creates a new `LeaderboardEntry` linked to the new `backtestResultId` — existing entries are never overwritten or deleted (supports reproducibility, ADR-0008 in Strategy Engine)
-- **BR-5**: All backtest results are persisted as `LeaderboardEntry` rows regardless of Top-K membership; only the Top-K subset is included in `LeaderboardUpdated` broadcasts and the default `GET /api/leaderboard` response, to keep the payload small
+- **BR-5**: All qualifying backtest results are persisted as `LeaderboardEntry` rows regardless of Top-K membership. `LeaderboardUpdated.topK` is the system-only Top-K; REST returns the independently computed caller-visible Top-K.
 - **BR-6**: The default leaderboard view shows at most one entry per `strategyVersionId` (its best-scoring result); a "history" view (stretch goal, not MVP) could show all attempts for a given strategy version
-- **BR-7**: Default Top-K = 10, configurable via environment variable — Leaderboard always holds and broadcasts at most `K` entries in `topK`
+- **BR-7**: Default Top-K = 10, configurable via environment variable. Each REST viewer receives at most K entries after visibility filtering/ranking, and the event broadcasts at most K system-owned entries.
 - **BR-8**: A candidate with 0 completed trades is still ranked (Evaluator returns 0/NaN-flagged metrics per `kb/flows/strategy-backtest.md` BR-5) but its `normalizedReturn` and `winRate` are treated as 0, so it naturally sorts near the bottom rather than crashing the ranking computation
+- **BR-9**: REST is the authoritative full-state source. `leaderboard:update` is a namespace-wide, system-safe invalidation only; the client never merges or filters private rows from the event payload.
+- **BR-10**: Caller visibility is applied before Top-K selection, rank assignment, detail lookup, and `updatedAt` calculation: anonymous = system only; A = system + A. A cache/request created for one identity is never reusable by another identity.
+- **BR-11**: The app-level provider below Auth/Infrastructure owns the Live updates preference, leaderboard cache, request generation, and exactly one event handler across client-side navigation. Page-level hooks/components consume that state and do not register competing handlers.
+- **BR-12**: The browser-persisted user choice is authoritative. No stored choice defaults to OFF. OFF freezes the last valid snapshot across navigation, reload, browser restart, and reconnect; ON invalidation, reload, re-enable, and reconnect reconcile through REST with the current session. Neither state controls the global search loop.
 
 ## 8. Related
-- **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`
+- **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`, `kb/contracts/auth.yaml`
 - **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0011 (Leaderboard as Observer), ADR-0013 (BullMQ/Redis)
 - **Module files**: `kb/modules/event-infrastructure.md`, `kb/modules/strategy-engine.md`
-- **Related flows**: `kb/flows/strategy-backtest.md` (produces the `BacktestCompleted` that triggers this flow), `kb/flows/strategy-search-loop.md` (the loop consumes the same `BacktestCompleted` events in parallel with the Leaderboard)
+- **Related flows**: `kb/flows/strategy-backtest.md` (produces the `BacktestCompleted` that triggers this flow), `kb/flows/strategy-search-loop.md` (global system loop consumes the same completion events independently)
+- **Frontend design**: `kb/DESIGN.md` (root provider placement, cross-route Live updates behavior, identity-transition clearing)

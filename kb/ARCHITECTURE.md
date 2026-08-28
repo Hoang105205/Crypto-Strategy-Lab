@@ -73,7 +73,8 @@ crypto-strategy-lab/
 │   │   └── src/
 │   │       ├── app/                     # App router pages
 │   │       ├── components/              # Chart, strategy, leaderboard, news, dashboard components
-│   │       ├── hooks/                   # useWebSocket, useMarketData, useLeaderboard, useNews
+│   │       ├── contexts/                # Auth + app-level cross-route leaderboard live state
+│   │       ├── hooks/                   # route consumers: useMarketData, useLeaderboard, useNews
 │   │       └── services/                # REST + WebSocket API clients
 │   └── sentiment/                       # Thuận — Python FastAPI sentiment service
 │       ├── app.py
@@ -118,8 +119,9 @@ crypto-strategy-lab/
 4. Worker calls `IBacktester.run(strategy, candles, config)` → produces `Trade[]`
 5. Worker calls `IEvaluator.evaluate(trades, capital)` → produces `EvaluationMetrics`
 6. Worker persists `BacktestResult` and publishes `BacktestCompleted` with metrics; on terminal failure it publishes `BacktestFailed` exactly once
-7. Leaderboard subscribes → updates Top-K ranking → publishes `LeaderboardUpdated`
-8. WebSocket Gateway relays `LeaderboardUpdated` to frontend
+7. Leaderboard subscribes → persists the nullable-owner entry → publishes `LeaderboardUpdated` with system-only Top-K
+8. WebSocket Gateway relays the existing payload as a safe invalidation; while ON, the app-level provider below Auth/Infrastructure refetches caller-scoped REST with the current session even off Dashboard
+9. Before A → B or A → anonymous renders, the provider clears the prior cache and invalidates old requests. The explicit browser-local ON/OFF choice survives navigation/reload/restart; absence defaults OFF. It freezes only the client view and never controls the global loop.
 
 > See `kb/flows/strategy-backtest.md` and `kb/flows/strategy-search-loop.md` for full flows.
 

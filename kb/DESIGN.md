@@ -1,6 +1,6 @@
 ---
 version: alpha
-lastUpdated: 2026-08-09
+lastUpdated: 2026-08-24
 name: Binance-design-analysis
 description: A confident financial-platform interface anchored on a deep near-black canvas, where Binance's iconic yellow (#FCD535) carries every primary CTA, brand accent, and value-claim moment. Type runs Binance's custom BinanceNova / BinancePlex stack at modest weights — the system trusts size and yellow voltage over bold weight. Marketing and product surfaces default to the dark theme; transactional surfaces (buy crypto, deposit, exchange) flip to a light theme that shares the same yellow CTAs and gray-blue hairlines. Trading green (up) and red (down) accents thread through both modes for price-direction signals.
 
@@ -575,7 +575,11 @@ Crypto Strategy Lab uses the Binance-derived tokens above as an application desi
 
 ### Application Shell and Navigation
 
-`app/layout.tsx` owns the shared shell: a 64px `{component.top-nav-dark}`, the page container, WebSocket provider, and global loading/error boundaries. Navigation order is Dashboard → Strategy Builder → Leaderboard → News Feed. The active route uses `{colors.primary}` for its label or a 2px bottom indicator; inactive links use `{colors.body}`, and secondary/status text uses `{colors.muted}`. The shell stays on `{colors.canvas-dark}` across routes so navigation does not visually reset between modules.
+`app/layout.tsx` owns the shared shell: a 64px `{component.top-nav-dark}`, the page container, auth/infrastructure providers, an app-level leaderboard live provider, and global loading/error boundaries. Canonical nesting is `AuthProvider` → `InfrastructureProvider` → leaderboard live provider → `AppShell`/routes. The live provider therefore survives client-side navigation, can read the current session and shared socket, and remains mounted when Dashboard is absent. Navigation order is Dashboard → Strategy Builder → Leaderboard → News Feed. The active route uses `{colors.primary}` for its label or a 2px bottom indicator; inactive links use `{colors.body}`, and secondary/status text uses `{colors.muted}`. The shell stays on `{colors.canvas-dark}` across routes so navigation does not visually reset between modules.
+
+The app-level leaderboard live provider is the only owner of Live updates state, the caller-scoped leaderboard cache, request-generation/race protection, and this feature's `leaderboard:update` handler. Page hooks/components consume provider state and must not attach competing listeners. The explicit choice is stored under browser-local key `crypto-strategy-lab:leaderboard-live`; absence of a choice defaults to OFF. While ON, a safe event invalidates the cache and triggers REST with the current session even off Dashboard. While OFF, the provider removes only its exact handler and freezes the last snapshot across navigation, reload, browser restart, and reconnect. Reload/reconnect must restore the stored choice, never force ON.
+
+On A → B or A → anonymous, the provider clears A's cache and invalidates/aborts A-scoped requests before the new viewer renders; late A responses are ignored. The next fetch may cache only system + B or system-only data respectively. This transition must not alter the global search loop.
 
 Every page uses a centered container capped at 1440px, `{spacing.lg}` horizontal padding on desktop, and `{spacing.md}` on mobile. Page titles use `{typography.title-lg}`, card titles use `{typography.title-md}` or `{typography.title-sm}`, body copy uses `{typography.body-md}`, and all prices, percentages, ranks, counters, and evaluation metrics use `{typography.number-md}` or `{typography.number-display}`.
 
@@ -583,12 +587,12 @@ Every page uses a centered container capped at 1440px, `{spacing.lg}` horizontal
 
 | Route | Page | Primary purpose | Main components | Data connections |
 |---|---|---|---|---|
-| `/` | Dashboard | Monitor live market data, queue health, leaderboard summary, and the active strategy search loop | `DashboardGrid`, `PairSelector`, `TimeframeSelector`, `MultiTimeframeGrid`, `CandlestickChart`, `ChartOverlay`, `LoopStatusPanel`, `StatusIndicator` | `GET /api/dashboard/summary`, Market Data REST, `market-data:*`, `loop:*`, `leaderboard:update`, `connection:status` WebSocket channels |
+| `/` | Dashboard | Monitor live market data, queue health, caller-scoped leaderboard summary, and read-only global search-loop status | `DashboardGrid`, `PairSelector`, `TimeframeSelector`, `MultiTimeframeGrid`, `CandlestickChart`, `ChartOverlay`, `LoopStatusPanel`, `StatusIndicator` | Current-session `GET /api/dashboard/summary`, Market Data REST, `market-data:*`, `loop:*`, safe `leaderboard:update`, `connection:status` WebSocket channels |
 | `/strategies` | Strategy Builder | Select strategies, edit parameters, compose strategies, submit backtests, and inspect trades | `StrategyCard`, `ParameterEditor`, `CompositeBuilder`, `TradeTable` | Strategy REST endpoints and `POST /api/strategies/backtest`; completion is reflected through result polling or related realtime updates |
-| `/leaderboard` | Leaderboard | Compare the current Top-K strategies and inspect one strategy's metrics and trades | `LeaderboardTable`, `StrategyDetail` | `GET /api/leaderboard`, `GET /api/leaderboard/:strategyVersionId`, `leaderboard:update` |
+| `/leaderboard` | Leaderboard | Compare caller-visible Top-K (system + current user) and inspect an in-scope strategy | `LeaderboardTable`, `StrategyDetail` | Current-session `GET /api/leaderboard`, `GET /api/leaderboard/:strategyVersionId`, provider-owned safe `leaderboard:update` invalidation |
 | `/news` | News Feed | Browse normalized crypto news and understand aggregate sentiment | `NewsFeed`, `SentimentChart`, `SentimentGauge` | `GET /api/news`, sentiment endpoints in `kb/contracts/news.yaml` |
 
-No separate route is required for `LoopStatusPanel`: it is a dashboard panel backed by `/api/loop/*`. For the MVP, leaderboard and backtest details open inline or in a side panel, so undeclared dynamic routes such as `/leaderboard/[id]` are not assumed by this design contract.
+No separate route is required for `LoopStatusPanel`: it displays global system-loop status and is not an end-user loop controller. Navigation or Live updates interaction sends no start/pause/resume/stop request. For the MVP, leaderboard and backtest details open inline or in a side panel, so undeclared dynamic routes such as `/leaderboard/[id]` are not assumed by this design contract.
 
 ### Dashboard — `/`
 
@@ -597,7 +601,7 @@ The Dashboard is the default dark, data-dense workspace. `DashboardGrid` uses a 
 - `CandlestickChart`: `{colors.surface-card-dark}` card, `{rounded.xl}`, `{spacing.md}` internal padding, and `{colors.hairline-on-dark}` dividers. Axis values and OHLCV data use `{typography.number-sm}`. Candle/price direction uses `{colors.trading-up}` and `{colors.trading-down}` only for market movement.
 - `MultiTimeframeGrid`: two-by-two charts on desktop with `{spacing.md}` gaps; each panel owns a `TimeframeSelector`. It becomes one column below 768px.
 - `ChartOverlay`: uses `{colors.primary}` for the selected/high-priority overlay, `{colors.info}` for secondary indicators, and `{colors.muted-strong}` for support/reference lines; overlays must not reduce candle contrast.
-- `LoopStatusPanel`: `{colors.surface-card-dark}` with `{rounded.xl}`. Candidate count, best score, and elapsed time use numerical typography. Start uses `{component.button-primary}`; Pause/Resume/Stop use neutral secondary or tertiary buttons because trading green/red are not generic action colors.
+- `LoopStatusPanel`: `{colors.surface-card-dark}` with `{rounded.xl}`. Candidate count, best score, elapsed time, and lifecycle status are a read-only view of the one global system loop. The accessible `role="switch"`/`aria-checked` control labeled "Live updates" controls only provider-owned leaderboard reconciliation; it never renders or invokes user start/pause/resume/stop actions and explicitly states that the system loop continues while OFF.
 - `StatusIndicator`: always combines text with an icon/dot. Connected uses normal body text, reconnecting uses `{colors.primary}`, and disconnected uses a labeled high-contrast state; color alone must never communicate connection status.
 
 ### Strategy Builder — `/strategies`
@@ -618,7 +622,7 @@ The Leaderboard uses `{colors.canvas-dark}` with one full-width `{colors.surface
 - Top-three ranks may use `{colors.primary}` for the rank numeral only. Yellow must not fill an entire row.
 - Return and P&L use trading direction colors; Max Drawdown remains a signed numerical value and label. The selected row uses `{colors.surface-elevated-dark}`.
 - `StrategyDetail`: `{colors.surface-elevated-dark}`, `{rounded.xl}`, and `{spacing.lg}` padding. It groups immutable strategy version, evaluation metrics, and `TradeTable` without duplicating leaderboard sorting controls.
-- `leaderboard:update` updates rows in place and refreshes the timestamp; it must not reset the user's current sort or selected strategy.
+- `leaderboard:update` is a system-safe invalidation, never an authoritative per-user snapshot. While ON, the app-level provider refetches REST with the current session and updates rows/timestamp without resetting sort or an in-scope selected strategy. While OFF, the displayed snapshot and timestamp remain frozen across navigation and reconnect.
 
 ### News Feed — `/news`
 
@@ -636,6 +640,8 @@ The News Feed uses a desktop 8/4 split: `NewsFeed` in the main column and a stic
 - Empty state: explain what is missing and provide the next valid action, such as “Start a search loop” or “Submit a backtest”; use a neutral card and at most one `{component.button-primary}`.
 - `ErrorBoundary`: render a concise user-facing message and a retry action. Stack traces and raw provider errors are never shown.
 - Realtime stale state: keep the last successful data visible, display its timestamp, and show reconnecting/disconnected status instead of blanking charts or tables.
+- Leaderboard OFF state: label the snapshot as frozen/stale without implying that backend discovery stopped. Navigation, reload, browser restart, and reconnect must not silently turn Live updates ON; only an explicit user action may change the persisted choice.
+- Identity transition state: do not render the prior viewer's leaderboard while the next identity is resolving. Clear the old cache first and show a scoped loading/empty state until current-session REST completes.
 - Focus: interactive controls use the `{colors.info-ring}` focus ring. Every control must remain keyboard reachable and have a visible text or accessible label.
 
 ### Project Responsive Rules

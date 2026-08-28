@@ -1,5 +1,24 @@
 # Agent Learn Index
 
+- [Split Leaderboard Boxes Phase 5 - 2026-08-25](lessons/split-leaderboard-boxes-phase-5-2026-08-25.md): reusable projection-state cards, source-scoped detail race rejection, vertical ranking composition with mobile source order, public leaderboard middleware policy, and accessible independent UI states.
+
+- [Split Leaderboard Boxes Phase 4 - 2026-08-25](lessons/split-leaderboard-boxes-phase-4-2026-08-25.md): projection-keyed v2 cache, maintained Combined plus scoped reads, one-listener invalidation, independent projection state, identity-generation race rejection, and scoped consumer adapters.
+
+- [Split Leaderboard Boxes Phase 3 - 2026-08-25](lessons/split-leaderboard-boxes-phase-3-2026-08-25.md): backward-compatible typed scope options, URLSearchParams list/detail encoding, unchanged current-session auth, type-level ownership rejection, and sandbox-safe RED/GREEN evidence.
+
+- [Split Leaderboard Boxes Phase 2 - 2026-08-25](lessons/split-leaderboard-boxes-phase-2-2026-08-25.md): single scope-plus-viewer visibility resolution, anonymous Mine short-circuit, filter-before-Top-K E2E proof, explicit System/Combined callers, dirty-worktree hash baselines, and non-mutating formatting diagnostics.
+
+- [Per-user Leaderboard Live Toggle T034 Fixture Convergence - 2026-08-24](lessons/per-user-leaderboard-live-toggle-t034-fixture-convergence-2026-08-24.md): explicit UUID/null ownership fixtures, discriminated USER/SEARCH_LOOP payload factories, async port mocks, targeted Redis-backed validation, and preserved zero-listener page consumers.
+
+- [Per-user Leaderboard Live Toggle Cross-Route Provider - 2026-08-24](lessons/per-user-leaderboard-live-toggle-cross-route-provider-2026-08-24.md): root provider ownership, exact-viewer cache/race safety, deterministic privacy validation, ESLint 9 flat-config convergence, feature-scoped strict-lint cleanup, and non-mutating root-gate auditing.
+
+- [Per-user Leaderboard Live Toggle Phase 5 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-5-2026-08-23.md): privacy-safe invalidation/refetch, subscribe-before-catch-up races, accepted-snapshot watermarks, exact listener ownership, accessible read-only loop UI, and Vitest Supabase isolation.
+
+- [Per-user Leaderboard Live Toggle Phase 4 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-4-2026-08-23.md): system-safe global invalidation, explicit anonymous publisher scope, private-trigger redaction, A/B gateway-boundary evidence, and exact-relay characterization.
+
+- [Per-user Leaderboard Live Toggle Phase 3 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-3-2026-08-23.md): optional-auth controller boundary, three-actor global-loop evidence, persistence-argument audit, and isolated Auth test-harness alignment.
+
+- [Per-user Leaderboard Live Toggle Phase 2 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-2-2026-08-23.md): filter-before-project privacy, view-local ranks and timestamps, symmetric detail anti-enumeration, optional-auth integration fakes, and dashboard/global-loop boundary evidence.
 - [News Manual Crawl Breakdown - 2026-08-25](lessons/news-manual-crawl-breakdown-2026-08-25.md): on-demand crawler trigger, 120s cooldown anti-spam rate limiting with HTTP 429, mutex lock concurrency protection with HTTP 409, 3-color sentiment distribution breakdown bar, and 5-minute background cron schedule.
 
 - [Per-user Leaderboard Live Toggle Phase 1 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-1-2026-08-23.md): runtime source contract gates, nullable ownership propagation, idempotent owner identity, stale Prisma Client recovery, and real-Redis phase validation.
