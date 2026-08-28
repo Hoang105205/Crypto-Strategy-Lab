@@ -12,7 +12,8 @@ vi.mock('../../lib/supabase-client', () => ({
 }));
 
 interface LeaderboardDetailProps {
-  strategyVersionId: string;
+  strategyVersionId: string | null;
+  sourceScope: 'system' | 'mine' | 'combined';
 }
 
 interface LeaderboardDetailModule {
@@ -87,12 +88,12 @@ describe('LeaderboardDetail contract', () => {
     const fetchMock = vi.fn().mockResolvedValue(response(200, detailWire));
     vi.stubGlobal('fetch', fetchMock);
     const { LeaderboardDetail } = await loadDetail();
-    render(<LeaderboardDetail strategyVersionId={strategyVersionId} />);
+    render(<LeaderboardDetail strategyVersionId={strategyVersionId} sourceScope="system" />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock).toHaveBeenCalledWith(
-      `${API_BASE_URL}/api/leaderboard/${strategyVersionId}`,
-      expect.objectContaining({ headers: expect.any(Object) }),
+      `${API_BASE_URL}/api/leaderboard/${strategyVersionId}?scope=system`,
+      expect.objectContaining({ headers: expect.any(Object), signal: expect.any(AbortSignal) }),
     );
     expect(await screen.findByRole('heading', { name: 'Momentum v2' })).toBeInTheDocument();
     expect(screen.getByText(/immutable strategy version/i)).toBeInTheDocument();
@@ -116,7 +117,7 @@ describe('LeaderboardDetail contract', () => {
     const pending = deferred<Response>();
     vi.stubGlobal('fetch', vi.fn().mockReturnValue(pending.promise));
     const { LeaderboardDetail } = await loadDetail();
-    render(<LeaderboardDetail strategyVersionId={strategyVersionId} />);
+    render(<LeaderboardDetail strategyVersionId={strategyVersionId} sourceScope="mine" />);
 
     expect(
       screen.getByRole('status', { name: /loading strategy detail/i }).style.minHeight,
@@ -136,7 +137,7 @@ describe('LeaderboardDetail contract', () => {
       ),
     );
     const { LeaderboardDetail } = await loadDetail();
-    render(<LeaderboardDetail strategyVersionId={strategyVersionId} />);
+    render(<LeaderboardDetail strategyVersionId={strategyVersionId} sourceScope="mine" />);
 
     expect(await screen.findByText(/strategy.*not found/i)).toBeInTheDocument();
     expect(screen.queryByText(/postgres|111111 missing/i)).not.toBeInTheDocument();
@@ -154,7 +155,7 @@ describe('LeaderboardDetail contract', () => {
       .mockResolvedValueOnce(response(200, detailWire));
     vi.stubGlobal('fetch', fetchMock);
     const { LeaderboardDetail } = await loadDetail();
-    render(<LeaderboardDetail strategyVersionId={strategyVersionId} />);
+    render(<LeaderboardDetail strategyVersionId={strategyVersionId} sourceScope="mine" />);
 
     expect(await screen.findByText(/temporarily unavailable/i)).toBeInTheDocument();
     expect(screen.queryByText(/strategy-provider|ECONNREFUSED/i)).not.toBeInTheDocument();
@@ -166,7 +167,37 @@ describe('LeaderboardDetail contract', () => {
     expect(await screen.findByRole('heading', { name: 'Momentum v2' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      `${API_BASE_URL}/api/leaderboard/${strategyVersionId}`,
+      `${API_BASE_URL}/api/leaderboard/${strategyVersionId}?scope=mine`,
     );
+  });
+
+  it('clears disappearing selection and never commits a delayed response from an old scope', async () => {
+    const oldRequest = deferred<Response>();
+    const mineWire = {
+      ...detailWire,
+      strategyName: 'Mine current',
+      strategyVersion: { ...detailWire.strategyVersion, name: 'Mine current' },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce(response(200, mineWire));
+    vi.stubGlobal('fetch', fetchMock);
+    const { LeaderboardDetail } = await loadDetail();
+    const { rerender } = render(
+      <LeaderboardDetail strategyVersionId={strategyVersionId} sourceScope="system" />,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    rerender(<LeaderboardDetail strategyVersionId={strategyVersionId} sourceScope="mine" />);
+    expect(await screen.findByRole('heading', { name: 'Mine current' })).toBeInTheDocument();
+    oldRequest.resolve(response(200, detailWire));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Momentum v2' })).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${API_BASE_URL}/api/leaderboard/${strategyVersionId}?scope=system`);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`${API_BASE_URL}/api/leaderboard/${strategyVersionId}?scope=mine`);
+
+    rerender(<LeaderboardDetail strategyVersionId={null} sourceScope="mine" />);
+    expect(screen.getByText(/select a strategy/i)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Mine current' })).not.toBeInTheDocument();
   });
 });

@@ -6,12 +6,14 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { SearchLoopRun } from '@crypto-strategy-lab/shared';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequireAuth } from '../auth/require-auth.guard';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 import {
   LoopApiErrorCode,
@@ -27,6 +29,12 @@ import {
   type StartLoopInput,
 } from './strategy-loop.service';
 import type { LoopRunDetail } from './loop.repository';
+import { SearchLoopAutomationConfigPipe } from './search-loop-control.dto';
+import { SearchLoopControlService } from './search-loop-control.service';
+import type {
+  SearchLoopAutomationConfig,
+  SearchLoopControlState,
+} from './search-loop-control.repository';
 
 @Controller('api/loop')
 @UseGuards(SupabaseJwtGuard)
@@ -34,14 +42,45 @@ export class LoopController {
   constructor(
     private readonly loop: StrategyLoopService,
     private readonly status: LoopStatusService,
+    private readonly control: SearchLoopControlService,
   ) {}
+
+  @Get('control')
+  getControl(): Promise<SearchLoopControlState> {
+    return this.control.get();
+  }
+
+  @Post('control/enable')
+  @UseGuards(RequireAuth)
+  @HttpCode(HttpStatus.OK)
+  enableControl(
+    @Body(SearchLoopAutomationConfigPipe) config: SearchLoopAutomationConfig,
+  ): Promise<SearchLoopControlState> {
+    return this.control.enable(config);
+  }
+
+  @Post('control/disable')
+  @UseGuards(RequireAuth)
+  @HttpCode(HttpStatus.OK)
+  disableControl(): Promise<SearchLoopControlState> {
+    return this.control.disable();
+  }
+
+  @Put('control/config')
+  @UseGuards(RequireAuth)
+  configureControl(
+    @Body(SearchLoopAutomationConfigPipe) config: SearchLoopAutomationConfig,
+  ): Promise<SearchLoopControlState> {
+    return this.control.configure(config);
+  }
 
   @Post('start')
   @HttpCode(HttpStatus.CREATED)
   async start(
     @Body(StartLoopDtoPipe) input: StartLoopInput,
-    @CurrentUser() _currentUserId: string | null,
+    @CurrentUser() currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
+    void currentUserId;
     const run = await this.execute(() => this.loop.start(input));
     return commandResponse(run);
   }
@@ -50,9 +89,10 @@ export class LoopController {
   @HttpCode(HttpStatus.OK)
   async pause(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
-    @CurrentUser() _currentUserId: string | null,
+    @CurrentUser() currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
-    const run = await this.execute(() => this.status.pause(loopRunId));
+    void currentUserId;
+    const run = await this.execute(() => this.loop.pause(loopRunId));
     return commandResponse(run);
   }
 
@@ -60,9 +100,10 @@ export class LoopController {
   @HttpCode(HttpStatus.OK)
   async resume(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
-    @CurrentUser() _currentUserId: string | null,
+    @CurrentUser() currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
-    const run = await this.execute(() => this.status.resume(loopRunId));
+    void currentUserId;
+    const run = await this.execute(() => this.loop.resume(loopRunId));
     return commandResponse(run);
   }
 
@@ -70,9 +111,10 @@ export class LoopController {
   @HttpCode(HttpStatus.OK)
   async stop(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
-    @CurrentUser() _currentUserId: string | null,
+    @CurrentUser() currentUserId: string | null,
   ): Promise<LoopCommandResponseDto> {
-    const run = await this.execute(() => this.status.stop(loopRunId));
+    void currentUserId;
+    const run = await this.execute(() => this.loop.stop(loopRunId));
     return commandResponse(run);
   }
 
@@ -81,8 +123,9 @@ export class LoopController {
   @Get('current')
   async getCurrent(
     @Res() response: Response,
-    @CurrentUser() _currentUserId: string | null,
+    @CurrentUser() currentUserId: string | null,
   ): Promise<void> {
+    void currentUserId;
     const current = await this.execute(() => this.status.getCurrent());
     response.status(HttpStatus.OK).json(current);
   }
@@ -90,8 +133,9 @@ export class LoopController {
   @Get(':loopRunId')
   async detail(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
-    @CurrentUser() _currentUserId: string | null,
+    @CurrentUser() currentUserId: string | null,
   ): Promise<LoopRunDetail> {
+    void currentUserId;
     const detail = await this.execute(() => this.status.getDetail(loopRunId));
     if (!detail) {
       throw loopHttpException(LoopApiErrorCode.LOOP_NOT_FOUND);

@@ -424,6 +424,7 @@ describe('BacktestWorker contract (T013)', () => {
       );
       expect(strategyExecutionPort.resolveVersion).toHaveBeenCalledWith(
         STRATEGY_VERSION_ID,
+        USER_ID,
       );
       expect(backtester.run).toHaveBeenCalledWith(
         strategy,
@@ -471,10 +472,9 @@ describe('BacktestWorker contract (T013)', () => {
     ] as const)(
       'copies %s ownership into BacktestResult persistence and BacktestCompleted',
       async (_label, payload, expectedUserId) => {
-        resultPort.save.mockImplementation(async (input) => ({
-          id: RESULT_ID,
-          ...input,
-        }));
+        resultPort.save.mockImplementation((input) =>
+          Promise.resolve({ id: RESULT_ID, ...input }),
+        );
 
         await createWorker().process(jobFixture(payload));
 
@@ -491,10 +491,9 @@ describe('BacktestWorker contract (T013)', () => {
 
     it('normalizes evaluator percentage winRate before persistence and publication', async () => {
       evaluator.evaluate.mockReturnValue({ ...metrics, winRate: 60 });
-      resultPort.save.mockImplementation(async (input) => ({
-        id: RESULT_ID,
-        ...input,
-      }));
+      resultPort.save.mockImplementation((input) =>
+        Promise.resolve({ id: RESULT_ID, ...input }),
+      );
 
       await createWorker().process(jobFixture());
 
@@ -667,47 +666,55 @@ describe('BacktestWorker contract (T013)', () => {
         },
       );
 
-      it('uses 1s/4s backoff, executes exactly three times, and emits terminal effects only after exhaustion', async () => {
-        const payload = userPayload(randomUUID());
-        const executionTimes: number[] = [];
-        const observedDelays: number[] = [];
-        backtester.run.mockImplementation(() => {
-          executionTimes.push(Date.now());
-          throw new Error('retryable processor failure');
-        });
-        deadLetterRepository.mirror.mockResolvedValue({
-          job: terminalRecord(payload, 3, 'retryable processor failure'),
-          created: true,
-        });
-        const stored = await runJob(createWorker(), payload, (attemptsMade) => {
-          const delay = attemptsMade === 1 ? 1_000 : 4_000;
-          observedDelays.push(delay);
-          return delay;
-        });
+      it(
+        'uses 1s/4s backoff, executes exactly three times, and emits terminal effects only after exhaustion',
+        async () => {
+          const payload = userPayload(randomUUID());
+          const executionTimes: number[] = [];
+          const observedDelays: number[] = [];
+          backtester.run.mockImplementation(() => {
+            executionTimes.push(Date.now());
+            throw new Error('retryable processor failure');
+          });
+          deadLetterRepository.mirror.mockResolvedValue({
+            job: terminalRecord(payload, 3, 'retryable processor failure'),
+            created: true,
+          });
+          const stored = await runJob(
+            createWorker(),
+            payload,
+            (attemptsMade) => {
+              const delay = attemptsMade === 1 ? 1_000 : 4_000;
+              observedDelays.push(delay);
+              return delay;
+            },
+          );
 
-        await waitFor(() => executionTimes.length === 1, 'attempt one');
-        expect(eventBus.publish).not.toHaveBeenCalled();
-        await waitFor(() => executionTimes.length === 2, 'attempt two');
-        expect(eventBus.publish).not.toHaveBeenCalled();
-        await waitFor(
-          async () => (await stored.getState()) === 'failed',
-          'attempt three terminal failure',
-        );
+          await waitFor(() => executionTimes.length === 1, 'attempt one');
+          expect(eventBus.publish).not.toHaveBeenCalled();
+          await waitFor(() => executionTimes.length === 2, 'attempt two');
+          expect(eventBus.publish).not.toHaveBeenCalled();
+          await waitFor(
+            async () => (await stored.getState()) === 'failed',
+            'attempt three terminal failure',
+          );
 
-        expect(executionTimes).toHaveLength(3);
-        expect(observedDelays).toEqual([1_000, 4_000]);
-        expect(executionTimes[1] - executionTimes[0]).toBeGreaterThanOrEqual(
-          850,
-        );
-        expect(executionTimes[2] - executionTimes[1]).toBeGreaterThanOrEqual(
-          3_500,
-        );
-        expect(deadLetterRepository.mirror).toHaveBeenCalledTimes(1);
-        expect(eventBus.publish).toHaveBeenCalledTimes(2);
-        expect(
-          deadLetterRepository.mirror.mock.invocationCallOrder[0],
-        ).toBeLessThan(eventBus.publish.mock.invocationCallOrder[0]);
-      }, TEST_TIMEOUT_MS);
+          expect(executionTimes).toHaveLength(3);
+          expect(observedDelays).toEqual([1_000, 4_000]);
+          expect(executionTimes[1] - executionTimes[0]).toBeGreaterThanOrEqual(
+            850,
+          );
+          expect(executionTimes[2] - executionTimes[1]).toBeGreaterThanOrEqual(
+            3_500,
+          );
+          expect(deadLetterRepository.mirror).toHaveBeenCalledTimes(1);
+          expect(eventBus.publish).toHaveBeenCalledTimes(2);
+          expect(
+            deadLetterRepository.mirror.mock.invocationCallOrder[0],
+          ).toBeLessThan(eventBus.publish.mock.invocationCallOrder[0]);
+        },
+        TEST_TIMEOUT_MS,
+      );
     });
   });
 });

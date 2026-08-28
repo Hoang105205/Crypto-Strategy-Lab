@@ -2,113 +2,142 @@
 
 ## Codebase Baseline
 
-The checked workspace already contains the nullable Prisma ownership columns and Auth infrastructure. It does not yet carry ownership through the full worker/completion/leaderboard pipeline, and its global gateway currently relays the complete `LeaderboardUpdated` payload to every socket.
+The checked workspace already implements the original feature's backend ownership propagation, scoped Leaderboard REST reads, privacy-safe system-only `LeaderboardUpdated` publication, exact gateway relay, read-only global-loop UI, and browser-persisted preference. Backend/shared contracts therefore remain regression gates, not new implementation work.
 
-Relevant version drift from the KB is non-blocking: the workspace uses Next.js 16.3.0 and Jest 30 while `kb/ARCHITECTURE.md` still lists Next.js 15.x and Jest 29.x. This feature uses installed versions and introduces no upgrade.
+The cross-route amendment is not implemented. `app/layout.tsx` currently mounts `AuthProvider -> InfrastructureProvider -> AppShell`; both `use-dashboard-summary.ts` and `use-leaderboard.ts` independently read the preference, own cache/request generations, and attach `leaderboard:update`. Consequently navigation destroys page cache/handler state, `/leaderboard` can compete with Dashboard, off-route invalidations are missed, and there is no app-level A->B/A->anonymous cache boundary.
+
+The existing preference helper correctly uses `crypto-strategy-lab:leaderboard-live`, restores explicit true/false values, and defaults false for absent, malformed, SSR, or unavailable storage. It should become an internal dependency of the provider rather than remain page-owned.
 
 ## Decisions
 
-### D1: Apply visibility in LeaderboardRepository before projection
+### D1: Preserve repository-level viewer scoping
 
-- **Chosen**: Pass `currentUserId: string | null` explicitly from controller to service to repository. Anonymous uses `{ userId: null }`; authenticated uses `{ OR: [{ userId: null }, { userId: currentUserId }] }`.
-- **Rationale**: Filtering before best-per-version selection, sorting, Top-K, detail lookup, and `updatedAt` prevents both row disclosure and metadata/ranking distortion. One repository helper keeps all paths consistent.
+- **Chosen**: Keep explicit `currentUserId: string | null` propagation and repository filtering before best-per-version, sorting, Top-K, detail, rank, and `updatedAt` projection.
+- **Rationale**: This delivered boundary prevents both row and metadata disclosure. The frontend provider must consume, not duplicate, this authorization policy.
+- **Alternatives considered**: Controller filtering, RLS, or client filtering remain rejected.
+- **KB reference**: `kb/contracts/auth.yaml`; ADR-0016; `kb/flows/leaderboard-update.md` BR-10.
+
+### D2: Preserve request-origin ownership propagation
+
+- **Chosen**: Keep `BacktestRequested.userId -> BacktestResult.userId -> BacktestCompleted.userId -> LeaderboardEntry.userId`, with SEARCH_LOOP always null.
+- **Rationale**: Already implemented and required for scoped REST snapshots.
+- **Alternatives considered**: Inferring from strategy or loop identity remains rejected.
+- **KB reference**: `kb/contracts/events.yaml`; `contracts/userid-propagation.md`.
+
+### D3: Preserve system-safe invalidation plus current-session REST
+
+- **Chosen**: Keep the existing `leaderboard:update` payload unchanged and treat it only as invalidation. The provider calls REST, whose API client reads the Supabase session at request time.
+- **Rationale**: It is the current KB architecture and avoids private socket payloads without rooms or handshake identity.
+- **Alternatives considered**: Applying event `topK`, client privacy filtering, authenticated rooms, and a new channel remain rejected.
+- **KB reference**: `kb/contracts/events.yaml`; `kb/flows/leaderboard-update.md` BR-9; Constitution IV.
+
+### D4: Keep exact gateway relay and publisher safety
+
+- **Chosen**: No PushGateway or event contract change. Existing backend tests continue to prove system-only `topK` and private-trigger redaction.
+- **Rationale**: Cross-route ownership is a frontend lifecycle concern; moving privacy logic into transport would duplicate policy.
+- **KB reference**: ADR-0011; `kb/modules/event-infrastructure.md`.
+
+### D5: Use subscribe-before-refetch in the app provider
+
+- **Chosen**: On persisted ON or explicit re-enable, the provider attaches its stable handler before starting current-session catch-up. Each later signal advances request generation; watermark checks prevent rollback.
+- **Rationale**: Closes the missed-update window and preserves the delivered race rule at the correct lifetime boundary.
+- **Alternatives considered**: Refetch-first, applying socket rows, or reconnecting the shared socket are rejected.
+- **KB reference**: `kb/flows/leaderboard-update.md`; FR-014.
+
+### D6: Move all leaderboard listener ownership out of page hooks
+
+- **Chosen**: `LeaderboardLiveProvider` is the only `leaderboard:update` subscriber. `useDashboardSummary` retains loop/queue behavior, while `useLeaderboard` becomes a context adapter.
+- **Rationale**: Keeping a separate listener effect inside either hook still makes page lifetime a cleanup boundary and permits duplicates.
+- **Alternatives considered**: Coordinating two page hooks through a module singleton is rejected because it obscures React ownership and identity rendering boundaries.
+- **KB reference**: `kb/DESIGN.md` Application Shell; `kb/flows/leaderboard-update.md` BR-11.
+
+### D7: Keep LoopStatusPanel read-only for loop lifecycle
+
+- **Chosen**: Retain the accessible Live updates switch and read-only global Search Loop state; add no start/pause/resume/stop calls.
+- **Rationale**: The 2026-08-18 decision is now synchronized across the KB.
+- **Alternatives considered**: Disabled loop controls or reusing loop callbacks for Live remain rejected.
+- **KB reference**: `kb/flows/strategy-search-loop.md`; `kb/DESIGN.md` Dashboard.
+
+### D8: Preserve global backend loop endpoints without viewer ownership
+
+- **Chosen**: No loop controller/service/repository change. Operational endpoints remain global compatibility surfaces and the browser toggle calls none of them.
+- **Rationale**: Cross-route frontend ownership must not expand into per-user loop semantics.
+- **KB reference**: `kb/contracts/auth.yaml` `does_not_apply_to`; `kb/flows/strategy-search-loop.md` BR-1..3.
+
+### D9: Preserve viewer-local ranks and metadata
+
+- **Chosen**: Cache REST snapshots exactly as returned after server scoping. Never recompute privacy scope or apply event rows on the client.
+- **Rationale**: Server output already contains the only authoritative Top-K/rank/`updatedAt` projection.
+- **KB reference**: `kb/flows/leaderboard-update.md` BR-10.
+
+### D10: No Prisma migration, new index, or server preference model
+
+- **Chosen**: Use browser-local persistence only. PostgreSQL/Redis/schema remain unchanged.
+- **Rationale**: Cross-device preference synchronization and new persistence are outside scope.
+- **KB reference**: Constitution IV; feature assumptions/out-of-scope.
+
+### D11: Mount one provider below Auth and Infrastructure
+
+- **Chosen**: `AuthProvider -> InfrastructureProvider -> LeaderboardLiveProvider -> AppShell/routes` in `app/layout.tsx`.
+- **Rationale**: The provider needs verified identity/session and the shared socket, and must outlive route segments.
 - **Alternatives considered**:
-  - Filter returned DTOs in controllers: rejected because global Top-K may already have displaced valid owner entries and global timestamps/ranks leak metadata.
-  - RLS: rejected by ADR-0016 and the current Prisma connection model.
-  - Service-only filtering: rejected because it requires loading forbidden rows into the business layer and is easier to omit from one read path.
-- **KB reference**: `kb/contracts/auth.yaml` data scoping; ADR-0016; Constitution security constraint.
+  - Above Auth/Infrastructure: rejected because identity/socket prerequisites would be unavailable.
+  - Inside `AppShell` route content: rejected because shell/route replacement could shorten lifetime.
+  - One provider per page: rejected because it recreates the current defect.
+- **KB reference**: `kb/DESIGN.md` Application Shell; FR-011, FR-023.
 
-### D2: Carry producer ownership unchanged through the worker
+### D12: Keep SCORE plus the retained active criterion in one provider cache
 
-- **Chosen**: `BacktestRequested.userId` is the source of truth. The worker passes it into `BacktestResultCreateInput` and `BacktestCompleted`; Leaderboard copies completion ownership into `LeaderboardEntry`.
-- **Rationale**: Both producers already know origin: `StrategyController` assigns the authenticated ID for USER jobs, while `StrategyLoopService` explicitly assigns null for SEARCH_LOOP. Copying the value is deterministic and avoids cross-module inference.
+- **Chosen**: Store accepted snapshots by `RankingCriterion`. SCORE is always maintained for Dashboard; the retained `/leaderboard` active criterion is maintained too when different. Dashboard renders SCORE Top-5, and `/leaderboard` renders the active snapshot.
+- **Rationale**: One criterion-specific REST response may contain a different Top-K and cannot safely derive every other criterion. Maintaining SCORE plus one active criterion gives both routes current data with at most two requests per invalidation.
 - **Alternatives considered**:
-  - Infer owner from `StrategyVersion`: rejected because system strategies may be manually backtested by a user and ownership belongs to the request/result.
-  - Look up the user from `jobId` inside Leaderboard: rejected because it adds coupling and a database round trip.
-  - Derive null from `loopRunId`: rejected because event contracts already provide the authoritative field.
-- **KB reference**: `kb/contracts/events.yaml` BacktestRequested/BacktestCompleted; ADR-0016.
+  - One arbitrary snapshot for both routes: rejected because Dashboard requires canonical SCORE order.
+  - Refetch every supported criterion: rejected as unnecessary fan-out.
+  - Leave `/leaderboard` cache in its page hook: rejected by FR-025.
+- **KB reference**: `kb/flows/leaderboard-update.md` alternative sort path; FR-022..026.
 
-### D3: Use a system-safe global notification plus scoped REST refetch
+### D13: Persist one current-viewer accepted cache envelope
 
-- **Chosen**: Continue relaying `leaderboard:update` globally, but only with system-scoped `topK` and `updatedAt`. Make `triggeredByBacktestResultId` nullable and redact it for private completions. Clients treat the event as invalidation and refetch their scoped REST snapshot.
-- **Rationale**: This is the smallest safe solution compatible with the current unauthenticated socket singleton and `server.emit`. Private rows and identifiers never cross the global socket boundary, while the owner still catches up immediately through authenticated REST.
+- **Chosen**: Store accepted REST snapshots in `crypto-strategy-lab:leaderboard-cache:v1` with schema version and exact viewer key. Restore only after Auth resolves and only on an exact key match; otherwise discard the whole envelope. Do not filter cached or event rows client-side.
+- **Rationale**: Preserves an OFF snapshot through reload/browser restart while preventing an A cache from rendering for B/anonymous. A single replaceable envelope ensures browser storage contains only the current viewer cache.
 - **Alternatives considered**:
-  - Client-side filter of full Top-K: rejected; receiving forbidden data is already a leak.
-  - Authenticated per-user Socket.IO rooms: rejected for MVP because no handshake/refresh/room contract exists and correct implementation would require a larger security design and integration suite.
-  - Broadcast only system-triggered events: rejected because a user's new private leaderboard entry would not cause immediate owner catch-up.
-  - Empty new channel/event: rejected because A8 explicitly names `leaderboard:update`; changing channel would add avoidable surface area.
-- **Trade-off**: Live clients perform a REST read for each update. The signal also reveals that some leaderboard activity occurred, but carries no owner, private ID, metric, rank, or private timestamp. This is accepted for the MVP; payload privacy is the binding requirement.
-- **KB reference**: `kb/contracts/events.yaml` LeaderboardUpdated; `kb/flows/leaderboard-update.md`; Constitution IV.
+  - Memory-only cache: rejected because OFF would lose its snapshot at reload/restart.
+  - Cache per user indefinitely: rejected because old private snapshots would remain in browser storage.
+  - Persist event `topK`: rejected because the event is not the viewer snapshot.
+- **KB reference**: `kb/DESIGN.md` Shared UI States; FR-010, FR-013, FR-028..029.
 
-### D4: Keep exact gateway relay, enforce safety at the publisher and test both boundaries
+### D14: Gate render by viewer key and use abort plus dual generations
 
-- **Chosen**: `LeaderboardService` constructs the privacy-safe payload; `PushGateway` remains a transport-only exact relay. Service tests assert safe construction and gateway tests assert no private row/private trigger reaches `server.emit`.
-- **Rationale**: Leaderboard owns ranking and knows the completion's user ID. Gateway should not duplicate repository or ranking logic.
-- **Alternatives considered**:
-  - Sanitize in the gateway: rejected because gateway lacks repository scope and would duplicate domain policy.
-  - Give gateway direct Prisma access: rejected by module boundary and single-responsibility rules.
-- **KB reference**: ADR-0011 Observer; `kb/modules/event-infrastructure.md` PushGateway responsibility.
+- **Chosen**: Cache selectors require the current resolved viewer key. A layout effect on identity change advances identity generation, aborts old requests, clears memory/storage/watermarks, then bootstraps the new viewer. Every response also checks request generation.
+- **Rationale**: Abort alone is not reliable once a response is already resolving; generation alone does not prevent a one-render flash. Viewer gating plus both generations proves no old cache or delayed response can commit/render.
+- **Alternatives considered**: Effect-only clearing, token comparison only, or component keys/remounts are rejected as incomplete or too implicit.
+- **KB reference**: `kb/flows/leaderboard-update.md` Viewer identity transition; FR-028..029.
 
-### D5: Re-enable by subscribe-first, then refetch
+### D15: Distinguish automatic Live reconciliation from explicit OFF reads
 
-- **Chosen**: When Live changes to ON, attach the exact stable handler first, then issue catch-up REST refetch. Each signal launches a newer request generation. A response is committed only when it is the latest generation and its scoped `updatedAt` is not older than the current accepted watermark.
-- **Rationale**: Refetch-first creates a gap where an update can occur after the response snapshot but before subscription. Subscribe-first closes the gap; generation and watermark checks prevent a concurrent older response from rolling the UI back.
-- **Alternatives considered**:
-  - Refetch then subscribe: rejected due to missed-update window.
-  - Apply the socket `topK`: rejected because it is intentionally system-only and not the user's authoritative view.
-  - Disconnect/reconnect the socket: rejected because loop and queue consumers share it.
-- **KB reference**: `kb/flows/leaderboard-update.md` reconnect catch-up; `kb/DESIGN.md` stale realtime state.
+- **Chosen**: OFF blocks event- and reconnect-driven refetch. A missing current-viewer cache may perform one bootstrap; an explicit sort/retry may fetch by user action. These reads do not change the preference and the resulting snapshot freezes again.
+- **Rationale**: A first load must display authorized data even when default OFF, while OFF must never behave like a live subscription.
+- **Alternatives considered**: No data at all until ON is rejected as conflating data access with Live; automatic polling while OFF is rejected as violating freeze.
+- **KB reference**: `kb/flows/leaderboard-update.md` Live updates OFF/ON; FR-010, FR-012..015.
 
-### D6: Separate leaderboard listener ownership from loop listeners
+### D16: Observe reconnect through Infrastructure state
 
-- **Chosen**: In `useDashboardSummary`, mount/connect/disconnect and `loop:*` subscriptions remain active independently. A separate effect owns only `leaderboard:update` based on `liveUpdatesEnabled`.
-- **Rationale**: OFF must freeze only the leaderboard. The global system-loop status continues to update, and the socket remains connected.
-- **Alternatives considered**:
-  - Tear down the whole dashboard subscription effect: rejected because it freezes loop status and risks duplicate listener churn.
-  - Disconnect the singleton: rejected by A8 and other consumers.
-- **KB reference**: 2026-08-18 global-loop decision; A8 assignment.
-
-### D7: Make LoopStatusPanel read-only for loop lifecycle
-
-- **Chosen**: Remove start/pause/resume/stop UI props, pending state, and command buttons. Retain system-loop status/progress, retry for read failures, and add the accessible Live updates switch.
-- **Rationale**: The 2026-08-18 decision supersedes the stale flow. Keeping command controls would communicate and execute a behavior explicitly removed from end users.
-- **Alternatives considered**:
-  - Disable command buttons: rejected because disabled controls still imply user ownership and add confusion.
-  - Rename Start/Stop to Live while reusing command callbacks: rejected because it could still call loop REST endpoints.
-- **KB reference**: `plans/new-requirements-summary.md` dated 2026-08-18; stale `kb/flows/strategy-search-loop.md` noted in spec.
-
-### D8: Preserve backend loop endpoints but never scope loop data by user
-
-- **Chosen**: Add `SupabaseJwtGuard` and `@CurrentUser()` to `LoopController` as assigned, but do not pass identity into `LoopStatusService`, `StrategyLoopService`, or `LoopRepository`. Remove end-user command calls only from frontend UI.
-- **Rationale**: A7 explicitly requires guard/decorator on the controller and explicitly prohibits per-user loop filtering. Removing or redesigning operator/system endpoints is beyond this feature.
-- **Alternatives considered**:
-  - Add `userId` to loop service/repository: rejected as direct scope violation.
-  - Delete loop endpoints: rejected because the user requested no toggle calls, not a backend API removal, and other operational code/tests may depend on them.
-- **KB reference**: `kb/contracts/auth.yaml` does-not-apply list; A7 assignment.
-
-### D9: Compute response ranks after visibility filtering
-
-- **Chosen**: Ignore persisted global rank for public projection. After visible best-per-version sorting and Top-K slice, map ranks to `index + 1`. Detail derives its rank from the same visible sorted projection.
-- **Rationale**: Stored rank currently represents the mixed global table and cannot be correct for anonymous, A, and B simultaneously.
-- **Alternatives considered**:
-  - Persist one rank per user: rejected because it requires a different data model and per-user materialization.
-  - Return gaps: rejected by acceptance requirement.
-- **KB reference**: Feature FR-006; Leaderboard Top-K glossary term.
-
-### D10: No Prisma migration or new index
-
-- **Chosen**: Reuse existing nullable columns. Do not edit Prisma models or migrations.
-- **Rationale**: `workspace/apps/backend/prisma/schema.prisma` already contains `userId` on StrategyVersion, BacktestResult, and LeaderboardEntry. Course-scale Top-K does not justify an unrequested migration.
-- **Alternatives considered**:
-  - Add per-user loop columns: rejected by scope.
-  - Add compound indexes immediately: rejected until query measurement justifies a separately reviewed migration.
-- **KB reference**: Constitution IV; ADR-0016.
+- **Chosen**: Use `InfrastructureProvider` connection status and reconcile only on a non-connected -> connected transition while ON. Do not add another socket owner or disconnect path.
+- **Rationale**: Keeps connection lifecycle centralized and makes reconnect behavior testable without a second feature-level `connect` listener.
+- **Alternatives considered**: Calling socket connect/disconnect or letting each page react independently are rejected.
+- **KB reference**: `kb/modules/event-infrastructure.md` Cross-route Safe Invalidation Provider; FR-015, FR-018.
 
 ## Resolved Questions
 
-- No clarification markers exist in the feature spec.
-- Default Live updates state is ON for a new mount; cross-session persistence is out of scope.
-- Anonymous leaderboard reads are supported by the optional-auth guard and return system entries only.
-- Foreign private detail returns the same stable 404 as a nonexistent entry.
-- `DashboardController` is included because `/api/dashboard/summary` is a leaderboard read path.
-- Current `SupabaseJwtGuard` behavior for an invalid token differs from the YAML's stated 401 behavior; changing Auth-owned verification semantics is outside A7/A8. Feature tests cover missing token as anonymous and valid mocked identities. This drift should be reported separately to the Auth owner and must not be used to weaken leaderboard scoping.
+- No clarification marker exists in the spec or requirements checklist.
+- Explicit ON/OFF is browser-local and survives navigation, reload, restart, and identity change; no stored choice defaults OFF.
+- OFF preserves an accepted current-viewer snapshot. Bootstrap/sort/retry are explicit reads, not automatic Live behavior.
+- Anonymous, A, and B cache identity derives from resolved AuthContext; session/token is still read at REST request time.
+- Page unmount is not cleanup; provider unmount is.
+- `/leaderboard` and Dashboard share the provider but consume criterion-appropriate projections.
+- No room, socket auth handshake, namespace, client privacy filter, shared disconnect, wire/auth change, migration, or per-user SearchLoopRun is introduced.
+
+## Remaining External Drift
+
+- `SupabaseJwtGuard` currently degrades an invalid/expired bearer token to anonymous, while `kb/contracts/auth.yaml` specifies 401. This is pre-existing Auth-owned drift and is not changed by this plan. It cannot authorize another user's cache because the provider clears/gates on resolved identity and REST remains server-scoped.
+- `kb/ARCHITECTURE.md` lists Next.js 15/Jest 29 while the installed workspace uses Next.js 16.3/Jest 30. The implementation uses installed APIs and follows `workspace/apps/frontend/AGENTS.md`; no dependency upgrade is planned.

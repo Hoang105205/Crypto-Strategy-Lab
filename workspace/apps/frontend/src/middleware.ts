@@ -13,6 +13,10 @@ import { createServerClient } from '@supabase/ssr';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname === '/leaderboard') {
+    return NextResponse.next();
+  }
+
   // Public routes — no auth required
   if (pathname === '/login' || pathname === '/register') {
     // If already logged in, redirect to dashboard
@@ -24,7 +28,7 @@ export async function middleware(request: NextRequest) {
           getAll() {
             return request.cookies.getAll();
           },
-          setAll(cookiesToSet) {
+          setAll() {
             // No-op in middleware — cookies are set by the browser client
           },
         },

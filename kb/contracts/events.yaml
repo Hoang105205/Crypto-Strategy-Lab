@@ -5,7 +5,7 @@
 # definitions and must not duplicate reduced payload schemas.
 # See also: kb/modules/event-infrastructure.md, kb/flows/leaderboard-update.md,
 # kb/flows/strategy-search-loop.md, ADR-0005, ADR-0006, ADR-0011, ADR-0013
-# Reviewed 2026-08-24 for cross-route live leaderboard/global-loop consistency:
+# Reviewed 2026-08-28 for cross-route live leaderboard/global-loop and ID-only reference consistency:
 # event names and payload fields remain unchanged; no room/handshake/namespace semantics were added.
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,10 @@ entities:
       redisConnected: boolean
 
   LeaderboardEntryPayload:
+    contractNote: >
+      strategyVersionId and backtestResultId identify Strategy Engine source records but are
+      logical cross-module references, not Prisma relations or database foreign keys. The
+      persisted leaderboard projection is reconciled through IBacktestResultPort.
     fields:
       rank: number
       userId: UUID?              # null = system entry (shared), non-null = user entry (private). See ADR-0016
@@ -67,6 +71,32 @@ entities:
       maxDrawdown: float
       sharpeRatio: float
       totalTrades: number
+
+  SearchLoopControl:
+    description: >
+      Singleton persisted desired state for ADR-0017. enabled=true survives backend restart and
+      instructs the leased supervisor to create successive bounded SearchLoopRun records. This is
+      global system state and has no userId ownership.
+    fields:
+      id: string                       # always "system"
+      enabled: boolean
+      generatorType: string            # "RANDOM" | "DOMAIN_GUIDED"
+      pair: string
+      timeframe: string
+      backtestWindowDays: number       # rolling historical window ending at latest closed boundary
+      backtestConfig: object
+      maxCandidatesPerRun: number      # nullable
+      maxDurationMsPerRun: number      # nullable
+      stopOnNoImprovementIterations: number
+      cooldownMs: number
+      failureCount: number
+      nextRunAt: DateTime              # nullable
+      lastStartedRunId: UUID           # nullable logical reference to SearchLoopRun
+      lastError: string                # nullable, truncated operational message
+      leaseOwner: UUID                 # nullable process instance identity
+      leaseUntil: DateTime             # nullable
+      createdAt: DateTime
+      updatedAt: DateTime
 
 enums:
   JobStatusValue: ["QUEUED", "PROCESSING", "COMPLETED", "FAILED", "DEAD_LETTER"]

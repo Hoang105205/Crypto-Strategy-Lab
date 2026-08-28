@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-24
+> **Last Updated**: 2026-08-28
 
 ## 1. Overview
 - **Description**: When a backtest completes, the leaderboard persists the result and emits a privacy-safe `leaderboard:update` invalidation. An app-level provider owns live leaderboard state across client-side routes and refetches the caller-scoped REST snapshot when Live updates is ON.
@@ -14,6 +14,7 @@
 - A `BacktestRequested` job has been enqueued and picked up by a worker (see `kb/flows/strategy-backtest.md`)
 - The backtest completed successfully — i.e. `BacktestCompleted` was published, not `BacktestFailed`
 - `LeaderboardService` is subscribed to `BacktestCompleted` on `EventBus` (subscription happens at module bootstrap)
+- `LeaderboardService` also starts an application-level source reconciler at bootstrap and every five minutes; it uses `IBacktestResultPort`, not cross-module database access.
 - The root frontend tree mounts one app-level leaderboard live provider below `AuthProvider` and `InfrastructureProvider`; it survives client-side route navigation and is the sole owner of this feature's `leaderboard:update` handler.
 - Leaderboard REST requests use the current Supabase session. Anonymous reads contain system entries only; authenticated user A reads contain system entries plus A's entries, per `kb/contracts/auth.yaml`.
 - A Top-K value (`K`) and a ranking/scoring formula are configured (see Business Rules)
@@ -36,6 +37,7 @@
 - Every client with Live updates ON either reconciles through caller-scoped REST after invalidation or does so after reconnect; a client with Live updates OFF keeps its frozen snapshot.
 - Client-side navigation does not duplicate the handler, reset the Live updates preference, or couple the preference to Dashboard mount state.
 - The leaderboard is queryable by any of the supported sort criteria without re-running any backtest
+- Every returned entry has a currently valid source result whose `strategyVersionId` and `userId` agree with the denormalized projection.
 
 ## 5. Alternative Paths
 
@@ -89,6 +91,11 @@
 - A failed catch-up keeps the last valid snapshot for the same viewer visible and exposes a retryable stale/error state; listener ownership still matches the ON/OFF preference.
 - A response created under a previous identity/request generation is discarded and cannot repopulate the cache after logout or user switch.
 
+### Source result/version was deleted manually
+- `LeaderboardEntry.strategyVersionId` and `backtestResultId` are logical ID references, not database foreign keys, so a direct Supabase deletion does not cascade immediately.
+- On backend startup and every five minutes, `LeaderboardService` validates each projection through Strategy Engine's public `IBacktestResultPort`. A missing result, mismatched strategy version, or mismatched owner confirms an orphan; that entry is deleted and surviving rows are reranked.
+- If the public port throws or is temporarily unavailable, the check is inconclusive and the entry is retained. REST reads independently exclude an invalid source, so stale data is not shown while cleanup is pending.
+
 ### Tie in ranking
 - Two entries compute an identical `score` — see Business Rules BR-3 for the deterministic tie-break rule
 
@@ -105,6 +112,7 @@
 - **BR-10**: Caller visibility is applied before Top-K selection, rank assignment, detail lookup, and `updatedAt` calculation: anonymous = system only; A = system + A. A cache/request created for one identity is never reusable by another identity.
 - **BR-11**: The app-level provider below Auth/Infrastructure owns the Live updates preference, leaderboard cache, request generation, and exactly one event handler across client-side navigation. Page-level hooks/components consume that state and do not register competing handlers.
 - **BR-12**: The browser-persisted user choice is authoritative. No stored choice defaults to OFF. OFF freezes the last valid snapshot across navigation, reload, browser restart, and reconnect; ON invalidation, reload, re-enable, and reconnect reconcile through REST with the current session. Neither state controls the global search loop.
+- **BR-13**: `LeaderboardEntry.strategyVersionId` and `backtestResultId` are cross-module logical references with no Prisma relation or database FK. Lifecycle consistency is enforced by public-port validation plus startup/five-minute cleanup; only confirmed orphans are deleted.
 
 ## 8. Related
 - **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`, `kb/contracts/auth.yaml`

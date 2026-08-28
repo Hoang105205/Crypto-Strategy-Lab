@@ -2,18 +2,7 @@
 # Run: docker-compose up -d
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: csl-postgres
-    ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
-    environment:
-      POSTGRES_USER: csl
-      POSTGRES_PASSWORD: csl_dev
-      POSTGRES_DB: crypto_strategy_lab
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+
 
   redis:
     image: redis:7-alpine
@@ -25,5 +14,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   redis_data:

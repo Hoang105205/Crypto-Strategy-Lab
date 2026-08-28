@@ -92,6 +92,7 @@ const workerConnection: ConnectionOptions = {
 const strategyVersionId = '69e1c401-810a-431f-b2d8-d9f732e7f829';
 const loopRunId = 'dc492a14-ee46-4748-9ef9-3c364689d20d';
 const correlationId = '2660f14b-c12a-4cc1-a33f-a6e48b51ac9a';
+const userId = '7be87e47-1a16-4ad4-b616-8f426cce86a9';
 const startDate = new Date('2026-08-01T00:00:00.000Z');
 const endDate = new Date('2026-08-02T00:00:00.000Z');
 
@@ -112,6 +113,7 @@ const userPayload = (
   },
   source: BacktestSource.USER,
   loopRunId: null,
+  userId,
 });
 
 const searchLoopPayload = (
@@ -120,6 +122,7 @@ const searchLoopPayload = (
   ...userPayload(jobId),
   source: BacktestSource.SEARCH_LOOP,
   loopRunId,
+  userId: null,
 });
 
 const waitFor = async (

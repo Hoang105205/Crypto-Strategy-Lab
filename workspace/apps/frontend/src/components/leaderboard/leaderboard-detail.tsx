@@ -1,50 +1,60 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { LeaderboardScope } from '@crypto-strategy-lab/shared';
 import { ApiClientError, apiClient, type LeaderboardDetail as LeaderboardDetailData } from '../../services/api-client';
 
 interface LeaderboardDetailProps {
   strategyVersionId: string | null;
+  sourceScope?: LeaderboardScope;
 }
 
 type DetailState =
   | { status: 'empty' }
-  | { status: 'loading'; strategyVersionId: string }
-  | { status: 'success'; strategyVersionId: string; detail: LeaderboardDetailData }
-  | { status: 'not-found'; strategyVersionId: string }
-  | { status: 'error'; strategyVersionId: string };
+  | { status: 'loading'; requestKey: string }
+  | { status: 'success'; requestKey: string; detail: LeaderboardDetailData }
+  | { status: 'not-found'; requestKey: string }
+  | { status: 'error'; requestKey: string };
 
 function formatPercent(value: number, showPositiveSign = false, normalized = false): string {
   const percent = normalized ? value * 100 : value;
   return `${showPositiveSign && percent > 0 ? '+' : ''}${percent.toFixed(2)}%`;
 }
 
-export function LeaderboardDetail({ strategyVersionId }: LeaderboardDetailProps) {
+export function LeaderboardDetail({
+  strategyVersionId,
+  sourceScope = LeaderboardScope.COMBINED,
+}: LeaderboardDetailProps) {
+  const requestKey = strategyVersionId ? `${sourceScope}:${strategyVersionId}` : null;
   const [retryGeneration, setRetryGeneration] = useState(0);
-  const [state, setState] = useState<DetailState>(strategyVersionId ? { status: 'loading', strategyVersionId } : { status: 'empty' });
+  const [state, setState] = useState<DetailState>(requestKey ? { status: 'loading', requestKey } : { status: 'empty' });
 
   useEffect(() => {
-    if (!strategyVersionId) return;
+    if (!strategyVersionId || !requestKey) return;
 
     let active = true;
-    void apiClient.getLeaderboardDetail(strategyVersionId).then((detail) => {
-      if (active) setState({ status: 'success', strategyVersionId, detail });
+    const controller = new AbortController();
+    void apiClient.getLeaderboardDetail(strategyVersionId, { scope: sourceScope, signal: controller.signal }).then((detail) => {
+      if (active) setState({ status: 'success', requestKey, detail });
     }).catch((error: unknown) => {
       if (!active) return;
       if (error instanceof ApiClientError && error.status === 404) {
-        setState({ status: 'not-found', strategyVersionId });
+        setState({ status: 'not-found', requestKey });
         return;
       }
-      setState({ status: 'error', strategyVersionId });
+      setState({ status: 'error', requestKey });
     });
 
-    return () => { active = false; };
-  }, [strategyVersionId, retryGeneration]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [requestKey, retryGeneration, sourceScope, strategyVersionId]);
 
   if (!strategyVersionId) {
     return <aside className="rounded-xl border border-dashed border-hairline-dark bg-surface-card p-6 text-sm text-muted text-center shadow-sm">Select a strategy to inspect its immutable version and published trades.</aside>;
   }
-  if (state.status === 'empty' || state.strategyVersionId !== strategyVersionId || state.status === 'loading') {
+  if (state.status === 'empty' || state.requestKey !== requestKey || state.status === 'loading') {
     return (
       <aside role="status" aria-label="Loading strategy detail" style={{ minHeight: 320 }} className="min-h-[320px] animate-pulse rounded-xl border border-hairline-dark/60 bg-surface-card p-6 shadow-sm">
         <span className="sr-only">Loading strategy detail</span>
@@ -68,7 +78,7 @@ export function LeaderboardDetail({ strategyVersionId }: LeaderboardDetailProps)
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3">
           <p className="text-xs font-medium text-rose-400">Strategy detail is temporarily unavailable.</p>
         </div>
-        <button type="button" className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-black transition-all hover:bg-primary/90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark shadow-sm" onClick={() => { setState({ status: 'loading', strategyVersionId }); setRetryGeneration((value) => value + 1); }}>Retry</button>
+        <button type="button" className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-black transition-all hover:bg-primary/90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark shadow-sm" onClick={() => { setState({ status: 'loading', requestKey }); setRetryGeneration((value) => value + 1); }}>Retry</button>
       </aside>
     );
   }

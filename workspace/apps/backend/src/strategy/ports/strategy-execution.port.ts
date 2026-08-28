@@ -22,15 +22,17 @@ export class StrategyExecutionPort implements IStrategyExecutionPort {
 
   async resolveVersion(
     strategyVersionId: string,
+    userId: string | null = null,
   ): Promise<StrategyExecutionResult<IStrategy> | null> {
-    return this.resolve(strategyVersionId, new Set<string>());
+    return this.resolve(strategyVersionId, new Set<string>(), userId);
   }
 
   private async resolve(
     id: string,
     ancestors: Set<string>,
+    userId: string | null,
   ): Promise<StrategyExecutionResult<IStrategy> | null> {
-    const version = await this.versions.getVersion(id);
+    const version = await this.versions.getVersion(id, userId);
     if (!version) return null;
 
     if (ancestors.has(id)) {
@@ -44,7 +46,7 @@ export class StrategyExecutionPort implements IStrategyExecutionPort {
     const nextAncestors = new Set(ancestors).add(id);
     const children: IStrategy[] = [];
     for (const childId of version.childVersionIds ?? []) {
-      const child = await this.resolve(childId, nextAncestors);
+      const child = await this.resolve(childId, nextAncestors, userId);
       if (!child) {
         throw this.unsupported(version, `references missing child version '${childId}'`);
       }

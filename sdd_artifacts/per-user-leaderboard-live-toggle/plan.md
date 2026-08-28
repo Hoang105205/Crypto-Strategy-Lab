@@ -1,256 +1,264 @@
 # Implementation Plan: Per-User Leaderboard Live Toggle
 
-**Feature**: `per-user-leaderboard-live-toggle` | **Date**: 2026-08-23 | **Spec**: `spec.md`
+**Feature**: `per-user-leaderboard-live-toggle` | **Date**: 2026-08-24 | **Spec**: `spec.md`
 
 ## Summary
 
-Complete Phuong tasks A7 and A8 inside the existing Auth, Event Infrastructure, Dashboard, and Frontend boundaries. The backend will propagate nullable `userId` from `BacktestRequested` through persisted `BacktestResult`, `BacktestCompleted`, and `LeaderboardEntry`; apply the system-or-current-user predicate before every leaderboard list, detail, Top-K, rank, and `updatedAt` projection; and leave `SearchLoopRun` global.
+Update the existing feature in place so leaderboard Live updates is owned by one application-lifetime React provider, mounted in the canonical root tree as `AuthProvider -> InfrastructureProvider -> LeaderboardLiveProvider -> AppShell/routes`. The provider owns the explicit browser-persisted ON/OFF choice, viewer-stamped leaderboard snapshots, the active leaderboard view state, one exact `leaderboard:update` handler, reconnect reconciliation, and identity/request generations. Dashboard and `/leaderboard` become consumers; page hooks no longer own competing leaderboard listeners or route-lifetime caches.
 
-The realtime MVP will not add Socket.IO rooms or socket authentication. `LeaderboardUpdated` remains a namespace-wide notification, but the globally relayed payload is made privacy-safe: `topK` contains system entries only, `updatedAt` is system-scoped, and a private trigger identifier is redacted to null. Live clients treat `leaderboard:update` as an invalidation and refetch the authoritative user-scoped REST snapshot. This preserves owner-private updates without broadcasting private rows and reuses the existing REST JWT path.
-
-The frontend keeps the existing infrastructure socket singleton. The Live updates toggle controls only the exact `leaderboard:update` listener; loop lifecycle listeners remain active. OFF removes that listener and freezes the last leaderboard snapshot. Re-enable attaches the listener first and then refetches, with request generations and snapshot watermarks preventing gaps and stale overwrite. `LoopStatusPanel` becomes a read-only global-loop status surface plus the Live updates toggle; it no longer renders end-user start/pause/resume/stop controls.
+The existing backend privacy design is retained: `leaderboard:update` is a namespace-wide system-only safe invalidation, and current-session REST is authoritative for anonymous, A, and B views. The existing event fields, auth semantics, namespace, shared socket lifecycle, database schema, and one global system Search Loop remain unchanged.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.7.x; Node.js runtime used by the monorepo
 
-**Primary Dependencies**: NestJS 11, Next.js 16.3.0 in the checked workspace (KB target still says 15.x), React 19.2, Prisma 6, EventEmitter2, Socket.IO 4.8, Supabase Auth
+**Primary Dependencies**: NestJS 11, Next.js 16.3.0 in the checked workspace, React 19.2, Prisma 6, EventEmitter2, Socket.IO 4.8, Supabase Auth
 
-**Storage**: PostgreSQL through Prisma; Redis/BullMQ remains unchanged for backtest jobs
+**Storage**: Existing PostgreSQL/Prisma and Redis/BullMQ remain unchanged. Browser `localStorage` stores the explicit preference and an accepted viewer-stamped leaderboard cache envelope; no server persistence or migration is added.
 
-**Testing**: Jest 30 backend unit/integration/E2E, Vitest 2 frontend hook/component tests, Playwright 1.62 frontend E2E
+**Testing**: Jest 30 backend regression coverage; Vitest 2 frontend provider/hook/component tests; Playwright 1.62 route, reload, reconnect, and identity-transition E2E
 
 **Target Platform**: Browser client plus NestJS modular-monolith backend
 
 **Project Type**: Full-stack web application/API in an npm workspace monorepo
 
-**Performance Goals**: Filter before Top-K; return at most configured K entries; one owned leaderboard listener per live view; no duplicate catch-up request caused by duplicate handlers; preserve bounded payloads
+**Performance Goals**: Exactly one provider-owned `leaderboard:update` handler while ON and zero while OFF; one SCORE REST reconciliation per invalidation plus one additional request only when the retained `/leaderboard` criterion differs from SCORE; no duplicate page-level request fan-out; at most configured Top-K per snapshot.
 
-**Constraints**: App-level authorization per ADR-0016; no new module; no per-user loop; no socket disconnect from the toggle; no private namespace broadcast; no Prisma migration because all three nullable `userId` columns already exist in `schema.prisma`
+**Constraints**: App-level authorization per ADR-0016; no new domain module; no rooms, socket auth handshake, namespace, client privacy filter, socket disconnect, wire-field/auth change, Prisma migration, database change, or per-user SearchLoopRun.
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research.*
+*GATE: PASS before Phase 0 research and PASS again after design.*
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Architecture Quality | ✅ PASS | Changes extend existing Auth, Leaderboard, Loop, Dashboard, Queue/Worker, shared-types, and frontend seams; no ad-hoc module or service is introduced. |
-| II. Contract-Driven | ✅ PASS | Active YAML already requires `userId` on `BacktestRequested`, `BacktestCompleted`, and `LeaderboardEntryPayload`; feature contracts below define the privacy-safe realtime amendment before implementation. `kb/contracts/events.yaml` must be synchronized before source changes are considered complete. |
-| III. Demonstrable Extension Points | ✅ PASS | No new extension point is claimed; isolation and realtime behavior are demonstrated with two-user REST/socket tests. |
-| IV. Simplicity Over Cleverness | ✅ PASS | A system-only global notification plus scoped REST refetch is smaller and safer than adding socket authentication and per-user rooms for the MVP. |
-| V. Knowledge Base as Truth | ✅ PASS | The 2026-08-18 assignment/summary decision resolves the stale search-loop flow explicitly; contract drift in shared TypeScript is corrected toward the active YAML. |
-| VI. Explicit Over Implicit | ✅ PASS | Viewer scope is an explicit `string | null` argument at controller/service/repository boundaries; listener ownership and private-trigger redaction are explicit. |
-| Security constraint | ✅ PASS | Every leaderboard read uses `userId IS NULL OR userId = currentUserId`; anonymous uses `userId IS NULL`; realtime never broadcasts private rows. |
+| I. Architecture Quality | PASS | Adds one frontend provider within the existing Frontend/Auth/Infrastructure boundaries; no ad-hoc backend module or service. |
+| II. Contract-Driven | PASS | Active auth/events YAML remains the wire SSoT. Only the feature-local client semantics contract is clarified; no wire field changes. |
+| III. Demonstrable Extension Points | PASS | No extension point is claimed. Cross-route, reconnect, and identity behavior is demonstrable through provider integration/E2E tests. |
+| IV. Simplicity Over Cleverness | PASS | Reuses the shared socket and current-session REST instead of adding rooms, socket identity, or another cache library. |
+| V. Knowledge Base as Truth | PASS | Uses the synchronized 2026-08-24 leaderboard and global-loop KB decisions. |
+| VI. Explicit Over Implicit | PASS | Provider placement, viewer key, generation, exact handler, cache keys, and cleanup boundary are named and testable. |
+| Security constraint | PASS | Only accepted caller-scoped REST snapshots enter a viewer cache; event payload rows are never applied or filtered client-side. |
 
 ## Architecture Decision
 
-**Approach**: In-place modular-monolith extension with repository-level viewer scoping, end-to-end event identity propagation, and privacy-safe global invalidation over the existing socket channel.
+**Approach**: In-place frontend ownership refactor on top of the already-delivered scoped REST and safe-invalidation backend.
 
-**Rationale**: `LeaderboardEntry` is owned by Event Infrastructure, so its repository is the authoritative place to apply the visibility predicate before best-per-version selection and Top-K. Controllers extract identity through the existing Auth module and services pass it explicitly. The queue worker is the existing bridge from `BacktestRequested` to `BacktestCompleted`, so it must persist and republish the producer's `userId`. The gateway cannot safely send private Top-K with `server.emit`, and the repository currently has no socket handshake identity. A safe system snapshot used as an invalidation signal avoids inventing a room protocol while letting each browser recover its own private view through authenticated REST.
+**Rationale**: Dashboard and `/leaderboard` currently mount independent hooks, so state and handler lifetime are tied to pages. Moving ownership above `AppShell` makes the lifetime match the browser application/session, keeps live reconciliation active off-route, and provides a single identity boundary for cache/request invalidation.
 
-**Modules affected**: Auth consumption; Event Infrastructure Leaderboard, Loop, Dashboard, Queue Worker; Strategy-owned result persistence port; shared contracts/types; Frontend dashboard and leaderboard hooks/components.
+**Modules affected**: Frontend application shell, Auth consumption, shared Infrastructure socket consumption, Dashboard consumer hook, Leaderboard consumer hook/page. Event Infrastructure/Auth backend code remains regression-only.
 
-**E2E flows affected**: Leaderboard Update; Strategy Backtest identity propagation; Strategy Search Loop only as a global producer with `userId = null`; Dashboard Realtime; Leaderboard REST detail.
+**E2E flows affected**: `kb/flows/leaderboard-update.md`; `kb/flows/strategy-search-loop.md` only to assert that browser actions issue zero loop lifecycle commands.
 
-**New modules needed**: None.
+**New modules needed**: None. `LeaderboardLiveProvider` is a frontend context within the existing Frontend module, not a new domain module.
 
-### Realtime Privacy Decision
-
-The existing `PushGateway` relays the bus payload unchanged with `server.emit`. Client-side filtering is rejected because the private data has already crossed the authorization boundary. Per-user Socket.IO rooms are also rejected for this feature because they would require a new socket-auth contract, token refresh/handshake behavior, room lifecycle, and gateway integration suite.
-
-The selected wire behavior is:
-
-1. `LeaderboardService` persists the completion with its `userId`.
-2. It builds the emitted `LeaderboardUpdated.topK` with viewer scope null, which means system entries only.
-3. It builds `updatedAt` using the same system-only scope.
-4. `triggeredByBacktestResultId` is the result ID only for a system completion; it is null for a private completion.
-5. `PushGateway` can continue exact relay because the producer guarantees a safe payload; gateway tests enforce that private entries never reach `server.emit`.
-6. Frontend handlers do not apply `topK` directly. Receipt means “the leaderboard may have changed”; an ON client refetches its REST-scoped snapshot.
-
-**Trade-off**: Every connected live client performs a REST read for each update, including private updates it cannot see. This is acceptable for the course MVP and produces no cross-user payload disclosure. If fan-out becomes material, a later ADR may add authenticated per-user rooms or coalesced invalidations; neither is introduced here.
-
-## Current-Code Findings
-
-| Path | Current behavior | Planned correction |
-|------|------------------|--------------------|
-| `workspace/libs/shared/src/events/index.ts` | `BacktestRequestedPayload` has `userId`; `BacktestCompletedPayload` does not. | Add required `userId: string | null` to completion payload. |
-| `workspace/libs/shared/src/types/infrastructure.ts` | `LeaderboardEntryPayload` omits contract-required `userId`. | Add required `userId: string | null`. |
-| `workspace/apps/backend/src/queue/backtest.worker.ts` | Worker does not pass `userId` to result persistence or completion event. | Copy `payload.userId` to both boundaries. |
-| `workspace/apps/backend/src/strategy/ports/backtest-result.port.ts` | Persistence accepts the shared create type, but version detail mapping drops `userId`. | Persist input `userId` through the existing spread and map user ownership fields explicitly in detail projections. |
-| `workspace/apps/backend/src/leaderboard/leaderboard.repository.ts` | Create/map omit `userId`; reads load all rows; API returns persisted global ranks. | Add identity propagation and viewer-scoped queries; filter before best-per-version/Top-K; assign view-local `1..N` ranks. |
-| `workspace/apps/backend/src/leaderboard/leaderboard.service.ts` | List/detail have no viewer argument; emitted Top-K is global. | Pass viewer scope for REST; emit system-only safe notification after each completion. |
-| `workspace/apps/backend/src/leaderboard/leaderboard.controller.ts` | No auth guard or current-user parameter. | Apply `SupabaseJwtGuard`; pass `@CurrentUser()` to list/detail. |
-| `workspace/apps/backend/src/loop/loop.controller.ts` | No auth context and exposes global commands/reads. | Apply guard/decorator to methods but never pass user ID as a loop repository filter; backend loop remains global. |
-| `workspace/apps/backend/src/dashboard/dashboard.controller.ts` | Summary has no current-user context. | Guard summary and pass current user to its leaderboard projection. |
-| `workspace/apps/backend/src/dashboard/push.gateway.ts` | Exact namespace-wide relay of potentially private payload. | Preserve exact relay only after producer payload is guaranteed system-safe; add explicit privacy regression tests. |
-| `workspace/apps/frontend/src/hooks/use-leaderboard.ts` | Applies `topK` directly and always owns a listener. | Treat event as invalidation/refetch; retain sort, selection, generations, and scoped `updatedAt` watermark. |
-| `workspace/apps/frontend/src/hooks/use-dashboard-summary.ts` | Applies event `topK` directly; no live preference. | Add Live state; conditionally own only the leaderboard listener; preserve loop listeners; refetch and merge without stale overwrite. |
-| `workspace/apps/frontend/src/components/dashboard/loop-status-panel.tsx` | Renders start/pause/resume/stop commands. | Remove command UI and expose accessible Live updates switch alongside read-only global-loop status. |
-| `workspace/apps/frontend/src/app/page.tsx` | Constructs loop start config and passes command API. | Remove end-user loop-command wiring; pass Live state/callback from dashboard hook. |
-
-## End-to-End `userId` Trace
+### Provider Placement
 
 ```text
-USER request
-StrategyController @CurrentUser()
-  -> BacktestRequested.userId = currentUserId
-  -> BullMQ stored payload preserves userId
-  -> BacktestWorker saves BacktestResult.userId
-  -> BacktestWorker publishes BacktestCompleted.userId
-  -> LeaderboardService creates LeaderboardEntry.userId
-
-SEARCH_LOOP request
-StrategyLoopService sets userId = null
-  -> same queue/worker/completion/leaderboard path
-  -> system BacktestResult and LeaderboardEntry keep userId = null
-
-REST viewer
-SupabaseJwtGuard -> @CurrentUser() -> service -> repository
-  -> filter visible rows
-  -> best per strategy version
-  -> sort and slice Top-K
-  -> assign response ranks 1..N
-  -> calculate updatedAt from the same visible rows
+RootLayout
+  ErrorBoundary
+    AuthProvider
+      InfrastructureProvider            owns shared socket connect/disconnect
+        LeaderboardLiveProvider         owns feature preference/cache/listener/generations
+          AppShell
+            Dashboard route             consumes SCORE snapshot
+            /leaderboard route          consumes selected-criterion snapshot
+            all other routes            provider remains mounted and reconciles while ON
 ```
 
-No component may infer ownership from `strategyVersionId`, `loopRunId`, or a later database lookup. The producer-supplied nullable user ID is carried unchanged.
+Client-side page unmount is not a cleanup boundary. Only `LeaderboardLiveProvider` unmount removes its exact `leaderboard:update` handler and aborts its requests. `InfrastructureProvider` alone owns shared socket disconnect at application teardown.
+
+## Verified Baseline and Remaining Gap
+
+| Area | Verified current state | Plan action |
+|------|------------------------|-------------|
+| Backend ownership/scoping | USER/null ownership propagation, scoped list/detail/rank/`updatedAt`, system-only invalidation, and global loop behavior are implemented and tested. | Regression only; no backend or wire change. |
+| Persisted preference | `use-leaderboard-live-preference.ts` persists `crypto-strategy-lab:leaderboard-live`; absent/malformed/unavailable storage resolves OFF. | Keep as an internal provider dependency; route hooks stop reading it directly. |
+| Dashboard hook | Owns Dashboard cache and a conditional `leaderboard:update` listener. | Retain loop/queue summary behavior; remove leaderboard listener/cache ownership and compose provider SCORE snapshot. |
+| Leaderboard hook | Owns a separate cache, preference subscription, reconnect handling, and `leaderboard:update` listener. | Convert to a provider consumer adapter; retain public sort/selection/refetch shape where useful. |
+| Root layout | `AuthProvider -> InfrastructureProvider -> AppShell`; no leaderboard provider. | Insert `LeaderboardLiveProvider` below both prerequisite providers and above `AppShell`. |
+| Cross-route cache | No application-level cache; page unmount discards snapshots. | Add viewer-stamped snapshots by criterion, persisted as one current-viewer envelope. |
+| Identity transition | Page hooks have request generations but no A->B/A->anonymous application boundary. | Gate reads by current viewer key, clear memory/storage, abort requests, and advance identity generation before exposing the new viewer. |
+
+## State Ownership and Public Provider API
+
+`workspace/apps/frontend/src/contexts/leaderboard-live-context.tsx` owns:
+
+- `isLive` and `setIsLive(value)` using the existing preference key; only explicit user action writes the value.
+- `viewerKey`: verified `user.id`, the literal `anonymous`, or unresolved while Auth is loading.
+- `snapshotsByCriterion`: accepted REST snapshots stamped with `viewerKey`, criterion, identity generation, request generation, and `updatedAt` watermark.
+- `activeCriterion` and `selectedStrategyVersionId`, so live updates do not reset route view state and navigation can reuse it.
+- `loading`, `error`, `isStale`, and `lastSuccessfulAt` for the currently selected snapshot.
+- a stable `reconcile(criteria, reason)` operation and public `refetch(criterion?)` for explicit retry/sort/bootstrap reads.
+- one stable `leaderboard:update` handler and all provider-owned `AbortController` instances.
+
+The context exposes a typed consumer surface equivalent to:
+
+```ts
+interface LeaderboardLiveContextValue {
+  isLive: boolean;
+  setIsLive(value: boolean): void;
+  scoreSnapshot: LeaderboardSnapshot | null;
+  activeSnapshot: LeaderboardSnapshot | null;
+  activeCriterion: RankingCriterion;
+  setActiveCriterion(value: RankingCriterion): Promise<void>;
+  selectedStrategyVersionId: string | null;
+  setSelectedStrategyVersionId(value: string | null): void;
+  loading: boolean;
+  error: Error | null;
+  isStale: boolean;
+  lastSuccessfulAt: Date | null;
+  refetch(criterion?: RankingCriterion): Promise<void>;
+}
+```
+
+Dashboard consumes `scoreSnapshot.entries.slice(0, 5)`. `/leaderboard` consumes `activeSnapshot`. Neither consumer receives the socket through this API or registers `leaderboard:update`.
+
+## Cache and Persistence Model
+
+- Preference key remains `crypto-strategy-lab:leaderboard-live`; missing, invalid, or inaccessible storage means OFF.
+- Accepted snapshots use `crypto-strategy-lab:leaderboard-cache:v1` as one replaceable envelope stamped with the exact viewer key. The provider never stores the event payload as a snapshot.
+- The envelope can contain SCORE and the retained active criterion. SCORE is always reconciled because it is the Dashboard cache; if the active criterion differs, it is reconciled in the same provider cycle.
+- On reload/browser restart, the provider waits for Auth resolution, restores only an exact viewer-key match, and otherwise discards the whole envelope. It does not filter rows from a mismatched cache.
+- If OFF and no valid current-viewer snapshot exists, one explicit bootstrap REST read establishes a displayable frozen snapshot. Thereafter events and reconnects cannot mutate it. User-initiated sort/retry may perform an explicit read without enabling Live.
+- Storage failure never enables Live and never permits a prior-viewer snapshot to render; the provider falls back to memory plus a current-session bootstrap.
+
+## Listener, Re-enable, and Reconnect Lifecycle
+
+### ON
+
+1. Attach the provider's stable handler with `socket.on('leaderboard:update', handler)`.
+2. Start current-session catch-up only after subscription is registered.
+3. On every safe invalidation, ignore event `topK` as viewer state and refetch SCORE plus the retained active criterion when different.
+4. Commit only if viewer key, identity generation, request generation, and watermark are still current.
+
+### OFF
+
+1. Remove the same handler reference with `socket.off('leaderboard:update', handler)`.
+2. Keep preference, current-viewer snapshots, sort, selection, and timestamps.
+3. Ignore leaderboard events and reconnect as automatic refresh causes.
+4. Do not disconnect the shared socket and do not affect loop/queue/connection listeners.
+
+### Re-enable
+
+Attach first, then refetch. An event racing with catch-up creates a newer request generation; the older response cannot commit. Repeated toggles leave one handler when ON and zero when OFF.
+
+### Reconnect
+
+The provider observes the shared Infrastructure connection status. A transition back to connected reconciles current-session REST only when ON. OFF remains OFF and frozen. Reconnect never writes the preference.
+
+## Identity and Request Race Protection
+
+1. Derive the current viewer key from `useAuth()` only after `loading` is false.
+2. Every cache envelope and request captures `viewerKey`, `identityGeneration`, and `requestGeneration`.
+3. Context selectors return a snapshot only when its viewer key equals the current resolved viewer. Therefore the render caused by A->B or A->anonymous exposes loading/empty state, never A data.
+4. In a provider layout effect, a viewer-key change advances identity generation, aborts all old controllers, clears memory/watermarks/selection, and removes the old persisted envelope before the new screen paints.
+5. The stable event handler reads the latest viewer reference; it does nothing while identity is unresolved.
+6. A response commits only when its captured viewer/generations still match. Successful delayed A responses are discarded for B/anonymous even if transport abort was ineffective.
+7. The browser-local ON/OFF preference is not identity-owned and survives the transition without being toggled.
 
 ## Source Code Structure
 
-### Shared contract alignment
+### Create
 
-- `kb/contracts/events.yaml`: document safe global `LeaderboardUpdated` semantics and make `triggeredByBacktestResultId` nullable for private-trigger redaction.
-- `workspace/libs/shared/src/events/index.ts`: add completion `userId` and nullable trigger type.
-- `workspace/libs/shared/src/types/infrastructure.ts`: add leaderboard-entry `userId`.
-- `workspace/libs/shared/src/types/strategy.ts`: keep existing optional result ownership; no schema redesign.
+- `workspace/apps/frontend/src/contexts/leaderboard-live-context.tsx`: provider, typed context, cache hydration/persistence, one handler, reconciliation, identity generation, and consumer hook.
+- `workspace/apps/frontend/src/contexts/leaderboard-live-context.spec.tsx`: provider lifecycle, persistence, off-route, reconnect, cleanup, anonymous/A/B, and delayed-request tests.
 
-### Backend identity propagation
+### Modify
 
-- `workspace/apps/backend/src/strategy/controllers/strategy.controller.ts`: existing USER producer remains the source of authenticated `userId`; regression tests only unless a type update requires fixture edits.
-- `workspace/apps/backend/src/loop/strategy-loop.service.ts`: existing SEARCH_LOOP producer remains explicitly null; regression tests prove this invariant.
-- `workspace/apps/backend/src/queue/backtest.worker.ts`: pass user ID to result persistence and completion.
-- `workspace/apps/backend/src/queue/backtest.worker.spec.ts`: prove USER and SEARCH_LOOP propagation.
-- `workspace/apps/backend/src/strategy/ports/backtest-result.port.ts`
-- `workspace/apps/backend/src/strategy/ports/backtest-result.port.spec.ts`
+- `workspace/apps/frontend/src/app/layout.tsx`: insert provider at the canonical boundary.
+- `workspace/apps/frontend/src/hooks/use-leaderboard-live-preference.ts`: keep storage parsing/notification as provider-internal support; export no page ownership behavior.
+- `workspace/apps/frontend/src/hooks/use-dashboard-summary.ts`: retain global loop/queue summary subscriptions and fetches; consume provider SCORE leaderboard and remove every `leaderboard:update` registration.
+- `workspace/apps/frontend/src/hooks/use-dashboard-summary.spec.tsx`: assert composition from provider and zero page-level leaderboard handlers.
+- `workspace/apps/frontend/src/hooks/use-leaderboard.ts`: become a context adapter for active criterion, selection, snapshot, and explicit refetch; remove socket/preference/listener ownership.
+- `workspace/apps/frontend/src/hooks/use-leaderboard.spec.tsx`: assert shared cache consumption, stable sort/selection, and zero independent listener.
+- `workspace/apps/frontend/src/services/api-client.ts`: allow provider leaderboard reads to receive an optional `AbortSignal`; HTTP paths and response fields remain unchanged.
+- `workspace/apps/frontend/src/app/leaderboard/page.tsx`: consume provider-backed hook; use Infrastructure only for connection presentation, not listener injection.
+- `workspace/apps/frontend/src/app/page.tsx` and `workspace/apps/frontend/src/app/page.spec.tsx`: preserve the existing Dashboard-facing hook contract while sourcing Live state/SCORE snapshot from provider.
+- `workspace/apps/frontend/src/components/common/app-shell.spec.tsx`: verify canonical provider placement/lifetime and that route consumers do not own socket teardown.
+- `workspace/apps/frontend/e2e/leaderboard.spec.ts`: add real client-side navigation, reload/restart-state, reconnect, listener-count, and identity-transition scenarios.
+- `workspace/apps/frontend/e2e/infrastructure-fixture.mjs`: support deterministic current-session snapshots, delayed A responses, identity changes, reconnect, and safe invalidation only; no production room/auth protocol.
 
-### Backend scoped reads and safe publication
+### SDD Artifacts
 
-- `workspace/apps/backend/src/leaderboard/leaderboard.repository.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.repository.spec.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.service.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.service.spec.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.controller.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.controller.spec.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.integration.spec.ts`
-- `workspace/apps/backend/src/leaderboard/leaderboard.module.ts`: import `AuthModule`.
-- `workspace/apps/backend/src/loop/loop.controller.ts`
-- `workspace/apps/backend/src/loop/loop.controller.spec.ts`
-- `workspace/apps/backend/src/loop/loop.module.ts`: import `AuthModule`.
-- `workspace/apps/backend/src/dashboard/dashboard.controller.ts`
-- `workspace/apps/backend/src/dashboard/dashboard.service.ts`
-- `workspace/apps/backend/src/dashboard/dashboard.service.spec.ts`
-- `workspace/apps/backend/src/dashboard/dashboard.integration.spec.ts`
-- `workspace/apps/backend/src/dashboard/dashboard.module.ts`: import `AuthModule`.
-- `workspace/apps/backend/src/dashboard/push.gateway.ts`
-- `workspace/apps/backend/src/dashboard/push.gateway.spec.ts`
+- `sdd_artifacts/per-user-leaderboard-live-toggle/plan.md`
+- `sdd_artifacts/per-user-leaderboard-live-toggle/research.md`
+- `sdd_artifacts/per-user-leaderboard-live-toggle/data-model.md`
+- `sdd_artifacts/per-user-leaderboard-live-toggle/contracts/leaderboard-realtime.md`
+- `sdd_artifacts/per-user-leaderboard-live-toggle/quickstart.md`
 
-### Frontend toggle and catch-up
-
-- `workspace/apps/frontend/src/hooks/use-leaderboard.ts`
-- `workspace/apps/frontend/src/hooks/use-leaderboard.spec.tsx`
-- `workspace/apps/frontend/src/hooks/use-dashboard-summary.ts`
-- `workspace/apps/frontend/src/hooks/use-dashboard-summary.spec.tsx`
-- `workspace/apps/frontend/src/components/dashboard/loop-status-panel.tsx`
-- `workspace/apps/frontend/src/components/dashboard/loop-status-panel.spec.tsx`
-- `workspace/apps/frontend/src/components/dashboard/dashboard-grid.spec.tsx`
-- `workspace/apps/frontend/src/components/dashboard/leaderboard-preview.spec.tsx`
-- `workspace/apps/frontend/src/app/page.tsx`
-- `workspace/apps/frontend/src/app/leaderboard/page.tsx`: no new room protocol; existing always-live full leaderboard uses invalidation/refetch semantics.
-- `workspace/apps/frontend/src/services/infrastructure-socket.ts`: no functional change; regression assertion proves toggle never calls the exported disconnect seam.
-
-### E2E
-
-- `workspace/apps/backend/test/per-user-leaderboard.e2e-spec.ts`: add anonymous/A/B list, detail anti-enumeration, dashboard scope, global-loop read, and privacy-safe socket acceptance.
-- `workspace/apps/frontend/e2e/leaderboard.spec.ts`: add Live ON/OFF/re-enable, reconnect, sort/selection retention, and absence of loop command requests.
-- `workspace/apps/frontend/e2e/infrastructure-fixture.mjs`: add a test-only HTTP trigger that emits the privacy-safe `leaderboard:update` notification; do not add rooms or auth behavior.
+No backend source, Prisma schema/migration, KB YAML wire contract, or auth contract change is planned.
 
 ## Implementation Phases
 
-### Phase 0 - Contract and RED tests
+### Phase 0 - Preserve Delivered Backend and Contract Baseline
 
-1. Amend `kb/contracts/events.yaml` and the feature contracts to declare required user fields and safe global notification semantics before source changes.
-2. Update shared-type compile fixtures and add failing tests for `BacktestCompleted.userId`, `LeaderboardEntryPayload.userId`, nullable private trigger, USER propagation, and SEARCH_LOOP null propagation.
-3. Add failing repository/service/controller tests for anonymous, A, B, list, detail, Top-K-before-filter, scoped `updatedAt`, and view-local ranks.
-4. Add failing gateway tests that reject any private `topK` row or private trigger ID at `server.emit`.
-5. Replace frontend command-oriented component expectations with failing read-only/toggle expectations and add hook lifecycle/race tests.
+1. Run existing scoped REST, safe-invalidation, USER/null propagation, and global-loop tests as regression gates.
+2. Add source assertions that `kb/contracts/events.yaml` and `kb/contracts/auth.yaml` remain wire-compatible.
 
-### Phase 1 - Identity propagation
+### Phase 1 - RED Provider Contract Tests
 
-1. Align shared interfaces with YAML.
-2. Pass `payload.userId` into `BacktestResultPort.save` and `BacktestCompleted` in the worker.
-3. Carry completion `userId` into `LeaderboardCreateInput`, Prisma create, repository mapper, and all response fixtures.
-4. Verify system-loop requests remain null and no `SearchLoopRun`/`SearchLoopCandidate` field changes occur.
+1. Add failing provider tests for default OFF, persisted ON/OFF, one handler, subscribe-before-refetch, event/refetch races, and exact cleanup.
+2. Add failing navigation tests proving Dashboard and `/leaderboard` unmounts do not clean up provider state/listener.
+3. Add failing anonymous/A/B and A->B/A->anonymous tests, including a delayed A response that resolves successfully after the boundary.
+4. Add failing reload/cache-hydration and reconnect ON/OFF tests.
 
-### Phase 2 - Scoped backend reads
+### Phase 2 - Provider and Root Ownership
 
-1. Add one repository visibility predicate helper: anonymous maps to `{ userId: null }`; authenticated maps to `OR [{ userId: null }, { userId: currentUserId }]`.
-2. Require viewer ID on `getTopK`, `findBestByStrategyVersionId`, and `getUpdatedAt`.
-3. Filter rows before best-per-version selection and Top-K slicing. Map list results with `rank = index + 1`.
-4. For detail, rank the visible best-per-version SCORE projection first, then find the requested strategy version so the returned rank is viewer-local and an out-of-scope ID yields null/404.
-5. Thread viewer ID through Leaderboard and Dashboard services/controllers.
-6. Add `SupabaseJwtGuard`/`@CurrentUser()` to Leaderboard, Loop, and Dashboard controllers. Loop methods accept auth context but do not pass it into loop state reads/writes.
+1. Implement the provider context, persisted viewer envelope, criterion cache, stable handler, and request/identity generations.
+2. Mount it below Auth/Infrastructure in `app/layout.tsx`.
+3. Add optional `AbortSignal` support to the internal leaderboard REST client.
 
-### Phase 3 - Privacy-safe realtime
+### Phase 3 - Route Consumer Refactor
 
-1. After each completion, build `LeaderboardUpdated` from repository reads using null viewer scope.
-2. Redact `triggeredByBacktestResultId` for private completion; assert every emitted `topK` entry has null `userId`.
-3. Keep `PushGateway` exact relay and lifecycle isolation, but strengthen unit/integration assertions so private payloads cannot reach namespace `server.emit`.
-4. Change `useLeaderboard` and `useDashboardSummary` to treat the channel as an invalidation and refetch REST rather than applying event `topK`.
+1. Convert `useDashboardSummary` to compose provider SCORE Top-5 with its global loop/queue state.
+2. Convert `useLeaderboard` and `/leaderboard` to the provider's active snapshot/view state.
+3. Remove all page-hook `leaderboard:update` registrations and page-unmount cleanup for this feature.
+4. Preserve the accessible toggle and its explicit statement that OFF does not stop the system loop.
 
-### Phase 4 - Live toggle and global-loop UI
+### Phase 4 - Integration and E2E
 
-1. Add `liveUpdatesEnabled` (default true) and a setter to dashboard state.
-2. Keep connect/disconnect and `loop:*` handlers registered independently of the toggle.
-3. When ON, attach exactly one stable leaderboard handler before catch-up refetch. When OFF or unmounted, remove that exact handler only.
-4. Preserve the visible leaderboard during OFF reconnect/background summary refresh; loop/queue status may continue updating.
-5. On re-enable, increment/refetch through the existing request-generation path. A later invalidation starts a newer generation; an older response cannot overwrite it. Accepted snapshots advance a scoped `updatedAt` watermark.
-6. Remove loop command props/state/buttons from `LoopStatusPanel` and Home; render the accessible `role="switch"`/`aria-checked` Live updates control with explanatory text that the system loop continues.
+1. Validate ON and OFF through Dashboard -> other route -> `/leaderboard` -> Dashboard.
+2. Validate off-route invalidation, return-to-Dashboard cache continuity, subscribe-before-refetch, and reconnect.
+3. Validate provider cleanup separately from page unmount.
+4. Validate anonymous, A, B, A->B, A->anonymous, and delayed A responses.
 
-### Phase 5 - Verification
+### Phase 5 - Full Verification
 
-1. Run targeted shared/backend/frontend tests.
-2. Run integration tests with system, A, and B fixtures.
-3. Run backend and frontend E2E, including two concurrent user contexts and the real Socket.IO namespace fixture.
-4. Run builds, full test suites, lint with post-lint diff inspection, and `git diff --check`.
-5. Manually verify Network: bearer REST, no loop POST from toggle, no socket disconnect, no private B data in A payloads or responses.
+Run targeted frontend suites, full frontend tests, TypeScript, builds, feature-scoped configured lint rules plus non-mutating format checks with diff inspection, backend regression gates, Playwright, and `git diff --check`. Repository-wide lint/format remains a diagnostic for separately owned technical debt and does not block this feature when the exact feature file set is clean; this feature-scoped release-gate interpretation was explicitly approved on 2026-08-24.
 
-## Test Matrix
+## Requirement and Acceptance Mapping
 
-| Level | Exact files | Required evidence |
-|-------|-------------|-------------------|
-| Shared/type | `workspace/libs/shared/src/events/index.ts`, `workspace/libs/shared/src/types/infrastructure.ts`; compiler/build fixtures across affected specs | Required `userId` fields match YAML and all producers/consumers compile. |
-| Worker unit | `workspace/apps/backend/src/queue/backtest.worker.spec.ts` | USER ID saved and completed unchanged; SEARCH_LOOP stays null. |
-| Strategy port unit | `workspace/apps/backend/src/strategy/ports/backtest-result.port.spec.ts` | Persisted/mapped ownership survives idempotent save and detail projection. |
-| Repository unit | `workspace/apps/backend/src/leaderboard/leaderboard.repository.spec.ts` | Anonymous/system only; A=system+A; B=system+B; filter before best/Top-K; ranks `1..N`; scoped `updatedAt`; detail selection scoped. |
-| Service unit | `workspace/apps/backend/src/leaderboard/leaderboard.service.spec.ts` | Entry ownership propagation; private-safe event; cross-user detail null; scoped arguments forwarded. |
-| Controller unit/integration | `workspace/apps/backend/src/leaderboard/leaderboard.controller.spec.ts`, `workspace/apps/backend/src/leaderboard/leaderboard.integration.spec.ts`, `workspace/apps/backend/src/loop/loop.controller.spec.ts` | Guard/decorator metadata and A/B delegation; 404 anti-enumeration; loop identity ignored for global state. |
-| Dashboard unit/integration | `workspace/apps/backend/src/dashboard/dashboard.service.spec.ts`, `workspace/apps/backend/src/dashboard/dashboard.integration.spec.ts` | Scoped Top-5/updatedAt; global loop and queue unchanged. |
-| Gateway unit/integration | `workspace/apps/backend/src/dashboard/push.gateway.spec.ts`, `workspace/apps/backend/src/dashboard/dashboard.integration.spec.ts` | Exact channel relay, system-only rows, null private trigger, no lifecycle regressions. |
-| Frontend hook | `workspace/apps/frontend/src/hooks/use-leaderboard.spec.tsx`, `workspace/apps/frontend/src/hooks/use-dashboard-summary.spec.tsx` | Invalidation refetch; listener-first re-enable; request generation/watermark; ON/OFF/reconnect; loop listeners unaffected. |
-| Frontend component | `workspace/apps/frontend/src/components/dashboard/loop-status-panel.spec.tsx`, `dashboard-grid.spec.tsx`, `leaderboard-preview.spec.tsx` | Accessible switch; frozen snapshot; no command controls/calls; read-only system status. |
-| Backend E2E | `workspace/apps/backend/test/per-user-leaderboard.e2e-spec.ts` | Anonymous/A/B REST isolation, foreign detail 404, dashboard isolation, same global loop, safe socket payload. |
-| Frontend E2E | `workspace/apps/frontend/e2e/leaderboard.spec.ts`, `workspace/apps/frontend/e2e/infrastructure-fixture.mjs` | ON updates via refetch, OFF freezes, re-enable catches up, reconnect respects OFF, no duplicate listener symptoms, no loop POST/socket disconnect. |
+| Spec coverage | Design/verification |
+|---------------|---------------------|
+| US1 scenarios 1-9; FR-001..007, FR-020; SC-001..003 | Delivered backend scoped REST/identity propagation remains a regression gate; provider accepts only current-session REST snapshots. |
+| US2 scenarios 1-5; FR-008..009, FR-017; SC-007..008 | Global loop remains backend-owned/read-only; provider and toggle issue zero loop lifecycle calls. |
+| US3 scenarios 1-9; FR-010..018, FR-022; SC-004..007, SC-010 | Preference/cache model, accessible toggle, subscribe-before-refetch, exact handler, OFF freeze, sort/selection preservation, and shared-socket isolation tests. |
+| US4 scenarios 1-9; FR-019..021, FR-027, FR-030; SC-003, SC-006..008, SC-012 | Safe-invalidation regression plus provider reconnect/cleanup and three-actor integration tests. |
+| US5 scenarios 1-8; FR-011, FR-014..016, FR-023..027; SC-005..006, SC-009..010, SC-012 | Root placement, route-navigation tests, off-route REST reconciliation, shared `/leaderboard` cache, and provider-only cleanup. |
+| US5 scenarios 9-14; FR-019..020, FR-028..030; SC-011 | Viewer-stamped hydration, render gating, abort plus dual generation checks, and A->B/A->anonymous delayed-response tests. |
 
-## Migration and Data Notes
+All 30 functional requirements, 46 acceptance scenarios, and 12 success criteria map to either the delivered regression baseline or the cross-route provider work above.
 
-- `workspace/apps/backend/prisma/schema.prisma` already contains nullable `userId` on `StrategyVersion`, `BacktestResult`, and `LeaderboardEntry`.
-- This feature creates no Prisma migration and changes no `SearchLoopRun` or `SearchLoopCandidate` field.
-- No new index is added because that would require a migration. Dataset size and Top-K are bounded for the course MVP; a future measured optimization may add a `LeaderboardEntry(userId, updatedAt)` index through a separately reviewed migration.
-- Existing global stored `rank` may remain for persistence compatibility. Public list/detail projections compute viewer-local ranks after filtering; they do not trust the stored global rank.
+## Superseded Decisions
+
+- The old Phase 4 statement `liveUpdatesEnabled (default true)` is superseded by persisted explicit choice with absent/invalid storage defaulting OFF.
+- Page hooks owning `leaderboard:update` and cleaning it up on Dashboard or `/leaderboard` unmount are superseded by provider-only ownership and cleanup.
+- The old research decision to separate leaderboard listener effects inside `useDashboardSummary` is superseded by removing the listener from that hook entirely.
+- `/leaderboard` being an independent always-live hook/cache is superseded by provider-backed state.
+- Memory-only snapshot ownership is superseded by a viewer-stamped accepted cache envelope so OFF can remain frozen through reload/restart without rendering a prior identity.
+- Earlier references to a stale Search Loop KB conflict are superseded; the 2026-08-24 KB now consistently defines one global system process.
+
+## Known Conflict and Mitigation
+
+- **Pre-existing Auth contract drift**: `kb/contracts/auth.yaml` says an invalid/expired bearer token returns 401, while `SupabaseJwtGuard` currently catches verification failure and continues as anonymous. This plan does not change auth semantics because the request explicitly forbids it. The provider treats the resulting verified AuthContext identity as authoritative, never reuses an old viewer cache, and the drift remains an Auth-owner follow-up.
+- **Version documentation drift**: KB lists Next.js 15/Jest 29 while the checked workspace uses Next.js 16.3/Jest 30. The plan uses installed versions and introduces no upgrade. This is non-blocking.
+
+There is no remaining conflict among the feature spec, leaderboard/search-loop KB flows, event wire contract, and selected provider architecture.
 
 ## Constitution Re-check After Design
 
-All gates remain PASS. The design introduces no new technology, module, database model, migration, or cross-module database access. The only contract amendment narrows global realtime exposure and is documented before implementation. No complexity exception is required.
+All gates remain PASS. The design adds no technology, backend module, wire/auth field, room protocol, namespace, database model, migration, client privacy filter, shared-socket disconnect, or per-user Search Loop. No Complexity Tracking exception is required.
 
 ## Complexity Tracking
 

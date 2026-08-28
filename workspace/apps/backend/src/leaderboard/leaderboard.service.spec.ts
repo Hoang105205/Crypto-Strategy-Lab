@@ -60,13 +60,29 @@ interface LeaderboardRepositoryApi {
   getTopK(
     criterion: RankingCriterion,
     viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
   ): Promise<LeaderboardEntryPayload[]>;
-  getUpdatedAt(viewerUserId?: string | null): Promise<Date>;
+  getUpdatedAt(
+    viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
+  ): Promise<Date>;
   findBestByStrategyVersionId(
     strategyVersionId: string,
     viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
   ): Promise<LeaderboardEntryPayload | null>;
+  findSourceReferences(): Promise<
+    Array<{
+      id: string;
+      userId: string | null;
+      strategyVersionId: string;
+      backtestResultId: string;
+    }>
+  >;
+  deleteByIds(ids: readonly string[]): Promise<number>;
 }
+
+type LeaderboardScopeValue = 'system' | 'mine' | 'combined';
 
 interface ScoringPolicyApi {
   calculateScore(input: {
@@ -84,7 +100,11 @@ interface LeaderboardServiceApi {
   handleBacktestCompleted(
     envelope: EventEnvelope<BacktestCompletedPayload, 'BacktestCompleted'>,
   ): Promise<void>;
-  getDetail(strategyVersionId: string, viewerUserId?: string | null): Promise<
+  getDetail(
+    strategyVersionId: string,
+    viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
+  ): Promise<
     | (LeaderboardEntryPayload & {
         trades: BacktestResult['trades'];
         executedAt: Date;
@@ -94,7 +114,9 @@ interface LeaderboardServiceApi {
   getLeaderboard(
     criterion?: RankingCriterion,
     viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
   ): Promise<LeaderboardSnapshot>;
+  cleanupOrphans(): Promise<number>;
 }
 
 type LeaderboardServiceConstructor = new (
@@ -266,11 +288,46 @@ const makeRepository = (
   findBestByStrategyVersionId: jest
     .fn<LeaderboardRepositoryApi['findBestByStrategyVersionId']>()
     .mockResolvedValue(leaderboardEntry()),
+  findSourceReferences: jest
+    .fn<LeaderboardRepositoryApi['findSourceReferences']>()
+    .mockResolvedValue([]),
+  deleteByIds: jest
+    .fn<LeaderboardRepositoryApi['deleteByIds']>()
+    .mockResolvedValue(0),
 });
 
 const makeResultPort = (): jest.Mocked<IBacktestResultPort> => ({
   save: jest.fn<IBacktestResultPort['save']>(),
-  getById: jest.fn<IBacktestResultPort['getById']>(),
+  getById: jest.fn<IBacktestResultPort['getById']>().mockResolvedValue({
+    id: RESULT_ID,
+    jobId: 'b8257d6b-d9df-47fb-83c1-839b04335e6f',
+    userId: null,
+    strategyVersionId: STRATEGY_VERSION_ID,
+    pair: 'BTCUSDT',
+    timeframe: '1h',
+    startDate: new Date('2026-08-01T00:00:00.000Z'),
+    endDate: new Date('2026-08-15T00:00:00.000Z'),
+    totalReturn: 20,
+    winRate: 0.6,
+    maxDrawdown: -10,
+    sharpeRatio: 1.2,
+    profitFactor: 1.5,
+    totalTrades: 0,
+    trades: [],
+    executedAt: EXECUTED_AT,
+    executionTimeMs: 250,
+    strategyVersion: {
+      id: STRATEGY_VERSION_ID,
+      userId: null,
+      strategyType: StrategyType.MA,
+      name: 'Moving Average',
+      version: 1,
+      parameters: { period: 20 },
+      isComposite: false,
+      childVersionIds: [],
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    },
+  }),
 });
 
 describe('LeaderboardService Observer contract (T021)', () => {
@@ -415,6 +472,7 @@ describe('LeaderboardService Observer contract (T021)', () => {
       expect(repository.getTopK).toHaveBeenCalledWith(
         RankingCriterion.SCORE,
         null,
+        'system',
       );
       expect(eventBus.published[0]?.payload).toMatchObject({
         topK: bestPerVersionTopK,
@@ -597,6 +655,7 @@ describe('LeaderboardService Observer contract (T021)', () => {
       expect(repository.findBestByStrategyVersionId).toHaveBeenCalledWith(
         STRATEGY_VERSION_ID,
         null,
+        'combined',
       );
       expect(resultPort.getById).toHaveBeenCalledWith(RESULT_ID);
     });
@@ -643,8 +702,12 @@ describe('T010 viewer-scoped service delegation and owner propagation', () => {
       expect(repository.getTopK).toHaveBeenCalledWith(
         RankingCriterion.SCORE,
         viewerUserId,
+        'combined',
       );
-      expect(repository.getUpdatedAt).toHaveBeenCalledWith(viewerUserId);
+      expect(repository.getUpdatedAt).toHaveBeenCalledWith(
+        viewerUserId,
+        'combined',
+      );
     },
   );
 
@@ -673,6 +736,7 @@ describe('T010 viewer-scoped service delegation and owner propagation', () => {
       expect(repository.findBestByStrategyVersionId).toHaveBeenCalledWith(
         STRATEGY_VERSION_ID,
         viewerUserId,
+        'combined',
       );
       expect(resultPort.getById).not.toHaveBeenCalled();
     },
@@ -705,6 +769,141 @@ describe('T010 viewer-scoped service delegation and owner propagation', () => {
   );
 });
 
+describe('T005 explicit scope service delegation', () => {
+  it.each(['system', 'mine', 'combined'] as const)(
+    'passes %s to list metadata and detail repository reads',
+    async (scope) => {
+      const trace: string[] = [];
+      const repository = makeRepository(trace);
+      repository.findBestByStrategyVersionId.mockResolvedValue(null);
+      const resultPort = makeResultPort();
+      const Service = loadTarget();
+      const service = new Service(
+        new EventBusFake(trace),
+        repository,
+        { calculateScore: jest.fn(() => 0.46) },
+        resultPort,
+      );
+
+      await service.getLeaderboard(
+        RankingCriterion.SHARPE_RATIO,
+        USER_A,
+        scope,
+      );
+      await service.getDetail(STRATEGY_VERSION_ID, USER_A, scope);
+
+      expect(repository.getTopK).toHaveBeenCalledWith(
+        RankingCriterion.SHARPE_RATIO,
+        USER_A,
+        scope,
+      );
+      expect(repository.getUpdatedAt).toHaveBeenCalledWith(USER_A, scope);
+      expect(repository.findBestByStrategyVersionId).toHaveBeenCalledWith(
+        STRATEGY_VERSION_ID,
+        USER_A,
+        scope,
+      );
+      expect(resultPort.getById).toHaveBeenCalledTimes(1);
+    },
+  );
+});
+
+describe('leaderboard source integrity', () => {
+  it('omits orphaned projections and resets their watermark', async () => {
+    const trace: string[] = [];
+    const repository = makeRepository(trace);
+    const resultPort = makeResultPort();
+    resultPort.getById.mockResolvedValue(null);
+    const Service = loadTarget();
+    const service = new Service(
+      new EventBusFake(trace),
+      repository,
+      { calculateScore: jest.fn(() => 0.46) },
+      resultPort,
+    );
+
+    await expect(service.getLeaderboard()).resolves.toEqual({
+      rankingCriterion: RankingCriterion.SCORE,
+      updatedAt: new Date(0),
+      entries: [],
+    });
+    expect(resultPort.getById).toHaveBeenCalledWith(RESULT_ID);
+    expect(repository.getUpdatedAt).not.toHaveBeenCalled();
+  });
+
+  it('deletes only confirmed missing or mismatched sources and reranks once', async () => {
+    const trace: string[] = [];
+    const repository = makeRepository(trace);
+    repository.findSourceReferences.mockResolvedValue([
+      {
+        id: 'entry-valid',
+        userId: null,
+        strategyVersionId: STRATEGY_VERSION_ID,
+        backtestResultId: RESULT_ID,
+      },
+      {
+        id: 'entry-missing',
+        userId: null,
+        strategyVersionId: SECOND_STRATEGY_VERSION_ID,
+        backtestResultId: SECOND_RESULT_ID,
+      },
+      {
+        id: 'entry-check-failed',
+        userId: USER_A,
+        strategyVersionId: SECOND_STRATEGY_VERSION_ID,
+        backtestResultId: '33333333-3333-4333-8333-333333333333',
+      },
+    ]);
+    repository.deleteByIds.mockResolvedValue(1);
+    const resultPort = makeResultPort();
+    resultPort.getById.mockImplementation((id) => {
+      if (id === SECOND_RESULT_ID) return Promise.resolve(null);
+      if (id === RESULT_ID) return makeResultPort().getById(id);
+      return Promise.reject(new Error('temporary source outage'));
+    });
+    const Service = loadTarget();
+    const service = new Service(
+      new EventBusFake(trace),
+      repository,
+      { calculateScore: jest.fn(() => 0.46) },
+      resultPort,
+    );
+
+    await expect(service.cleanupOrphans()).resolves.toBe(1);
+    expect(repository.deleteByIds).toHaveBeenCalledWith(['entry-missing']);
+    expect(repository.rerank).toHaveBeenCalledTimes(1);
+  });
+
+  it('deduplicates overlapping cleanup runs', async () => {
+    const trace: string[] = [];
+    const repository = makeRepository(trace);
+    let resolveReferences!: (
+      value: Awaited<
+        ReturnType<LeaderboardRepositoryApi['findSourceReferences']>
+      >,
+    ) => void;
+    repository.findSourceReferences.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReferences = resolve;
+      }),
+    );
+    const Service = loadTarget();
+    const service = new Service(
+      new EventBusFake(trace),
+      repository,
+      { calculateScore: jest.fn(() => 0.46) },
+      makeResultPort(),
+    );
+
+    const first = service.cleanupOrphans();
+    const second = service.cleanupOrphans();
+    expect(first).toBe(second);
+    resolveReferences([]);
+    await expect(first).resolves.toBe(0);
+    expect(repository.findSourceReferences).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('T020 privacy-safe namespace-wide publisher branches', () => {
   it('publishes a system completion with system Top-K, system watermark, and its allowed trigger ID', async () => {
     const trace: string[] = [];
@@ -726,8 +925,9 @@ describe('T020 privacy-safe namespace-wide publisher branches', () => {
     expect(repository.getTopK).toHaveBeenCalledWith(
       RankingCriterion.SCORE,
       null,
+      'system',
     );
-    expect(repository.getUpdatedAt).toHaveBeenCalledWith(null);
+    expect(repository.getUpdatedAt).toHaveBeenCalledWith(null, 'system');
     expect(eventBus.published).toEqual([
       {
         eventType: EventType.LeaderboardUpdated,
@@ -756,13 +956,11 @@ describe('T020 privacy-safe namespace-wide publisher branches', () => {
       }),
     ];
     const repository = makeRepository(trace);
-    repository.getTopK.mockImplementation((_criterion, viewerUserId) =>
-      Promise.resolve(viewerUserId === null ? systemTopK : privateTopK),
+    repository.getTopK.mockImplementation((_criterion, _viewerUserId, scope) =>
+      Promise.resolve(scope === 'system' ? systemTopK : privateTopK),
     );
-    repository.getUpdatedAt.mockImplementation((viewerUserId) =>
-      Promise.resolve(
-        viewerUserId === null ? systemUpdatedAt : privateUpdatedAt,
-      ),
+    repository.getUpdatedAt.mockImplementation((_viewerUserId, scope) =>
+      Promise.resolve(scope === 'system' ? systemUpdatedAt : privateUpdatedAt),
     );
     const eventBus = new EventBusFake(trace);
     const Service = loadTarget();
@@ -789,8 +987,9 @@ describe('T020 privacy-safe namespace-wide publisher branches', () => {
     expect(repository.getTopK).toHaveBeenCalledWith(
       RankingCriterion.SCORE,
       null,
+      'system',
     );
-    expect(repository.getUpdatedAt).toHaveBeenCalledWith(null);
+    expect(repository.getUpdatedAt).toHaveBeenCalledWith(null, 'system');
     expect(eventBus.published[0]).toEqual({
       eventType: EventType.LeaderboardUpdated,
       payload: {

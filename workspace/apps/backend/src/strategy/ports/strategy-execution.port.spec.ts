@@ -38,6 +38,17 @@ describe('StrategyExecutionPort', () => {
     });
   });
 
+  it('passes the authenticated user through when resolving a private version', async () => {
+    const getVersion = jest.fn(async () => baseVersion);
+    const port = createPort({}, getVersion);
+
+    await expect(port.resolveVersion(baseVersion.id, 'user-123')).resolves.toEqual({
+      version: baseVersion,
+      strategy: executable,
+    });
+    expect(getVersion).toHaveBeenCalledWith(baseVersion.id, 'user-123');
+  });
+
   it('refuses to run a historical snapshot with unsupported parameters', async () => {
     const changed = { ...baseVersion, parameters: { period: 99 } };
     const port = createPort({ [changed.id]: changed });
@@ -59,26 +70,33 @@ describe('StrategyExecutionPort', () => {
       combinerWeights: { MovingAverage: 2 },
       createdAt: new Date('2026-01-02T00:00:00.000Z'),
     };
-    const port = createPort({
+    const versions = {
       [baseVersion.id]: baseVersion,
       [composite.id]: composite,
-    });
+    };
+    const getVersion = jest.fn(async (id: string) => versions[id as keyof typeof versions]);
+    const port = createPort(versions, getVersion);
 
-    const resolved = await port.resolveVersion(composite.id);
+    const resolved = await port.resolveVersion(composite.id, 'user-123');
     expect(resolved?.version).toBe(composite);
     expect(resolved?.strategy.getName()).toBe('CompositeOne');
     expect(resolved?.strategy.getParameters()).toMatchObject({
       combinerType: CombinerType.WEIGHTED_SCORE,
       weights: { MovingAverage: 2 },
     });
+    expect(getVersion).toHaveBeenNthCalledWith(1, composite.id, 'user-123');
+    expect(getVersion).toHaveBeenNthCalledWith(2, baseVersion.id, 'user-123');
   });
 });
 
-function createPort(versions: Record<string, StrategyVersion>) {
+function createPort(
+  versions: Record<string, StrategyVersion>,
+  getVersion = jest.fn(async (id: string) => versions[id]),
+) {
   const registry = new StrategyRegistry();
   registry.register(executable);
   return new StrategyExecutionPort(
-    { getVersion: jest.fn(async (id: string) => versions[id]) } as never,
+    { getVersion } as never,
     registry,
   );
 }

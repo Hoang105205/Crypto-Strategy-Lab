@@ -41,13 +41,29 @@ interface LeaderboardRepositoryApi {
   getTopK(
     criterion: RankingCriterion,
     viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
   ): Promise<LeaderboardEntryPayload[]>;
   findBestByStrategyVersionId(
     strategyVersionId: string,
     viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
   ): Promise<LeaderboardEntryPayload | null>;
-  getUpdatedAt(viewerUserId?: string | null): Promise<Date>;
+  getUpdatedAt(
+    viewerUserId?: string | null,
+    scope?: LeaderboardScopeValue,
+  ): Promise<Date>;
+  findSourceReferences(): Promise<
+    Array<{
+      id: string;
+      userId: string | null;
+      strategyVersionId: string;
+      backtestResultId: string;
+    }>
+  >;
+  deleteByIds(ids: readonly string[]): Promise<number>;
 }
+
+type LeaderboardScopeValue = 'system' | 'mine' | 'combined';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
@@ -206,6 +222,9 @@ describe('LeaderboardRepository contract (T022)', () => {
         data: { rank: number };
       }) => Promise<LeaderboardEntry>
     >;
+    let deleteManyMock: jest.MockedFunction<
+      (args: unknown) => Promise<{ count: number }>
+    >;
     let transactionMock: jest.MockedFunction<
       (operation: unknown) => Promise<unknown>
     >;
@@ -219,6 +238,7 @@ describe('LeaderboardRepository contract (T022)', () => {
       findManyMock = jest.fn();
       findFirstMock = jest.fn();
       updateMock = jest.fn();
+      deleteManyMock = jest.fn();
       transactionMock = jest.fn((operation: unknown) => {
         if (Array.isArray(operation)) return Promise.all(operation);
         if (typeof operation === 'function') {
@@ -236,6 +256,7 @@ describe('LeaderboardRepository contract (T022)', () => {
         findMany: findManyMock,
         findFirst: findFirstMock,
         update: updateMock,
+        deleteMany: deleteManyMock,
       };
       const allowed: Record<PropertyKey, unknown> = {
         leaderboardEntry,
@@ -510,6 +531,39 @@ describe('LeaderboardRepository contract (T022)', () => {
       expect(Object.hasOwn(prisma, 'strategyVersion')).toBe(false);
       expect(Object.hasOwn(prisma, 'backtestResult')).toBe(false);
     });
+
+    it('lists ID-only source references and deletes only explicit entry IDs', async () => {
+      const stored = row();
+      const reference = {
+        id: stored.id,
+        userId: stored.userId,
+        strategyVersionId: stored.strategyVersionId,
+        backtestResultId: stored.backtestResultId,
+      };
+      findManyMock.mockResolvedValue([
+        reference as unknown as PrismaLeaderboardEntry,
+      ]);
+      deleteManyMock.mockResolvedValue({ count: 1 });
+      const repository = new Repository(prisma);
+
+      await expect(repository.findSourceReferences()).resolves.toEqual([
+        reference,
+      ]);
+      expect(findManyMock).toHaveBeenCalledWith({
+        select: {
+          id: true,
+          userId: true,
+          strategyVersionId: true,
+          backtestResultId: true,
+        },
+      });
+      await expect(repository.deleteByIds([stored.id])).resolves.toBe(1);
+      expect(deleteManyMock).toHaveBeenCalledWith({
+        where: { id: { in: [stored.id] } },
+      });
+      await expect(repository.deleteByIds([])).resolves.toBe(0);
+      expect(deleteManyMock).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -565,16 +619,16 @@ describe('T008 viewer-scoped leaderboard lists', () => {
 
       expect(result.map(({ userId }) => userId)).toEqual(expectedOwners);
       expect(result).toHaveLength(3);
-      expect(result.map(({ backtestResultId }) => backtestResultId)).not.toContain(
-        'foreign-private',
-      );
+      expect(
+        result.map(({ backtestResultId }) => backtestResultId),
+      ).not.toContain('foreign-private');
       if (viewerUserId !== USER_B) {
-        expect(result.map(({ backtestResultId }) => backtestResultId)).toContain(
-          'system-shared-version',
-        );
-        expect(result.map(({ backtestResultId }) => backtestResultId)).not.toContain(
-          'b-private-best',
-        );
+        expect(
+          result.map(({ backtestResultId }) => backtestResultId),
+        ).toContain('system-shared-version');
+        expect(
+          result.map(({ backtestResultId }) => backtestResultId),
+        ).not.toContain('b-private-best');
       }
       expect(findMany).toHaveBeenCalledWith({
         where: visibilityWhere(viewerUserId),
@@ -627,8 +681,14 @@ describe('T009 scoped detail, timestamp, Top-K, and response ranks', () => {
     async (_actor, viewerUserId, expected) => {
       const rows = [
         row({ userId: null, updatedAt: new Date('2026-08-16T01:00:03.000Z') }),
-        row({ userId: USER_A, updatedAt: new Date('2026-08-16T01:00:04.000Z') }),
-        row({ userId: USER_B, updatedAt: new Date('2026-08-16T01:00:05.000Z') }),
+        row({
+          userId: USER_A,
+          updatedAt: new Date('2026-08-16T01:00:04.000Z'),
+        }),
+        row({
+          userId: USER_B,
+          updatedAt: new Date('2026-08-16T01:00:05.000Z'),
+        }),
       ];
       const { prisma, findFirst } = scopedPrisma(rows);
       const Repository = loadTarget();
@@ -661,6 +721,114 @@ describe('T009 scoped detail, timestamp, Top-K, and response ranks', () => {
   });
 });
 
+describe('T004 explicit scope visibility resolver', () => {
+  const rows = [
+    row({
+      userId: null,
+      strategyVersionId: 'system-one',
+      backtestResultId: 'system-one-result',
+      score: 0.9,
+      updatedAt: new Date('2026-08-25T01:00:01.000Z'),
+    }),
+    row({
+      userId: null,
+      strategyVersionId: 'system-two',
+      backtestResultId: 'system-two-result',
+      score: 0.8,
+      updatedAt: new Date('2026-08-25T01:00:02.000Z'),
+    }),
+    row({
+      userId: USER_A,
+      strategyVersionId: 'a-one',
+      backtestResultId: 'a-one-result',
+      score: 0.7,
+      updatedAt: new Date('2026-08-25T01:00:03.000Z'),
+    }),
+    row({
+      userId: USER_A,
+      strategyVersionId: 'a-two',
+      backtestResultId: 'a-two-result',
+      score: 0.6,
+      updatedAt: new Date('2026-08-25T01:00:04.000Z'),
+    }),
+    row({
+      userId: USER_B,
+      strategyVersionId: 'b-one',
+      backtestResultId: 'b-one-result',
+      score: 1,
+      updatedAt: new Date('2026-08-25T01:00:05.000Z'),
+    }),
+  ];
+
+  it.each([
+    ['system', USER_A, [null, null], { userId: null }],
+    ['mine', USER_A, [USER_A, USER_A], { userId: USER_A }],
+    [
+      'combined',
+      USER_A,
+      [null, null],
+      { OR: [{ userId: null }, { userId: USER_A }] },
+    ],
+  ] as const)(
+    'filters %s before best-per-version, sort, Top-K and local rank',
+    async (scope, viewerUserId, expectedOwners, expectedWhere) => {
+      const { prisma, findMany } = scopedPrisma(rows);
+      const Repository = loadTarget();
+      const repository = new Repository(prisma as never, 2);
+
+      const result = await repository.getTopK(
+        RankingCriterion.SCORE,
+        viewerUserId,
+        scope,
+      );
+
+      expect(result.map(({ userId }) => userId)).toEqual(expectedOwners);
+      expect(result.map(({ rank }) => rank)).toEqual([1, 2]);
+      expect(findMany).toHaveBeenCalledWith({ where: expectedWhere });
+    },
+  );
+
+  it('derives timestamp and SCORE-best detail only from the requested scope', async () => {
+    const { prisma } = scopedPrisma(rows);
+    const Repository = loadTarget();
+    const repository = new Repository(prisma as never, 2);
+
+    await expect(repository.getUpdatedAt(USER_A, 'system')).resolves.toEqual(
+      new Date('2026-08-25T01:00:02.000Z'),
+    );
+    await expect(repository.getUpdatedAt(USER_A, 'mine')).resolves.toEqual(
+      new Date('2026-08-25T01:00:04.000Z'),
+    );
+    await expect(
+      repository.findBestByStrategyVersionId('a-one', USER_A, 'mine'),
+    ).resolves.toMatchObject({ userId: USER_A, rank: 1 });
+    await expect(
+      repository.findBestByStrategyVersionId('a-one', USER_A, 'system'),
+    ).resolves.toBeNull();
+    await expect(
+      repository.findBestByStrategyVersionId('b-one', USER_A, 'mine'),
+    ).resolves.toBeNull();
+  });
+
+  it('short-circuits anonymous Mine without issuing a broad Prisma query', async () => {
+    const { prisma, findMany, findFirst } = scopedPrisma(rows);
+    const Repository = loadTarget();
+    const repository = new Repository(prisma as never, 2);
+
+    await expect(
+      repository.getTopK(RankingCriterion.SCORE, null, 'mine'),
+    ).resolves.toEqual([]);
+    await expect(repository.getUpdatedAt(null, 'mine')).resolves.toEqual(
+      new Date(0),
+    );
+    await expect(
+      repository.findBestByStrategyVersionId('a-one', null, 'mine'),
+    ).resolves.toBeNull();
+    expect(findMany).not.toHaveBeenCalled();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+});
+
 function visibilityWhere(viewerUserId: string | null): object {
   return viewerUserId === null
     ? { userId: null }
@@ -679,14 +847,15 @@ function scopedPrisma(rows: LeaderboardEntry[]): {
         (typeof where?.strategyVersionId !== 'string' ||
           entry.strategyVersionId === where.strategyVersionId),
     );
-  const findMany = jest.fn(async (args?: { where?: Record<string, unknown> }) =>
-    scopedRows(args?.where),
+  const findMany = jest.fn((args?: { where?: Record<string, unknown> }) =>
+    Promise.resolve(scopedRows(args?.where)),
   );
-  const findFirst = jest.fn(
-    async (args?: { where?: Record<string, unknown> }) =>
+  const findFirst = jest.fn((args?: { where?: Record<string, unknown> }) =>
+    Promise.resolve(
       [...scopedRows(args?.where)].sort(
         (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime(),
       )[0] ?? null,
+    ),
   );
   return {
     prisma: { leaderboardEntry: { findMany, findFirst } },
@@ -700,7 +869,7 @@ function matchesVisibility(
   where?: Record<string, unknown>,
 ): boolean {
   if (!where) return true;
-  if (where.userId === null) return entry.userId === null;
+  if (Object.hasOwn(where, 'userId')) return entry.userId === where.userId;
   const clauses = where.OR as Array<{ userId: string | null }> | undefined;
   return clauses?.some(({ userId }) => entry.userId === userId) ?? true;
 }

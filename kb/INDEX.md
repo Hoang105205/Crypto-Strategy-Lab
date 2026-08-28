@@ -2,8 +2,8 @@
 
 > **Last Updated**: 2026-08-24
 > **Status**: Active — Cross-route live leaderboard synchronized; explicit ON/OFF persists and defaults OFF
-> **Last Updated**: 2026-08-25
-> **Status**: Active — Updated News & Sentiment with on-demand crawl API (POST /api/news/crawl with 120s cooldown), 5-minute cron schedule, and 24h sentiment breakdown ratios
+> **Last Updated**: 2026-08-28
+> **Status**: Active — Persistent leased 24/7 Search Loop supervisor added; leaderboard source reconciliation and News & Sentiment flows remain active
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
@@ -37,6 +37,6 @@ read from here before generating any artifacts or code.
 
 ## Scope Coverage
 - **Domain**: Crypto trading strategy analysis, composition, and evaluation
-- **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, CrawlerRule, SearchLoopRun
+- **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, CrawlerRule, SearchLoopRun, SearchLoopControl
 - **Modules**: Market Data (Hoàng), Strategy Engine (Huy), News & Sentiment (Thuận), Event Infrastructure (Phương — Event Bus + Job Queue + Leaderboard + Loop + Dashboard)
-- **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop (global system process), News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update (cross-route safe invalidation + scoped REST reconciliation)
+- **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop (persistent 24/7 global process), News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update (cross-route safe invalidation + scoped REST reconciliation)

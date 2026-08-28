@@ -153,6 +153,10 @@ export class StrategyLoopService {
     return run;
   }
 
+  hasRuntimeContext(loopRunId: string): boolean {
+    return this.contexts.has(loopRunId);
+  }
+
   async handleBacktestCompleted(
     envelope: EventEnvelope<BacktestCompletedPayload>,
   ): Promise<void> {

@@ -9,15 +9,14 @@ import {
 } from '../../components/strategy';
 import { EquityCurveChart } from '../../components/chart/equity-curve-chart';
 import { TradeDetailTable } from '../../components/trade-detail-table';
+import {
+  ApiClientError,
+  apiClient,
+  type StrategyCatalogItem,
+} from '../../services/api-client';
 import './strategy-builder.css';
 
-interface StrategyItem {
-  name: string;
-  type: string;
-  parameters: Record<string, unknown>;
-}
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+type StrategyItem = StrategyCatalogItem;
 
 const DEFAULT_STRATEGIES: StrategyItem[] = [
   { name: 'MovingAverage', type: 'MA', parameters: { period: 14 } },
@@ -40,12 +39,7 @@ const DEFAULT_STRATEGIES: StrategyItem[] = [
 
 const loadStrategies = async (): Promise<StrategyItem[]> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/strategies`);
-    if (!response.ok) {
-      return DEFAULT_STRATEGIES;
-    }
-
-    return (await response.json()) as StrategyItem[];
+    return await apiClient.getStrategies();
   } catch {
     return DEFAULT_STRATEGIES;
   }
@@ -164,37 +158,15 @@ export default function StrategyBuilderPage() {
   }) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/strategies/composite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        alert(`Composite Strategy '${payload.name}' created successfully!`);
-        const loadedStrategies = await loadStrategies();
-        setStrategies(loadedStrategies);
-        setSelectedStrategy((current) => current ?? loadedStrategies[0] ?? null);
-        setActiveTab('catalog');
-      } else {
-        const errorData = await res.json();
-        alert(`Failed to create composite: ${errorData.message || 'Error'}`);
-      }
-    } catch {
-      // Fallback local addition if offline
-      const newComposite: StrategyItem = {
-        name: payload.name,
-        type: 'COMPOSITE',
-        parameters: {
-          childCount: payload.childStrategyNames.length,
-          childStrategies: payload.childStrategyNames.join(', '),
-          combinerType: payload.combinerType,
-          ...(payload.combinerType === 'WeightedScore' ? { weights: payload.combinerWeights || {} } : {}),
-        },
-      };
-      setStrategies((prev) => [...prev, newComposite]);
-      setSelectedStrategy(newComposite);
-      alert(`Composite Strategy '${payload.name}' created locally!`);
+      await apiClient.createCompositeStrategy(payload);
+      alert(`Composite Strategy '${payload.name}' created successfully!`);
+      const loadedStrategies = await loadStrategies();
+      setStrategies(loadedStrategies);
+      setSelectedStrategy((current) => current ?? loadedStrategies[0] ?? null);
+      setActiveTab('catalog');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error';
+      alert(`Failed to create composite: ${message}`);
       setActiveTab('catalog');
     } finally {
       setIsLoading(false);
@@ -210,64 +182,52 @@ export default function StrategyBuilderPage() {
     setBacktestStatus('Submitting job to Queue...');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/strategies/backtest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategyName: selectedStrategy.name,
-          pair,
-          timeframe,
-          initialCapital,
-          startDate: fromDate,
-          endDate: toDate,
-          commission,
-          slippage,
-        }),
+      const { jobId } = await apiClient.requestUserBacktest({
+        strategyName: selectedStrategy.name,
+        pair,
+        timeframe,
+        initialCapital,
+        startDate: fromDate,
+        endDate: toDate,
+        commission,
+        slippage,
       });
-
-      if (res.ok) {
-        const { jobId } = await res.json();
-        setBacktestStatus('Job queued, waiting for results...');
+      setBacktestStatus('Job queued, waiting for results...');
         
-        let attempts = 0;
-        const maxAttempts = 30; // Wait up to 60 seconds
+      let attempts = 0;
+      const maxAttempts = 30; // Wait up to 60 seconds
         
-        const pollInterval = setInterval(async () => {
-          attempts++;
-          try {
-            const resultRes = await fetch(`${API_BASE_URL}/api/strategies/backtest/${jobId}`);
-            if (resultRes.ok) {
-              const data = await resultRes.json();
-              setBacktestStatus('Backtest simulation completed');
-              setTradeResults(typeof data.trades === 'string' ? JSON.parse(data.trades) : data.trades || []);
-              setIsLoading(false);
-              clearInterval(pollInterval);
-            } else if (resultRes.status === 404) {
-              if (attempts >= maxAttempts) {
-                setBacktestStatus('Timeout waiting for results (Backend Worker might not be running)');
-                setIsLoading(false);
-                clearInterval(pollInterval);
-              }
-              // Still processing, wait
-            } else {
-              setBacktestStatus('Failed to retrieve backtest result');
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+          const data = await apiClient.getUserBacktestResult(jobId);
+          setBacktestStatus('Backtest simulation completed');
+          const trades = typeof data.trades === 'string'
+            ? JSON.parse(data.trades) as TradeItem[]
+            : Array.isArray(data.trades)
+              ? data.trades as TradeItem[]
+              : [];
+          setTradeResults(trades);
+          setIsLoading(false);
+          clearInterval(pollInterval);
+        } catch (error) {
+          if (error instanceof ApiClientError && error.status === 404) {
+            if (attempts >= maxAttempts) {
+              setBacktestStatus('Timeout waiting for results (Backend Worker might not be running)');
               setIsLoading(false);
               clearInterval(pollInterval);
             }
-          } catch (err) {
-             setBacktestStatus('Error fetching results');
-             setIsLoading(false);
-             clearInterval(pollInterval);
+            return;
           }
-        }, 2000);
+          setBacktestStatus(error instanceof Error ? error.message : 'Error fetching results');
+          setIsLoading(false);
+          clearInterval(pollInterval);
+        }
+      }, 2000);
         
-        return; // do not call setTradeResults here yet
-      } else {
-        setBacktestStatus('Failed to submit job to Backend');
-        setIsLoading(false);
-      }
-    } catch {
-      setBacktestStatus('Network error connecting to Backend');
+      return; // do not call setTradeResults here yet
+    } catch (error) {
+      setBacktestStatus(error instanceof Error ? error.message : 'Network error connecting to Backend');
       setIsLoading(false);
     }
   };
@@ -276,9 +236,7 @@ export default function StrategyBuilderPage() {
     if (!confirm(`Bạn có chắc chắn muốn xóa chiến lược '${strategyName}' không?`)) return;
 
     try {
-      await fetch(`${API_BASE_URL}/api/strategies/${encodeURIComponent(strategyName)}`, {
-        method: 'DELETE',
-      });
+      await apiClient.deleteUserStrategy(strategyName);
     } catch {
       // Local fallback
     }

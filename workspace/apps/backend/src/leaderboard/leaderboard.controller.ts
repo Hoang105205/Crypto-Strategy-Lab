@@ -8,11 +8,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  LeaderboardScope,
   RankingCriterion,
   type LeaderboardSnapshot,
 } from '@crypto-strategy-lab/shared';
 import {
   LeaderboardErrorCode,
+  LeaderboardScopePipe,
   LeaderboardSortPipe,
   LeaderboardStrategyVersionIdPipe,
 } from './leaderboard.dto';
@@ -33,8 +35,10 @@ export class LeaderboardController {
   list(
     @Query('sortBy', LeaderboardSortPipe) sortBy: RankingCriterion,
     @CurrentUser() viewerUserId: string | null = null,
+    @Query('scope', LeaderboardScopePipe)
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
   ): Promise<LeaderboardSnapshot> {
-    return this.leaderboard.getLeaderboard(sortBy, viewerUserId);
+    return this.leaderboard.getLeaderboard(sortBy, viewerUserId, scope);
   }
 
   @Get(':strategyVersionId')
@@ -42,11 +46,14 @@ export class LeaderboardController {
     @Param('strategyVersionId', LeaderboardStrategyVersionIdPipe)
     strategyVersionId: string,
     @CurrentUser() viewerUserId: string | null = null,
+    @Query('scope', LeaderboardScopePipe)
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
   ): Promise<LeaderboardDetail> {
     try {
       const detail = await this.leaderboard.getDetail(
         strategyVersionId,
         viewerUserId,
+        scope,
       );
       if (detail) return detail;
       throw stableError(

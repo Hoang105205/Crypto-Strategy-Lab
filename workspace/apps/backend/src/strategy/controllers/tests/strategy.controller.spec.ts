@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type {
   IEventBus,
   IJobQueue,
@@ -20,14 +21,38 @@ import { StrategyVersioningService } from '../../versioning/strategy-versioning.
 import { MovingAverageStrategy } from '../../strategies/moving-average.strategy';
 import { RsiStrategy } from '../../strategies/rsi.strategy';
 import { PrismaService } from '../../../database/prisma.service';
+import { RequireAuth } from '../../../auth/require-auth.guard';
+
+type StrategyVersioningMock = {
+  createVersion: jest.Mock<StrategyVersioningService['createVersion']>;
+  getVersion: jest.Mock<StrategyVersioningService['getVersion']>;
+  getVersionsByName: jest.Mock<StrategyVersioningService['getVersionsByName']>;
+  getAllVersions: jest.Mock<StrategyVersioningService['getAllVersions']>;
+};
+
+type JobQueueMock = {
+  [K in keyof IJobQueue]: IJobQueue[K] extends (
+    ...args: infer Args
+  ) => infer Result
+    ? jest.Mock<(...args: Args) => Result>
+    : IJobQueue[K];
+};
+
+type EventBusMock = {
+  [K in keyof IEventBus]: IEventBus[K] extends (
+    ...args: infer Args
+  ) => infer Result
+    ? jest.Mock<(...args: Args) => Result>
+    : IEventBus[K];
+};
 
 describe('StrategyController', () => {
   const USER_ID = 'f42a4238-8630-4c22-8a47-099028464d17';
   let controller: StrategyController;
   let registry: StrategyRegistry;
-  let versioning: jest.Mocked<StrategyVersioningService>;
-  let jobQueue: jest.Mocked<IJobQueue>;
-  let eventBus: jest.Mocked<IEventBus>;
+  let versioning: StrategyVersioningMock;
+  let jobQueue: JobQueueMock;
+  let eventBus: EventBusMock;
   let executionPort: jest.Mocked<IStrategyExecutionPort>;
   let prisma: PrismaService;
   let versions: StrategyVersion[];
@@ -38,7 +63,7 @@ describe('StrategyController', () => {
     versions = [];
 
     const createVersion = jest.fn(
-      async (strategy: IStrategy): Promise<StrategyVersion> => {
+      (strategy: IStrategy): Promise<StrategyVersion> => {
         const previous = versions.filter(
           (candidate) => candidate.name === strategy.getName(),
         );
@@ -53,27 +78,31 @@ describe('StrategyController', () => {
           createdAt: new Date(),
         };
         versions.push(version);
-        return version;
+        return Promise.resolve(version);
       },
     );
 
     versioning = {
       createVersion,
-      getVersion: jest.fn(async (id: string) =>
-        versions.find((candidate) => candidate.id === id),
+      getVersion: jest.fn((id: string) =>
+        Promise.resolve(versions.find((candidate) => candidate.id === id)),
       ),
-      getVersionsByName: jest.fn(async (name: string, userId?: string | null) =>
-        versions.filter((candidate) => candidate.name === name),
-      ),
-      getAllVersions: jest.fn(async (userId?: string | null) =>
-        versions,
-      ),
-    } as unknown as jest.Mocked<StrategyVersioningService>;
+      getVersionsByName: jest.fn((name: string, userId?: string | null) => {
+        void userId;
+        return Promise.resolve(
+          versions.filter((candidate) => candidate.name === name),
+        );
+      }),
+      getAllVersions: jest.fn((userId?: string | null) => {
+        void userId;
+        return Promise.resolve(versions);
+      }),
+    };
 
     jobQueue = {
-      enqueue: jest.fn<IJobQueue['enqueue']>(async (_type, payload) => ({
-        jobId: payload.jobId,
-      })),
+      enqueue: jest.fn<IJobQueue['enqueue']>((_type, payload) =>
+        Promise.resolve({ jobId: payload.jobId }),
+      ),
       getStatus: jest.fn<IJobQueue['getStatus']>(),
       retry: jest.fn<IJobQueue['retry']>(),
       deadLetter: jest.fn<IJobQueue['deadLetter']>(),
@@ -103,7 +132,7 @@ describe('StrategyController', () => {
 
     controller = new StrategyController(
       registry,
-      versioning,
+      versioning as unknown as StrategyVersioningService,
       jobQueue,
       eventBus,
       executionPort,
@@ -115,35 +144,88 @@ describe('StrategyController', () => {
     const result = await controller.getAllStrategies(null);
 
     expect(result.length).toBeGreaterThanOrEqual(2);
-    expect(result.some((strategy) => strategy.name === 'MovingAverage')).toBe(
-      true,
-    );
+    expect(
+      (result as Array<{ name: string }>).some(
+        (strategy) => strategy.name === 'MovingAverage',
+      ),
+    ).toBe(true);
   });
 
   it('POST /api/strategies/composite registers and versions a composite', async () => {
-    const result = await controller.createComposite({
-      name: 'TestComposite',
-      childStrategyNames: ['MovingAverage', 'RelativeStrengthIndex'],
-      combinerType: CombinerType.MAJORITY_VOTE,
-    }, null);
+    const result = await controller.createComposite(
+      {
+        name: 'TestComposite',
+        childStrategyNames: ['MovingAverage', 'RelativeStrengthIndex'],
+        combinerType: CombinerType.MAJORITY_VOTE,
+      },
+      USER_ID,
+    );
 
     expect(result.strategy.name).toBe('TestComposite');
     // Composites are no longer automatically put in the global registry (ADR-0016 compliance)
     expect(registry.get('TestComposite')).toBeUndefined();
-    expect(versioning.createVersion).toHaveBeenCalledTimes(1);
+    expect(versioning.createVersion as jest.Mock).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves a private composite child with the authenticated user', async () => {
+    const privateChild: StrategyVersion = {
+      id: randomUUID(),
+      userId: USER_ID,
+      strategyType: StrategyType.COMPOSITE,
+      name: 'PrivateChild',
+      version: 1,
+      parameters: {},
+      isComposite: true,
+      childVersionIds: [],
+      createdAt: new Date(),
+    };
+    versions.push(privateChild);
+    executionPort.resolveVersion.mockResolvedValue({
+      version: privateChild,
+      strategy: registry.get('MovingAverage')!,
+    });
+
+    await controller.createComposite(
+      {
+        name: 'ParentComposite',
+        childStrategyNames: ['PrivateChild', 'RelativeStrengthIndex'],
+        combinerType: CombinerType.MAJORITY_VOTE,
+      },
+      USER_ID,
+    );
+
+    expect(executionPort.resolveVersion).toHaveBeenCalledWith(
+      privateChild.id,
+      USER_ID,
+    );
+  });
+
+  it('requires authentication for user-owned strategy writes and result polling', () => {
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, StrategyController.prototype.createComposite),
+    ).toEqual([RequireAuth]);
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, StrategyController.prototype.requestBacktest),
+    ).toEqual([RequireAuth]);
+    expect(
+      Reflect.getMetadata(GUARDS_METADATA, StrategyController.prototype.getBacktestResult),
+    ).toEqual([RequireAuth]);
   });
 
   it('POST /api/strategies/backtest enqueues before publishing BacktestRequested', async () => {
-    const result = await controller.requestBacktest({
-      strategyName: 'MovingAverage',
-      pair: 'BTCUSDT',
-      timeframe: '1h',
-      startDate: new Date(),
-      endDate: new Date(),
-    }, USER_ID);
+    const result = await controller.requestBacktest(
+      {
+        strategyName: 'MovingAverage',
+        pair: 'BTCUSDT',
+        timeframe: '1h',
+        startDate: new Date(),
+        endDate: new Date(),
+      },
+      USER_ID,
+    );
 
     expect(result.status).toBe(JobStatusValue.QUEUED);
-    expect(jobQueue.enqueue).toHaveBeenCalledWith(
+    expect(jobQueue.enqueue as jest.Mock).toHaveBeenCalledWith(
       JobType.BACKTEST,
       expect.objectContaining({
         jobId: result.jobId,
@@ -153,7 +235,7 @@ describe('StrategyController', () => {
       }),
       expect.any(String),
     );
-    expect(eventBus.publish).toHaveBeenCalledWith(
+    expect(eventBus.publish as jest.Mock).toHaveBeenCalledWith(
       EventType.BacktestRequested,
       expect.objectContaining({
         jobId: result.jobId,
@@ -168,26 +250,35 @@ describe('StrategyController', () => {
   });
 
   it('GET /api/strategies/:id returns an immutable strategy version', async () => {
-    const created = await controller.createComposite({
-      name: 'TestVersionById',
-      childStrategyNames: ['MovingAverage', 'RelativeStrengthIndex'],
-      combinerType: CombinerType.MAJORITY_VOTE,
-    }, null);
+    const created = await controller.createComposite(
+      {
+        name: 'TestVersionById',
+        childStrategyNames: ['MovingAverage', 'RelativeStrengthIndex'],
+        combinerType: CombinerType.MAJORITY_VOTE,
+      },
+      null,
+    );
 
-    const version = await controller.getStrategyById(created.strategy.versionId, null);
+    const version = await controller.getStrategyById(
+      created.strategy.versionId,
+      null,
+    );
 
     expect(version.id).toBe(created.strategy.versionId);
     expect(version.name).toBe('TestVersionById');
   });
 
   it('GET /api/strategies/:name/versions returns created versions', async () => {
-    await controller.requestBacktest({
-      strategyName: 'MovingAverage',
-      pair: 'BTCUSDT',
-      timeframe: '1h',
-      startDate: new Date(),
-      endDate: new Date(),
-    }, null);
+    await controller.requestBacktest(
+      {
+        strategyName: 'MovingAverage',
+        pair: 'BTCUSDT',
+        timeframe: '1h',
+        startDate: new Date(),
+        endDate: new Date(),
+      },
+      null,
+    );
 
     const result = await controller.getStrategyVersions('MovingAverage', null);
 
@@ -203,18 +294,15 @@ describe('StrategyController', () => {
       winRate: 0.6,
     });
 
-    const result = await controller.getBacktestResult(id, null);
+    const result = await controller.getBacktestResult(id, USER_ID);
 
     expect(result.id).toBe(id);
     expect(result.totalReturn).toBe(10.5);
     expect(result.winRate).toBe(0.6);
-    expect(prisma.backtestResult.findFirst).toHaveBeenCalledWith({
-      where: { 
+    expect(findBacktestResult).toHaveBeenCalledWith({
+      where: {
         jobId: id,
-        OR: [
-          { userId: null },
-          { userId: null },
-        ],
+        userId: USER_ID,
       },
     });
   });
@@ -222,8 +310,8 @@ describe('StrategyController', () => {
   it('GET /api/strategies/backtest/:id throws 404 when absent', async () => {
     findBacktestResult.mockResolvedValue(null);
 
-    await expect(controller.getBacktestResult('invalid_id', null)).rejects.toThrow(
-      "BacktestResult 'invalid_id' not found",
-    );
+    await expect(
+      controller.getBacktestResult('invalid_id', null),
+    ).rejects.toThrow("BacktestResult 'invalid_id' not found");
   });
 });

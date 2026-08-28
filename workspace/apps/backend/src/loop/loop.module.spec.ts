@@ -43,13 +43,17 @@ const prisma = {
   searchLoopRun: {
     findFirst: jest.fn<() => Promise<null>>(),
   },
+  searchLoopControl: {
+    upsert: jest.fn<() => Promise<Record<string, unknown>>>(),
+    updateMany: jest.fn<() => Promise<{ count: number }>>(),
+  },
 };
 
 const eventBus = {
   publish: jest.fn<IEventBus['publish']>(),
   subscribe: jest.fn<IEventBus['subscribe']>(),
   unsubscribe: jest.fn<IEventBus['unsubscribe']>(),
-} as jest.Mocked<IEventBus>;
+};
 
 const jobQueue = {
   enqueue: jest.fn<IJobQueue['enqueue']>(),
@@ -57,11 +61,11 @@ const jobQueue = {
   retry: jest.fn<IJobQueue['retry']>(),
   deadLetter: jest.fn<IJobQueue['deadLetter']>(),
   getStats: jest.fn<IJobQueue['getStats']>(),
-} as jest.Mocked<IJobQueue>;
+};
 
 const candidatePort = {
   generateCandidate: jest.fn<IStrategyCandidatePort['generateCandidate']>(),
-} as jest.Mocked<IStrategyCandidatePort>;
+};
 
 const scoringPolicy = {
   calculateScore: jest.fn<(input: unknown) => number>(),
@@ -101,10 +105,35 @@ describe('LoopModule wiring and lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.searchLoopRun.findFirst.mockResolvedValue(null);
+    prisma.searchLoopControl.upsert.mockResolvedValue({
+      id: 'system',
+      enabled: false,
+      generatorType: StrategyGeneratorType.RANDOM,
+      pair: 'BTCUSDT',
+      timeframe: '1h',
+      backtestWindowDays: 180,
+      initialCapital: 10_000,
+      positionSizePercent: 100,
+      commission: null,
+      slippage: null,
+      maxCandidatesPerRun: 100,
+      maxDurationMsPerRun: null,
+      stopOnNoImprovementIterations: 50,
+      cooldownMs: 30_000,
+      failureCount: 0,
+      nextRunAt: null,
+      lastStartedRunId: null,
+      lastError: null,
+      leaseOwner: null,
+      leaseUntil: null,
+      createdAt: STARTED_AT,
+      updatedAt: STARTED_AT,
+    });
+    prisma.searchLoopControl.updateMany.mockResolvedValue({ count: 0 });
     eventBus.subscribe.mockImplementation(() => jest.fn());
-    jobQueue.enqueue.mockImplementation(async (_type, payload) => ({
-      jobId: payload.jobId,
-    }));
+    jobQueue.enqueue.mockImplementation((_type, payload) =>
+      Promise.resolve({ jobId: payload.jobId }),
+    );
     jobQueue.getStatus.mockResolvedValue({
       jobId: '93a88d62-c2a3-4cb9-bef9-14c22777fc19',
       status: JobStatusValue.QUEUED,
@@ -157,7 +186,7 @@ describe('LoopModule wiring and lifecycle', () => {
     await lifecycle.onModuleInit();
 
     expect(reconcileAfterRestart).toHaveBeenCalledTimes(1);
-    expect(eventBus.subscribe).toHaveBeenCalledTimes(2);
+    expect(eventBus.subscribe as jest.Mock).toHaveBeenCalledTimes(2);
     expect(eventBus.subscribe.mock.calls.map(([type]) => type)).toEqual([
       EventType.BacktestCompleted,
       EventType.BacktestFailed,
@@ -227,9 +256,15 @@ describe('LoopModule wiring and lifecycle', () => {
     await module.close();
     lifecycle.onModuleDestroy();
 
-    expect(eventBus.unsubscribe).toHaveBeenCalledTimes(2);
-    expect(eventBus.unsubscribe).toHaveBeenNthCalledWith(1, cleanups[0]);
-    expect(eventBus.unsubscribe).toHaveBeenNthCalledWith(2, cleanups[1]);
+    expect(eventBus.unsubscribe as jest.Mock).toHaveBeenCalledTimes(2);
+    expect(eventBus.unsubscribe as jest.Mock).toHaveBeenNthCalledWith(
+      1,
+      cleanups[0],
+    );
+    expect(eventBus.unsubscribe as jest.Mock).toHaveBeenNthCalledWith(
+      2,
+      cleanups[1],
+    );
   });
 
   it('uses an overridden candidate provider through the symbol seam', async () => {
@@ -259,7 +294,7 @@ describe('LoopModule wiring and lifecycle', () => {
     expect(replacement.generateCandidate).toHaveBeenCalledWith(
       StrategyGeneratorType.RANDOM,
     );
-    expect(jobQueue.enqueue).toHaveBeenCalledWith(
+    expect(jobQueue.enqueue as jest.Mock).toHaveBeenCalledWith(
       JobType.BACKTEST,
       expect.objectContaining({
         source: BacktestSource.SEARCH_LOOP,
@@ -348,11 +383,11 @@ function orchestrationRepository() {
       .fn<LoopRepository['createRun']>()
       .mockResolvedValue(activeRun),
     createCandidate: jest.fn(
-      async (input: {
+      (input: {
         jobId: string;
         iteration: number;
       }): Promise<SearchLoopCandidate> =>
-        candidate(input.jobId, input.iteration),
+        Promise.resolve(candidate(input.jobId, input.iteration)),
     ),
     transitionRun: jest
       .fn<LoopRepository['transitionRun']>()

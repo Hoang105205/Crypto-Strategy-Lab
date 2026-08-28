@@ -205,7 +205,7 @@ class ApprovedPortFakes {
     this.strategyExecution = {
       resolveVersion: jest.fn(async () => resolvedStrategy),
     };
-    this.backtester = { run: jest.fn(() => trades) };
+    this.backtester = { run: jest.fn(async () => trades) };
     this.evaluator = { evaluate: jest.fn(() => metrics) };
     this.resultPort = {
       save: jest.fn((input) => this.saveResult(input)),
@@ -224,7 +224,7 @@ class ApprovedPortFakes {
       publish,
       subscribe: jest.fn<IEventBus['subscribe']>(),
       unsubscribe: jest.fn<IEventBus['unsubscribe']>(),
-    } as unknown as jest.Mocked<IEventBus>;
+    };
   }
 
   private async saveResult(
@@ -297,7 +297,7 @@ class RedisQueueHarness {
     source: BacktestSource = BacktestSource.USER,
     jobId = randomUUID(),
   ): BacktestRequestedPayload {
-    return {
+    const base = {
       jobId,
       strategyVersionId: STRATEGY_VERSION_ID,
       pair: 'BTCUSDT',
@@ -310,9 +310,21 @@ class RedisQueueHarness {
         commission: 0.1,
         slippage: 0.05,
       },
-      source,
-      loopRunId: source === BacktestSource.SEARCH_LOOP ? randomUUID() : null,
-    } as BacktestRequestedPayload;
+    };
+    if (source === BacktestSource.SEARCH_LOOP) {
+      return {
+        ...base,
+        source: BacktestSource.SEARCH_LOOP,
+        loopRunId: randomUUID(),
+        userId: null,
+      };
+    }
+    return {
+      ...base,
+      source: BacktestSource.USER,
+      loopRunId: null,
+      userId: '7be87e47-1a16-4ad4-b616-8f426cce86a9',
+    };
   }
 
   async enqueue(payload: BacktestRequestedPayload): Promise<void> {
@@ -335,7 +347,7 @@ class RedisQueueHarness {
     this.workerOwner = createWorkerRedisConnection(this.environment);
     this.workerHost = new BullMqWorkerHost({
       config,
-      connection: this.workerOwner.client as unknown as ConnectionOptions,
+      connection: this.workerOwner.client,
       connectionOwner: this.workerOwner,
       processor: this.processor,
     });
@@ -366,7 +378,7 @@ class RedisQueueHarness {
     this.producerOwner = createProducerRedisConnection(this.environment);
     this.adapter = new BullMqJobQueue({
       queueName: this.queueName,
-      connection: this.producerOwner.client as unknown as ConnectionOptions,
+      connection: this.producerOwner.client,
       maxAttempts: config.attempts,
       retryDelaysMs: config.retryDelaysMs,
       retention: {
@@ -505,7 +517,7 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
 
       const delayed = harness.payload();
       let attempts = 0;
-      harness.ports.backtester.run.mockImplementation(() => {
+      harness.ports.backtester.run.mockImplementation(async () => {
         attempts += 1;
         if (attempts === 1) throw new Error('transient restart fixture');
         return trades;
@@ -760,7 +772,7 @@ describe('Phase 2 production BullMQ integration checkpoint (T020)', () => {
     );
     const unavailable = new BullMqJobQueue({
       queueName: unavailableEnvironment.BACKTEST_QUEUE_NAME,
-      connection: unavailableOwner.client as unknown as ConnectionOptions,
+      connection: unavailableOwner.client,
       maxAttempts: 3,
       retryDelaysMs: [1_000, 4_000],
       retention: { ageSeconds: 60, count: 10 },

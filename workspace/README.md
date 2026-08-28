@@ -120,6 +120,54 @@ pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 ```
 
+## Enable the 24/7 System Search Loop
+
+Apply committed migrations and restart/deploy the backend before enabling automation:
+
+```bash
+cd apps/backend
+npx prisma migrate deploy
+cd ../..
+```
+
+Then call the authenticated enable endpoint once. The desired state is stored in PostgreSQL and remains enabled across later backend restarts/deploys:
+
+```powershell
+$token = "<Supabase access token>"
+$body = @{
+  generatorType = "RANDOM"
+  pair = "BTCUSDT"
+  timeframe = "1h"
+  backtestWindowDays = 180
+  backtestConfig = @{
+    initialCapital = 10000
+    positionSizePercent = 100
+    commission = 0.001
+    slippage = 0.001
+  }
+  maxCandidatesPerRun = 100
+  stopOnNoImprovementIterations = 50
+  cooldownMs = 30000
+} | ConvertTo-Json -Depth 4
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:3001/api/loop/control/enable" `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Operational endpoints:
+
+```text
+GET  /api/loop/control          # persisted desired state and retry/lease status
+GET  /api/loop/current          # current bounded run
+POST /api/loop/control/disable  # persist OFF and stop the active run
+```
+
+`Live updates` remains a frontend-only leaderboard preference and does not enable or disable the system Search Loop.
+
 ## Knowledge Base
 
 The `../kb/` directory is the single source of truth for architecture, contracts, and decisions.

@@ -40,6 +40,13 @@ it checks idempotency (an entry already exists for this `backtestResultId`? no-o
 subscribes to the same `BacktestCompleted` event independently, for its own unrelated purpose
 (deciding the next search iteration) — see `kb/flows/strategy-search-loop.md`.
 
+`LeaderboardEntry` is a denormalized read model owned by Event Infrastructure. Its
+`strategyVersionId` and `backtestResultId` are logical cross-module references, not Prisma
+relations or database foreign keys. To handle manual/out-of-band source deletion without breaking
+module boundaries, `LeaderboardService` validates references through `IBacktestResultPort` at
+startup and every five minutes. It removes only confirmed missing/mismatched projections, reranks
+survivors, and retains entries when validation fails transiently.
+
 ### Consequences
 - Positive: the Backtester, Evaluator, and Job Queue worker have zero knowledge of the Leaderboard
   or the Loop Controller — verified by the extensibility scenario "swap the scoring formula without
@@ -58,6 +65,8 @@ subscribes to the same `BacktestCompleted` event independently, for its own unre
   having already run for the same event.
 - Risk: idempotency depends on a database-level `UNIQUE` constraint on `LeaderboardEntry.backtestResultId`
   being correctly enforced — flagged for verification during Prisma schema implementation.
+- Trade-off: ID-only references avoid cross-module database coupling but cannot use FK cascades;
+  lifecycle consistency is eventual and is enforced by the application-level reconciler.
 
 ## Links
 - Relates to ADR-0005 (Event-Driven Communication) — this decision is a direct application of it
