@@ -73,6 +73,12 @@ export enum RankingCriterion {
   SHARPE_RATIO = 'sharpeRatio',
 }
 
+export enum LeaderboardScope {
+  SYSTEM = 'system',
+  MINE = 'mine',
+  COMBINED = 'combined',
+}
+
 export enum StrategyGeneratorType {
   RANDOM = 'RANDOM',
   DOMAIN_GUIDED = 'DOMAIN_GUIDED',

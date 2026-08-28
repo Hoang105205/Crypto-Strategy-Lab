@@ -26,6 +26,7 @@ import request from 'supertest';
 import { PrismaService } from '../database/prisma.service';
 import { IEVENT_BUS, IBACKTEST_RESULT_PORT } from '../shared/tokens';
 import { LeaderboardModule } from './leaderboard.module';
+import { LeaderboardService } from './leaderboard.service';
 import { ScoringPolicy, type IScoringPolicy } from './scoring-policy';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 import { SupabaseService } from '../auth/supabase.service';
@@ -57,6 +58,10 @@ interface FindManyArguments {
   };
 }
 
+interface DeleteManyArguments {
+  where: { id: { in: string[] } };
+}
+
 const optionalAuthGuard: CanActivate = {
   canActivate(context: ExecutionContext): boolean {
     const http = context.switchToHttp();
@@ -85,7 +90,7 @@ class InMemoryLeaderboardPrisma {
   private clock = 0;
 
   readonly leaderboardEntry = {
-    create: jest.fn(async ({ data }: CreateArguments) => {
+    create: jest.fn(({ data }: CreateArguments) => {
       this.createAttempts += 1;
       if (this.failNextCreate) {
         this.failNextCreate = false;
@@ -96,7 +101,9 @@ class InMemoryLeaderboardPrisma {
           (entry) => entry.backtestResultId === data.backtestResultId,
         )
       ) {
-        throw { code: 'P2002' };
+        throw Object.assign(new Error('Unique constraint violation'), {
+          code: 'P2002',
+        });
       }
       const timestamp = new Date(Date.UTC(2026, 7, 16, 4, 0, this.clock++));
       const row: PrismaLeaderboardEntry = {
@@ -106,44 +113,51 @@ class InMemoryLeaderboardPrisma {
         updatedAt: timestamp,
       };
       this.rows.push(row);
-      return row;
+      return Promise.resolve(row);
     }),
-    findUnique: jest.fn(
-      async ({ where }: { where: { backtestResultId: string } }) =>
+    findUnique: jest.fn(({ where }: { where: { backtestResultId: string } }) =>
+      Promise.resolve(
         this.rows.find(
           (entry) => entry.backtestResultId === where.backtestResultId,
         ) ?? null,
-    ),
-    findMany: jest.fn(async (args?: FindManyArguments) =>
-      this.rows.filter(
-        (entry) =>
-          (!args?.where?.strategyVersionId ||
-            entry.strategyVersionId === args.where.strategyVersionId) &&
-          matchesViewerWhere(entry, args?.where),
       ),
     ),
-    findFirst: jest.fn(
-      async (args?: FindManyArguments) =>
+    findMany: jest.fn((args?: FindManyArguments) =>
+      Promise.resolve(
+        this.rows.filter(
+          (entry) =>
+            (!args?.where?.strategyVersionId ||
+              entry.strategyVersionId === args.where.strategyVersionId) &&
+            matchesViewerWhere(entry, args?.where),
+        ),
+      ),
+    ),
+    findFirst: jest.fn((args?: FindManyArguments) =>
+      Promise.resolve(
         this.rows
           .filter((entry) => matchesViewerWhere(entry, args?.where))
           .sort(
-          (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime(),
-        )[0] ?? null,
+            (left, right) =>
+              right.updatedAt.getTime() - left.updatedAt.getTime(),
+          )[0] ?? null,
+      ),
     ),
     update: jest.fn(
-      async ({
-        where,
-        data,
-      }: {
-        where: { id: string };
-        data: { rank: number };
-      }) => {
+      ({ where, data }: { where: { id: string }; data: { rank: number } }) => {
         const row = this.rows.find((entry) => entry.id === where.id);
         if (!row) throw new Error('row not found');
         row.rank = data.rank;
-        return row;
+        return Promise.resolve(row);
       },
     ),
+    deleteMany: jest.fn(({ where }: DeleteManyArguments) => {
+      const ids = new Set(where.id.in);
+      const previousLength = this.rows.length;
+      for (let index = this.rows.length - 1; index >= 0; index -= 1) {
+        if (ids.has(this.rows[index].id)) this.rows.splice(index, 1);
+      }
+      return Promise.resolve({ count: previousLength - this.rows.length });
+    }),
   };
 
   $transaction<T>(
@@ -163,9 +177,9 @@ class InMemoryLeaderboardPrisma {
 class BacktestResultPortFake implements IBacktestResultPort {
   readonly details = new Map<string, BacktestResultDetail>();
   readonly save = jest.fn<IBacktestResultPort['save']>();
-  readonly getById = jest.fn<IBacktestResultPort['getById']>(async (id) => {
+  readonly getById = jest.fn<IBacktestResultPort['getById']>((id) => {
     if (this.unavailable) throw new Error('raw provider secret');
-    return this.details.get(id) ?? null;
+    return Promise.resolve(this.details.get(id) ?? null);
   });
   unavailable = false;
 }
@@ -251,6 +265,34 @@ async function publishAndWait(
   payload: BacktestCompletedPayload,
   expectedRows: number,
 ): Promise<void> {
+  if (!harness.resultPort.details.has(payload.backtestResultId)) {
+    const detail = detailFixture();
+    harness.resultPort.details.set(payload.backtestResultId, {
+      ...detail,
+      id: payload.backtestResultId,
+      jobId: payload.jobId,
+      userId: payload.userId,
+      strategyVersionId: payload.strategyVersionId,
+      pair: payload.pair,
+      timeframe: payload.timeframe,
+      totalReturn: payload.metrics.totalReturn,
+      winRate: payload.metrics.winRate,
+      maxDrawdown: payload.metrics.maxDrawdown,
+      sharpeRatio: payload.metrics.sharpeRatio,
+      profitFactor: payload.metrics.profitFactor,
+      totalTrades: payload.metrics.totalTrades,
+      executedAt: payload.executedAt,
+      executionTimeMs: payload.executionTimeMs,
+      strategyVersion: {
+        ...detail.strategyVersion,
+        id: payload.strategyVersionId,
+        userId: payload.userId,
+        strategyType: payload.strategyType,
+        name: payload.strategyName,
+        isComposite: payload.isComposite,
+      },
+    });
+  }
   harness.eventBus.publish(
     EventType.BacktestCompleted,
     payload,
@@ -353,6 +395,37 @@ describe('Leaderboard production wiring integration (T027)', () => {
     }
   });
 
+  it('removes confirmed orphan projections and reranks surviving entries', async () => {
+    const harness = await createHarness();
+
+    try {
+      await publishAndWait(harness, completion(), 1);
+      await publishAndWait(
+        harness,
+        completion({
+          backtestResultId: RESULT_B,
+          strategyVersionId: VERSION_B,
+          metrics: { ...completion().metrics, totalReturn: 10 },
+        }),
+        2,
+      );
+      harness.resultPort.details.delete(RESULT_A1);
+
+      const deleted = await harness.module
+        .get(LeaderboardService)
+        .cleanupOrphans();
+
+      expect(deleted).toBe(1);
+      expect(harness.prisma.rows).toHaveLength(1);
+      expect(harness.prisma.rows[0]).toMatchObject({
+        backtestResultId: RESULT_B,
+        rank: 1,
+      });
+    } finally {
+      await close(harness);
+    }
+  });
+
   it('does not broadcast when persistence fails and isolates the observer failure', async () => {
     const harness = await createHarness();
     const updates: LeaderboardUpdatedPayload[] = [];
@@ -373,16 +446,17 @@ describe('Leaderboard production wiring integration (T027)', () => {
 
       expect(harness.prisma.rows).toHaveLength(0);
       expect(updates).toHaveLength(0);
-      expect(loggerError).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Event subscriber failed',
-          eventType: EventType.BacktestCompleted,
-          correlationId: expect.any(String),
-          error: expect.objectContaining({
-            message: 'private database provider failure',
-          }),
-        }),
-      );
+      expect(loggerError).toHaveBeenCalledTimes(1);
+      const logged = loggerError.mock.calls[0]?.[0] as {
+        message: string;
+        eventType: EventType;
+        correlationId: string;
+        error: { message: string };
+      };
+      expect(logged.message).toBe('Event subscriber failed');
+      expect(logged.eventType).toBe(EventType.BacktestCompleted);
+      expect(typeof logged.correlationId).toBe('string');
+      expect(logged.error.message).toBe('private database provider failure');
     } finally {
       loggerError.mockRestore();
       await close(harness);
@@ -459,12 +533,14 @@ describe('Leaderboard production wiring integration (T027)', () => {
           .get('/api/leaderboard')
           .query({ sortBy: criterion })
           .expect(200);
-        expect(response.body.rankingCriterion).toBe(criterion);
-        expect(
-          (response.body.entries as Array<{ backtestResultId: string }>).map(
-            (entry) => entry.backtestResultId,
-          ),
-        ).toEqual(expected[criterion]);
+        const body = response.body as {
+          rankingCriterion: RankingCriterion;
+          entries: Array<{ backtestResultId: string }>;
+        };
+        expect(body.rankingCriterion).toBe(criterion);
+        expect(body.entries.map((entry) => entry.backtestResultId)).toEqual(
+          expected[criterion],
+        );
       }
     } finally {
       await close(harness);
@@ -697,6 +773,200 @@ describe('T012 private-detail anti-enumeration', () => {
   });
 });
 
+describe('T006 explicit scoped REST projections', () => {
+  it('filters every scope before criterion ranking, Top-K, rank and updatedAt', async () => {
+    const harness = await createHarness();
+    const seeded = [
+      completion({
+        userId: null,
+        strategyVersionId: VERSION_A,
+        backtestResultId: RESULT_A1,
+        strategyName: 'System One',
+        metrics: { ...completion().metrics, totalReturn: 90, sharpeRatio: 3 },
+      }),
+      completion({
+        userId: null,
+        strategyVersionId: VERSION_B,
+        backtestResultId: RESULT_A2,
+        strategyName: 'System Two',
+        metrics: { ...completion().metrics, totalReturn: 80, sharpeRatio: 2.8 },
+      }),
+      completion({
+        userId: USER_A,
+        strategyVersionId: VERSION_C,
+        backtestResultId: RESULT_B,
+        strategyName: 'A One',
+        metrics: { ...completion().metrics, totalReturn: 10, sharpeRatio: 1.2 },
+      }),
+      completion({
+        userId: USER_A,
+        strategyVersionId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        backtestResultId: RESULT_C,
+        strategyName: 'A Two',
+        metrics: { ...completion().metrics, totalReturn: 5, sharpeRatio: 1.1 },
+      }),
+      completion({
+        userId: USER_B,
+        strategyVersionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        backtestResultId: RESULT_D,
+        strategyName: 'B Private',
+        metrics: { ...completion().metrics, totalReturn: 100, sharpeRatio: 4 },
+      }),
+    ];
+
+    try {
+      for (const payload of seeded) {
+        harness.resultPort.details.set(payload.backtestResultId, {
+          ...detailFixture(),
+          id: payload.backtestResultId,
+          userId: payload.userId,
+          strategyVersionId: payload.strategyVersionId,
+          strategyVersion: {
+            ...detailFixture().strategyVersion,
+            id: payload.strategyVersionId,
+            userId: payload.userId,
+          },
+        });
+        await publishAndWait(harness, payload, harness.prisma.rows.length + 1);
+      }
+
+      const systemUpdatedAt = maxUpdatedAt(harness.prisma.rows, null);
+      const mineUpdatedAt = maxUpdatedAt(harness.prisma.rows, USER_A);
+      for (const criterion of Object.values(RankingCriterion)) {
+        const system = await request(harness.app.getHttpServer())
+          .get('/api/leaderboard')
+          .query({ scope: 'system', sortBy: criterion })
+          .set('Authorization', 'Bearer user-a')
+          .expect(200);
+        const mine = await request(harness.app.getHttpServer())
+          .get('/api/leaderboard')
+          .query({ scope: 'mine', sortBy: criterion })
+          .set('Authorization', 'Bearer user-a')
+          .expect(200);
+        const systemBody = system.body as {
+          updatedAt: string;
+          entries: Array<{ userId: string | null; rank: number }>;
+        };
+        const mineBody = mine.body as typeof systemBody;
+
+        expect(systemBody.entries.every(({ userId }) => userId === null)).toBe(
+          true,
+        );
+        expect(mineBody.entries.every(({ userId }) => userId === USER_A)).toBe(
+          true,
+        );
+        expect(systemBody.entries.map(({ rank }) => rank)).toEqual([1, 2]);
+        expect(mineBody.entries.map(({ rank }) => rank)).toEqual([1, 2]);
+        expect(systemBody.updatedAt).toBe(systemUpdatedAt.toISOString());
+        expect(mineBody.updatedAt).toBe(mineUpdatedAt.toISOString());
+      }
+
+      const combined = await request(harness.app.getHttpServer())
+        .get('/api/leaderboard')
+        .set('Authorization', 'Bearer user-a')
+        .expect(200);
+      expect(
+        (combined.body as { entries: Array<{ userId: string | null }> })
+          .entries,
+      ).toHaveLength(2);
+      expect(
+        (
+          combined.body as { entries: Array<{ userId: string | null }> }
+        ).entries.every(({ userId }) => userId === null),
+      ).toBe(true);
+
+      const callsBeforeAnonymousMine =
+        harness.prisma.leaderboardEntry.findMany.mock.calls.length +
+        harness.prisma.leaderboardEntry.findFirst.mock.calls.length;
+      const anonymousMine = await request(harness.app.getHttpServer())
+        .get('/api/leaderboard')
+        .query({ scope: 'mine' })
+        .expect(200);
+      expect(anonymousMine.body).toMatchObject({
+        rankingCriterion: RankingCriterion.SCORE,
+        updatedAt: new Date(0).toISOString(),
+        entries: [],
+      });
+      expect(
+        harness.prisma.leaderboardEntry.findMany.mock.calls.length +
+          harness.prisma.leaderboardEntry.findFirst.mock.calls.length,
+      ).toBe(callsBeforeAnonymousMine);
+
+      await request(harness.app.getHttpServer())
+        .get('/api/leaderboard')
+        .query({ scope: 'invalid-private-scope' })
+        .expect(400)
+        .expect({
+          error: 'Invalid leaderboard scope',
+          code: 'INVALID_LEADERBOARD_SCOPE',
+        });
+    } finally {
+      await close(harness);
+    }
+  });
+
+  it('authorizes detail with the same scope before crossing the Strategy result port', async () => {
+    const harness = await createHarness();
+    const systemPayload = completion({ userId: null });
+    const privatePayload = completion({
+      userId: USER_A,
+      strategyVersionId: VERSION_B,
+      backtestResultId: RESULT_B,
+    });
+    for (const payload of [systemPayload, privatePayload]) {
+      harness.resultPort.details.set(payload.backtestResultId, {
+        ...detailFixture(),
+        id: payload.backtestResultId,
+        userId: payload.userId,
+        strategyVersionId: payload.strategyVersionId,
+        strategyVersion: {
+          ...detailFixture().strategyVersion,
+          id: payload.strategyVersionId,
+          userId: payload.userId,
+        },
+      });
+      await publishAndWait(harness, payload, harness.prisma.rows.length + 1);
+    }
+
+    try {
+      harness.resultPort.getById.mockClear();
+      await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${VERSION_A}`)
+        .query({ scope: 'system' })
+        .set('Authorization', 'Bearer user-a')
+        .expect(200);
+      await request(harness.app.getHttpServer())
+        .get(`/api/leaderboard/${VERSION_B}`)
+        .query({ scope: 'mine' })
+        .set('Authorization', 'Bearer user-a')
+        .expect(200);
+      expect(harness.resultPort.getById).toHaveBeenCalledTimes(2);
+
+      const expected = {
+        error: 'Leaderboard entry not found',
+        code: 'LEADERBOARD_ENTRY_NOT_FOUND',
+      };
+      for (const [strategyVersionId, scope] of [
+        [VERSION_A, 'mine'],
+        [VERSION_B, 'system'],
+        [VERSION_B, 'mine'],
+        ['ffffffff-ffff-4fff-8fff-ffffffffffff', 'mine'],
+      ] as const) {
+        const response = request(harness.app.getHttpServer())
+          .get(`/api/leaderboard/${strategyVersionId}`)
+          .query({ scope });
+        if (strategyVersionId === VERSION_B) {
+          response.set('Authorization', 'Bearer user-b');
+        }
+        await response.expect(404).expect(expected);
+      }
+      expect(harness.resultPort.getById).toHaveBeenCalledTimes(2);
+    } finally {
+      await close(harness);
+    }
+  });
+});
+
 describe('T022 private A/B completions at the namespace-wide gateway boundary', () => {
   it('emits only the system projection and redacts both private result IDs', async () => {
     const harness = await createHarness();
@@ -747,8 +1017,8 @@ describe('T022 private A/B completions at the namespace-wide gateway boundary', 
         .map(([, payload]) => payload as LeaderboardUpdatedPayload);
       const systemPayload = emitted[0];
       expect(systemPayload).toBeDefined();
-      expect(systemPayload).toEqual({
-        updatedAt: expect.any(Date),
+      expect(systemPayload?.updatedAt).toBeInstanceOf(Date);
+      expect(systemPayload).toMatchObject({
         triggeredByBacktestResultId: RESULT_A1,
         rankingCriterion: RankingCriterion.SCORE,
         topK: [
@@ -799,8 +1069,18 @@ function matchesViewerWhere(
   where?: FindManyArguments['where'],
 ): boolean {
   if (!where || (!Object.hasOwn(where, 'userId') && !where.OR)) return true;
-  if (where.userId === null) return entry.userId === null;
+  if (Object.hasOwn(where, 'userId')) return entry.userId === where.userId;
   return where.OR?.some(({ userId }) => entry.userId === userId) ?? false;
+}
+
+function maxUpdatedAt(
+  rows: PrismaLeaderboardEntry[],
+  userId: string | null,
+): Date {
+  const times = rows
+    .filter((row) => row.userId === userId)
+    .map((row) => row.updatedAt.getTime());
+  return new Date(Math.max(...times));
 }
 
 function detailFixture(): BacktestResultDetail {

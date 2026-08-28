@@ -25,6 +25,9 @@ import { LoopController } from './loop.controller';
 import { LoopRepository } from './loop.repository';
 import { LoopStatusService } from './loop-status.service';
 import { StrategyLoopService } from './strategy-loop.service';
+import { SearchLoopControlRepository } from './search-loop-control.repository';
+import { SearchLoopControlService } from './search-loop-control.service';
+import { SearchLoopSupervisorService } from './search-loop-supervisor.service';
 
 @Module({
   imports: [
@@ -36,8 +39,19 @@ import { StrategyLoopService } from './strategy-loop.service';
     LeaderboardModule,
   ],
   controllers: [LoopController],
-  providers: [LoopRepository, LoopStatusService, StrategyLoopService],
-  exports: [LoopStatusService, StrategyLoopService],
+  providers: [
+    LoopRepository,
+    LoopStatusService,
+    StrategyLoopService,
+    SearchLoopControlRepository,
+    SearchLoopControlService,
+    SearchLoopSupervisorService,
+  ],
+  exports: [
+    LoopStatusService,
+    StrategyLoopService,
+    SearchLoopControlService,
+  ],
 })
 export class LoopModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LoopModule.name);

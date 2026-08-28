@@ -21,12 +21,14 @@ import {
 import request from 'supertest';
 import { GUARDS_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
+import { RequireAuth } from '../auth/require-auth.guard';
 
 const CONTROLLER_FILE = join(__dirname, 'loop.controller.ts');
 const CONTROLLER_MODULE = join(__dirname, 'loop.controller');
 const DTO_FILE = join(__dirname, 'loop.dto.ts');
 const SERVICE_MODULE = join(__dirname, 'strategy-loop.service');
 const STATUS_MODULE = join(__dirname, 'loop-status.service');
+const CONTROL_MODULE = join(__dirname, 'search-loop-control.service');
 const TARGET_EXISTS = existsSync(CONTROLLER_FILE) && existsSync(DTO_FILE);
 
 type NestClass = new (...args: never[]) => object;
@@ -93,6 +95,22 @@ const validStartBody = () => ({
   },
 });
 
+const validAutomationBody = () => ({
+  generatorType: StrategyGeneratorType.RANDOM,
+  pair: 'BTCUSDT',
+  timeframe: '1h',
+  backtestWindowDays: 180,
+  backtestConfig: {
+    initialCapital: 10_000,
+    positionSizePercent: 100,
+    commission: 0.001,
+    slippage: 0.001,
+  },
+  maxCandidatesPerRun: 100,
+  stopOnNoImprovementIterations: 50,
+  cooldownMs: 30_000,
+});
+
 const domainError = (code: string): Error & { code: string } =>
   Object.assign(new Error('sensitive internal dependency detail'), { code });
 
@@ -118,6 +136,9 @@ describeWithTarget('LoopController stable REST contract', () => {
   let app: INestApplication;
   let loopService: {
     start: jest.Mock<(input: unknown) => Promise<SearchLoopRun>>;
+    pause: jest.Mock<(loopRunId: string) => Promise<SearchLoopRun>>;
+    resume: jest.Mock<(loopRunId: string) => Promise<SearchLoopRun>>;
+    stop: jest.Mock<(loopRunId: string) => Promise<SearchLoopRun>>;
   };
   let loopStatus: {
     pause: jest.Mock<(loopRunId: string) => Promise<SearchLoopRun>>;
@@ -130,6 +151,12 @@ describeWithTarget('LoopController stable REST contract', () => {
         candidates: SearchLoopCandidate[];
       } | null>
     >;
+  };
+  let loopControl: {
+    get: jest.Mock<() => Promise<unknown>>;
+    enable: jest.Mock<(input: unknown) => Promise<unknown>>;
+    disable: jest.Mock<() => Promise<unknown>>;
+    configure: jest.Mock<(input: unknown) => Promise<unknown>>;
   };
 
   beforeEach(async () => {
@@ -145,11 +172,29 @@ describeWithTarget('LoopController stable REST contract', () => {
       STATUS_MODULE,
       'LoopStatusService',
     );
+    const SearchLoopControlService = loadExport<NestClass>(
+      CONTROL_MODULE,
+      'SearchLoopControlService',
+    );
 
     loopService = {
       start: jest
         .fn<(input: unknown) => Promise<SearchLoopRun>>()
         .mockResolvedValue(run()),
+      pause: jest
+        .fn<(loopRunId: string) => Promise<SearchLoopRun>>()
+        .mockResolvedValue(run({ status: LoopStatus.PAUSED })),
+      resume: jest
+        .fn<(loopRunId: string) => Promise<SearchLoopRun>>()
+        .mockResolvedValue(run()),
+      stop: jest
+        .fn<(loopRunId: string) => Promise<SearchLoopRun>>()
+        .mockResolvedValue(
+          run({
+            status: LoopStatus.STOPPED_BY_USER,
+            stopReason: 'stopped_by_user',
+          }),
+        ),
     };
     loopStatus = {
       pause: jest
@@ -184,15 +229,54 @@ describeWithTarget('LoopController stable REST contract', () => {
           ],
         }),
     };
+    const controlState = {
+      id: 'system',
+      enabled: true,
+      generatorType: StrategyGeneratorType.RANDOM,
+      pair: 'BTCUSDT',
+      timeframe: '1h',
+      backtestWindowDays: 180,
+      backtestConfig: {
+        initialCapital: 10_000,
+        positionSizePercent: 100,
+      },
+      maxCandidatesPerRun: 100,
+      maxDurationMsPerRun: null,
+      stopOnNoImprovementIterations: 50,
+      cooldownMs: 30_000,
+      failureCount: 0,
+      nextRunAt: null,
+      lastStartedRunId: LOOP_RUN_ID,
+      lastError: null,
+      leaseOwner: null,
+      leaseUntil: null,
+      createdAt: STARTED_AT,
+      updatedAt: STARTED_AT,
+    };
+    loopControl = {
+      get: jest.fn<() => Promise<unknown>>().mockResolvedValue(controlState),
+      enable: jest
+        .fn<(input: unknown) => Promise<unknown>>()
+        .mockResolvedValue(controlState),
+      disable: jest
+        .fn<() => Promise<unknown>>()
+        .mockResolvedValue({ ...controlState, enabled: false }),
+      configure: jest
+        .fn<(input: unknown) => Promise<unknown>>()
+        .mockResolvedValue(controlState),
+    };
 
     const module = await Test.createTestingModule({
       controllers: [LoopController],
       providers: [
         { provide: StrategyLoopService, useValue: loopService },
         { provide: LoopStatusService, useValue: loopStatus },
+        { provide: SearchLoopControlService, useValue: loopControl },
       ],
     })
       .overrideGuard(SupabaseJwtGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RequireAuth)
       .useValue({ canActivate: () => true })
       .compile();
     app = module.createNestApplication();
@@ -235,7 +319,7 @@ describeWithTarget('LoopController stable REST contract', () => {
           .expect({ loopRunId: LOOP_RUN_ID, status: expectedStatus });
 
         expect(
-          loopStatus[command as 'pause' | 'resume' | 'stop'],
+          loopService[command as 'pause' | 'resume' | 'stop'],
         ).toHaveBeenCalledWith(LOOP_RUN_ID);
       },
     );
@@ -245,7 +329,8 @@ describeWithTarget('LoopController stable REST contract', () => {
         .get('/api/loop/current')
         .expect(200)
         .expect((response) => {
-          expect(response.body.id).toBe(LOOP_RUN_ID);
+          const body = response.body as SearchLoopRun;
+          expect(body.id).toBe(LOOP_RUN_ID);
         });
 
       loopStatus.getCurrent.mockResolvedValueOnce(null);
@@ -255,17 +340,52 @@ describeWithTarget('LoopController stable REST contract', () => {
         .expect('null');
     });
 
+    it('enables, reads, configures and persistently disables automation', async () => {
+      await request(app.getHttpServer())
+        .post('/api/loop/control/enable')
+        .send(validAutomationBody())
+        .expect(200)
+        .expect((response) => {
+          expect(response.body.enabled).toBe(true);
+        });
+      expect(loopControl.enable).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pair: 'BTCUSDT',
+          maxCandidatesPerRun: 100,
+        }),
+      );
+
+      await request(app.getHttpServer())
+        .get('/api/loop/control')
+        .expect(200);
+      expect(loopControl.get).toHaveBeenCalledTimes(1);
+
+      await request(app.getHttpServer())
+        .put('/api/loop/control/config')
+        .send(validAutomationBody())
+        .expect(200);
+      expect(loopControl.configure).toHaveBeenCalledTimes(1);
+
+      await request(app.getHttpServer())
+        .post('/api/loop/control/disable')
+        .expect(200)
+        .expect((response) => {
+          expect(response.body.enabled).toBe(false);
+        });
+      expect(loopControl.disable).toHaveBeenCalledTimes(1);
+    });
+
     it('GET /api/loop/:id returns candidates in repository order', async () => {
       const response = await request(app.getHttpServer())
         .get(`/api/loop/${LOOP_RUN_ID}`)
         .expect(200);
+      const body = response.body as {
+        run: SearchLoopRun;
+        candidates: SearchLoopCandidate[];
+      };
 
-      expect(response.body.run.id).toBe(LOOP_RUN_ID);
-      expect(
-        response.body.candidates.map(
-          (item: { iteration: number }) => item.iteration,
-        ),
-      ).toEqual([1, 2]);
+      expect(body.run.id).toBe(LOOP_RUN_ID);
+      expect(body.candidates.map((item) => item.iteration)).toEqual([1, 2]);
       expect(loopStatus.getDetail).toHaveBeenCalledWith(LOOP_RUN_ID);
     });
   });
@@ -350,7 +470,7 @@ describeWithTarget('LoopController stable REST contract', () => {
     it.each(['pause', 'resume', 'stop'] as const)(
       'maps %s LOOP_NOT_FOUND to 404',
       async (command) => {
-        loopStatus[command].mockRejectedValueOnce(
+        loopService[command].mockRejectedValueOnce(
           domainError('LOOP_NOT_FOUND'),
         );
 
@@ -367,7 +487,7 @@ describeWithTarget('LoopController stable REST contract', () => {
     it.each(['pause', 'resume', 'stop'] as const)(
       'maps %s INVALID_LOOP_TRANSITION to 409',
       async (command) => {
-        loopStatus[command].mockRejectedValueOnce(
+        loopService[command].mockRejectedValueOnce(
           domainError('INVALID_LOOP_TRANSITION'),
         );
 
@@ -433,7 +553,31 @@ describe('T018 optional-auth boundary with global loop semantics', () => {
 
     const source = readFileSync(CONTROLLER_FILE, 'utf8');
     expect(source.match(/@CurrentUser\(\)/g)).toHaveLength(routeMethods.length);
-    expect(source).not.toContain('RequireAuth');
+    for (const method of routeMethods) {
+      expect(
+        Reflect.getMetadata(
+          GUARDS_METADATA,
+          (LoopController as unknown as Record<string, unknown>).prototype[
+            method
+          ],
+        ),
+      ).toBeUndefined();
+    }
+
+    for (const method of [
+      'enableControl',
+      'disableControl',
+      'configureControl',
+    ]) {
+      expect(
+        Reflect.getMetadata(
+          GUARDS_METADATA,
+          (LoopController as unknown as Record<string, unknown>).prototype[
+            method
+          ],
+        ),
+      ).toEqual([RequireAuth]);
+    }
   });
 });
 

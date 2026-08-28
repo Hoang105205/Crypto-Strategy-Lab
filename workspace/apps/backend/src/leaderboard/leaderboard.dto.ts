@@ -5,10 +5,14 @@ import {
   Injectable,
   type PipeTransform,
 } from '@nestjs/common';
-import { RankingCriterion } from '@crypto-strategy-lab/shared';
+import {
+  LeaderboardScope,
+  RankingCriterion,
+} from '@crypto-strategy-lab/shared';
 
 export enum LeaderboardErrorCode {
   INVALID_SORT_CRITERION = 'INVALID_SORT_CRITERION',
+  INVALID_LEADERBOARD_SCOPE = 'INVALID_LEADERBOARD_SCOPE',
   LEADERBOARD_ENTRY_NOT_FOUND = 'LEADERBOARD_ENTRY_NOT_FOUND',
   STRATEGY_ENGINE_UNAVAILABLE = 'STRATEGY_ENGINE_UNAVAILABLE',
 }
@@ -16,6 +20,7 @@ export enum LeaderboardErrorCode {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RANKING_CRITERIA = new Set<string>(Object.values(RankingCriterion));
+const LEADERBOARD_SCOPES = new Set<string>(Object.values(LeaderboardScope));
 
 @Injectable()
 export class LeaderboardSortPipe implements PipeTransform<
@@ -31,6 +36,23 @@ export class LeaderboardSortPipe implements PipeTransform<
       });
     }
     return value as RankingCriterion;
+  }
+}
+
+@Injectable()
+export class LeaderboardScopePipe implements PipeTransform<
+  string | undefined,
+  LeaderboardScope
+> {
+  transform(value: string | undefined): LeaderboardScope {
+    if (value === undefined || value === '') return LeaderboardScope.COMBINED;
+    if (!LEADERBOARD_SCOPES.has(value)) {
+      throw new BadRequestException({
+        error: 'Invalid leaderboard scope',
+        code: LeaderboardErrorCode.INVALID_LEADERBOARD_SCOPE,
+      });
+    }
+    return value as LeaderboardScope;
   }
 }
 

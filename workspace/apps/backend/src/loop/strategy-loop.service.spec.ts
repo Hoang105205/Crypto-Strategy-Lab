@@ -102,6 +102,12 @@ interface StrategyLoopServiceApi {
   ): Promise<void>;
 }
 
+type MockFunctions<T> = {
+  [K in keyof T]: T[K] extends (...args: infer Args) => infer Result
+    ? jest.Mock<(...args: Args) => Result>
+    : T[K];
+};
+
 type StrategyLoopServiceConstructor = new (
   repository: LoopRepositoryPort,
   status: LoopStatusPort,
@@ -332,11 +338,11 @@ describe('T029 StrategyLoopService target', () => {
 const describeWithTarget = TARGET_EXISTS ? describe : describe.skip;
 
 describeWithTarget('StrategyLoopService orchestration contract', () => {
-  let repository: jest.Mocked<LoopRepositoryPort>;
-  let status: jest.Mocked<LoopStatusPort>;
-  let generator: jest.Mocked<LoopCandidateGeneratorPort>;
-  let scoringPolicy: jest.Mocked<LoopScoringPolicyPort>;
-  let jobQueue: jest.Mocked<IJobQueue>;
+  let repository: MockFunctions<LoopRepositoryPort>;
+  let status: MockFunctions<LoopStatusPort>;
+  let generator: MockFunctions<LoopCandidateGeneratorPort>;
+  let scoringPolicy: MockFunctions<LoopScoringPolicyPort>;
+  let jobQueue: MockFunctions<IJobQueue>;
   let eventBus: jest.Mocked<IEventBus>;
   let activeRun: SearchLoopRun;
   let firstCandidate: SearchLoopCandidate;
@@ -425,7 +431,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
 
       await service.start(withoutDefault);
 
-      expect(repository.createRun).toHaveBeenCalledWith(
+      expect(repository.createRun as jest.Mock).toHaveBeenCalledWith(
         expect.objectContaining({
           maxCandidates: null,
           maxDurationMs: null,
@@ -451,7 +457,9 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
       async (type) => {
         await service.start(config({ generatorType: type }));
 
-        expect(generator.generateCandidate).toHaveBeenCalledWith(type);
+        expect(generator.generateCandidate as jest.Mock).toHaveBeenCalledWith(
+          type,
+        );
       },
     );
 
@@ -467,7 +475,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         ).rejects.toMatchObject({
           code: 'INVALID_LOOP_CONFIG',
         });
-        expect(repository.createRun).not.toHaveBeenCalled();
+        expect(repository.createRun as jest.Mock).not.toHaveBeenCalled();
       },
     );
   });
@@ -482,7 +490,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         ([eventType]) => eventType === EventType.BacktestRequested,
       );
 
-      expect(jobQueue.enqueue).toHaveBeenCalledWith(
+      expect(jobQueue.enqueue as jest.Mock).toHaveBeenCalledWith(
         JobType.BACKTEST,
         expect.objectContaining({
           source: BacktestSource.SEARCH_LOOP,
@@ -549,10 +557,12 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
 
       await service.handleBacktestCompleted(envelope);
 
-      expect(scoringPolicy.calculateScore).toHaveBeenCalledWith(
+      expect(scoringPolicy.calculateScore as jest.Mock).toHaveBeenCalledWith(
         envelope.payload.metrics,
       );
-      expect(repository.recordCandidateCompleted).toHaveBeenCalledWith({
+      expect(
+        repository.recordCandidateCompleted as jest.Mock,
+      ).toHaveBeenCalledWith({
         loopRunId: activeRun.id,
         jobId: firstCandidate.jobId,
         backtestResultId: envelope.payload.backtestResultId,
@@ -577,7 +587,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         ),
       );
 
-      expect(generator.generateCandidate).not.toHaveBeenCalled();
+      expect(generator.generateCandidate as jest.Mock).not.toHaveBeenCalled();
       expect(eventPayloads(EventType.SearchLoopProgress)).toHaveLength(0);
       expect(eventPayloads(EventType.SearchLoopStopped)).toHaveLength(0);
     });
@@ -606,8 +616,10 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
           ),
         );
 
-        expect(repository.recordCandidateCompleted).toHaveBeenCalled();
-        expect(generator.generateCandidate).not.toHaveBeenCalled();
+        expect(
+          repository.recordCandidateCompleted as jest.Mock,
+        ).toHaveBeenCalled();
+        expect(generator.generateCandidate as jest.Mock).not.toHaveBeenCalled();
         expect(eventPayloads(EventType.SearchLoopProgress)).toHaveLength(0);
       },
     );
@@ -629,11 +641,13 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         ),
       );
 
-      expect(repository.recordCandidateFailed).toHaveBeenCalledWith({
+      expect(
+        repository.recordCandidateFailed as jest.Mock,
+      ).toHaveBeenCalledWith({
         loopRunId: activeRun.id,
         jobId: firstCandidate.jobId,
       });
-      expect(generator.generateCandidate).not.toHaveBeenCalled();
+      expect(generator.generateCandidate as jest.Mock).not.toHaveBeenCalled();
       expect(eventPayloads(EventType.SearchLoopProgress)).toHaveLength(0);
     });
   });
@@ -682,7 +696,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         }),
       );
 
-      expect(status.complete).toHaveBeenCalledWith(
+      expect(status.complete as jest.Mock).toHaveBeenCalledWith(
         activeRun.id,
         'no_improvement_limit_reached',
       );
@@ -710,8 +724,8 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         ),
       );
 
-      expect(status.complete).not.toHaveBeenCalled();
-      expect(generator.generateCandidate).not.toHaveBeenCalled();
+      expect(status.complete as jest.Mock).not.toHaveBeenCalled();
+      expect(generator.generateCandidate as jest.Mock).not.toHaveBeenCalled();
     });
 
     it('checks maxCandidates before maxDuration and no-improvement', async () => {
@@ -732,7 +746,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         }),
       );
 
-      expect(status.complete).toHaveBeenCalledWith(
+      expect(status.complete as jest.Mock).toHaveBeenCalledWith(
         activeRun.id,
         'max_candidates_reached',
       );
@@ -756,7 +770,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         }),
       );
 
-      expect(status.complete).toHaveBeenCalledWith(
+      expect(status.complete as jest.Mock).toHaveBeenCalledWith(
         activeRun.id,
         'max_duration_reached',
       );
@@ -776,9 +790,12 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
 
       await service.start(config());
 
-      expect(generator.generateCandidate).toHaveBeenCalledTimes(3);
-      expect(status.fail).toHaveBeenCalledWith(activeRun.id, 'generator_error');
-      expect(jobQueue.enqueue).not.toHaveBeenCalled();
+      expect(generator.generateCandidate as jest.Mock).toHaveBeenCalledTimes(3);
+      expect(status.fail as jest.Mock).toHaveBeenCalledWith(
+        activeRun.id,
+        'generator_error',
+      );
+      expect(jobQueue.enqueue as jest.Mock).not.toHaveBeenCalled();
       expect(eventPayloads(EventType.SearchLoopStopped)).toHaveLength(1);
     });
 
@@ -793,9 +810,9 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
 
       await service.start(config());
 
-      expect(generator.generateCandidate).toHaveBeenCalledTimes(3);
-      expect(status.fail).not.toHaveBeenCalled();
-      expect(jobQueue.enqueue).toHaveBeenCalledTimes(1);
+      expect(generator.generateCandidate as jest.Mock).toHaveBeenCalledTimes(3);
+      expect(status.fail as jest.Mock).not.toHaveBeenCalled();
+      expect(jobQueue.enqueue as jest.Mock).toHaveBeenCalledTimes(1);
     });
 
     it('does not enqueue a generated successor if pause wins the race', async () => {
@@ -816,8 +833,8 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         ),
       );
 
-      expect(generator.generateCandidate).not.toHaveBeenCalled();
-      expect(jobQueue.enqueue).not.toHaveBeenCalled();
+      expect(generator.generateCandidate as jest.Mock).not.toHaveBeenCalled();
+      expect(jobQueue.enqueue as jest.Mock).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -854,7 +871,7 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         });
         await starting;
 
-        expect(jobQueue.enqueue).not.toHaveBeenCalled();
+        expect(jobQueue.enqueue as jest.Mock).not.toHaveBeenCalled();
       },
     );
 
@@ -863,14 +880,14 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
       generator.generateCandidate.mockClear();
       jobQueue.enqueue.mockClear();
       let resumed = false;
-      status.resume.mockImplementation(async () => {
+      status.resume.mockImplementation(() => {
         if (resumed) {
           throw Object.assign(new Error('already running'), {
             code: 'INVALID_LOOP_TRANSITION',
           });
         }
         resumed = true;
-        return run({ id: activeRun.id });
+        return Promise.resolve(run({ id: activeRun.id }));
       });
       const stopped = run({
         id: activeRun.id,
@@ -884,8 +901,8 @@ describeWithTarget('StrategyLoopService orchestration contract', () => {
         service.resume(activeRun.id),
         service.resume(activeRun.id),
       ]);
-      expect(generator.generateCandidate).toHaveBeenCalledTimes(1);
-      expect(jobQueue.enqueue).toHaveBeenCalledTimes(1);
+      expect(generator.generateCandidate as jest.Mock).toHaveBeenCalledTimes(1);
+      expect(jobQueue.enqueue as jest.Mock).toHaveBeenCalledTimes(1);
 
       await Promise.all([
         service.stop(activeRun.id),

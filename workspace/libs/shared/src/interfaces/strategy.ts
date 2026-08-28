@@ -49,6 +49,7 @@ export interface IStrategyCandidatePort {
 export interface IStrategyExecutionPort {
   resolveVersion(
     strategyVersionId: string,
+    userId?: string | null,
   ): Promise<StrategyExecutionResult<IStrategy> | null>;
 }
 

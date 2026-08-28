@@ -1,25 +1,33 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useState, type ReactNode } from 'react';
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState, type ReactNode } from "react";
+import { readFileSync } from "node:fs";
 
-let currentPathname = '/';
+let currentPathname = "/";
 
 const getInfrastructureSocketMock = vi.hoisted(() => vi.fn());
 const disconnectInfrastructureSocketMock = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({
+vi.mock("next/navigation", () => ({
   usePathname: () => currentPathname,
 }));
 
-vi.mock('next/link', () => ({
-  default: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...props
+  }: {
+    href: string;
+    children: ReactNode;
+  }) => (
     <a href={href} {...props}>
       {children}
     </a>
   ),
 }));
 
-vi.mock('../../services/infrastructure-socket', () => ({
+vi.mock("../../services/infrastructure-socket", () => ({
   getInfrastructureSocket: getInfrastructureSocketMock,
   disconnectInfrastructureSocket: disconnectInfrastructureSocketMock,
 }));
@@ -46,64 +54,68 @@ class FakeSocket extends FakeEmitter {
 }
 
 async function loadAppShell() {
-  const modulePath = './app-shell';
+  const modulePath = "./app-shell";
   return import(/* @vite-ignore */ modulePath);
 }
 
 async function loadInfrastructureProvider() {
-  const modulePath = './infrastructure-provider';
+  const modulePath = "./infrastructure-provider";
   return import(/* @vite-ignore */ modulePath);
 }
 
 async function loadLoadingState() {
-  const modulePath = './loading-state';
+  const modulePath = "./loading-state";
   return import(/* @vite-ignore */ modulePath);
 }
 
 async function loadErrorBoundary() {
-  const modulePath = './error-boundary';
+  const modulePath = "./error-boundary";
   return import(/* @vite-ignore */ modulePath);
 }
 
-describe('AppShell contract', () => {
+describe("AppShell contract", () => {
   beforeEach(() => {
-    currentPathname = '/';
+    currentPathname = "/";
   });
 
-  it('renders canonical navigation in order with one semantic active route', async () => {
+  it("renders canonical navigation in order with one semantic active route", async () => {
     const { AppShell } = await loadAppShell();
-    currentPathname = '/leaderboard';
+    currentPathname = "/leaderboard";
     render(<AppShell>Page content</AppShell>);
 
-    const navigation = screen.getByRole('navigation', { name: /primary/i });
-    const links = within(navigation).getAllByRole('link');
+    const navigation = screen.getByRole("navigation", { name: /primary/i });
+    const links = within(navigation).getAllByRole("link");
     expect(links.map((link) => link.textContent)).toEqual([
-      'Dashboard',
-      'Strategy Builder',
-      'Leaderboard',
-      'News Feed',
+      "Dashboard",
+      "Strategy Builder",
+      "Leaderboard",
+      "News Feed",
     ]);
-    expect(links.map((link) => link.getAttribute('href'))).toEqual([
-      '/',
-      '/strategy',
-      '/leaderboard',
-      '/news',
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/",
+      "/strategy",
+      "/leaderboard",
+      "/news",
     ]);
-    expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    expect(screen.getByRole("link", { name: "Leaderboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
     );
     expect(
-      screen.getByRole('link', { name: 'Strategy Builder' }),
-    ).not.toHaveAttribute('aria-current');
+      screen.getByRole("link", { name: "Strategy Builder" }),
+    ).not.toHaveAttribute("aria-current");
   });
 
-  it('provides a usable mobile menu, visible focus styles, and preserves page-owned state', async () => {
+  it("provides a usable mobile menu, visible focus styles, and preserves page-owned state", async () => {
     const { AppShell } = await loadAppShell();
 
     function StatefulPage() {
       const [count, setCount] = useState(0);
-      return <button onClick={() => setCount((value) => value + 1)}>Count {count}</button>;
+      return (
+        <button onClick={() => setCount((value) => value + 1)}>
+          Count {count}
+        </button>
+      );
     }
 
     const { rerender } = render(
@@ -111,50 +123,63 @@ describe('AppShell contract', () => {
         <StatefulPage />
       </AppShell>,
     );
-    const menuButton = screen.getByRole('button', { name: /open navigation/i });
-    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    const menuButton = screen.getByRole("button", { name: /open navigation/i });
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(menuButton);
-    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('navigation', { name: /primary/i })).toHaveClass('flex');
-    expect(screen.getByRole('link', { name: 'Dashboard' }).className).toMatch(
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("navigation", { name: /primary/i })).toHaveClass(
+      "flex",
+    );
+    expect(screen.getByRole("link", { name: "Dashboard" }).className).toMatch(
       /focus-visible:/,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Count 0' }));
-    currentPathname = '/news';
+    fireEvent.click(screen.getByRole("button", { name: "Count 0" }));
+    currentPathname = "/news";
     rerender(
       <AppShell>
         <StatefulPage />
       </AppShell>,
     );
-    expect(screen.getByRole('button', { name: 'Count 1' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'News Feed' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    expect(screen.getByRole("button", { name: "Count 1" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "News Feed" })).toHaveAttribute(
+      "aria-current",
+      "page",
     );
   });
 
-  it('uses a dark 64px shell and a full-width content container', async () => {
+  it("uses a dark 64px shell and a full-width content container", async () => {
     const { AppShell } = await loadAppShell();
     render(<AppShell>Page content</AppShell>);
 
-    expect(screen.getByRole('banner')).toHaveClass('h-16', 'bg-canvas-dark');
-    expect(screen.getByTestId('app-shell-container')).toHaveClass(
-      'w-full',
+    expect(screen.getByRole("banner")).toHaveClass("h-16", "bg-canvas-dark");
+    expect(screen.getByTestId("app-shell-container")).toHaveClass("w-full");
+    expect(screen.getByTestId("app-shell-container")).not.toHaveClass(
+      "max-w-[1440px]",
     );
-    expect(screen.getByTestId('app-shell-container')).not.toHaveClass(
-      'max-w-[1440px]',
-    );
+  });
+
+  it("keeps canonical Auth -> Infrastructure -> LeaderboardLive -> AppShell root ownership", () => {
+    const layoutSource = readFileSync("src/app/layout.tsx", "utf8");
+    const auth = layoutSource.indexOf("<AuthProvider>");
+    const infrastructure = layoutSource.indexOf("<InfrastructureProvider>");
+    const leaderboardLive = layoutSource.indexOf("<LeaderboardLiveProvider>");
+    const appShell = layoutSource.indexOf("<AppShell>");
+
+    expect(auth).toBeGreaterThan(-1);
+    expect(infrastructure).toBeGreaterThan(auth);
+    expect(leaderboardLive).toBeGreaterThan(infrastructure);
+    expect(appShell).toBeGreaterThan(leaderboardLive);
   });
 });
 
-describe('InfrastructureProvider ownership', () => {
+describe("InfrastructureProvider ownership", () => {
   beforeEach(() => {
     getInfrastructureSocketMock.mockReset();
     disconnectInfrastructureSocketMock.mockReset();
   });
 
-  it('reuses one socket across rerenders and removes only its own listeners on unmount', async () => {
+  it("reuses one socket across rerenders and removes only its own listeners on unmount", async () => {
     const socket = new FakeSocket();
     getInfrastructureSocketMock.mockReturnValue(socket);
     const { InfrastructureProvider } = await loadInfrastructureProvider();
@@ -188,24 +213,26 @@ describe('InfrastructureProvider ownership', () => {
   });
 });
 
-describe('shared UI states', () => {
+describe("shared UI states", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders a dimension-preserving skeleton with an accessible loading indication', async () => {
+  it("renders a dimension-preserving skeleton with an accessible loading indication", async () => {
     const { LoadingState } = await loadLoadingState();
     render(<LoadingState label="Loading leaderboard" minHeight={320} />);
 
-    const status = screen.getByRole('status', { name: 'Loading leaderboard' });
-    expect(status).toHaveAttribute('aria-busy', 'true');
-    expect(status).toHaveStyle({ minHeight: '320px' });
-    expect(within(status).getAllByTestId('loading-skeleton').length).toBeGreaterThan(0);
+    const status = screen.getByRole("status", { name: "Loading leaderboard" });
+    expect(status).toHaveAttribute("aria-busy", "true");
+    expect(status).toHaveStyle({ minHeight: "320px" });
+    expect(
+      within(status).getAllByTestId("loading-skeleton").length,
+    ).toBeGreaterThan(0);
   });
 
-  it('sanitizes caught errors and exposes at most one clear retry action', async () => {
+  it("sanitizes caught errors and exposes at most one clear retry action", async () => {
     const { ErrorBoundary } = await loadErrorBoundary();
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     let shouldThrow = true;
     const retry = vi.fn(() => {
       shouldThrow = false;
@@ -213,7 +240,7 @@ describe('shared UI states', () => {
 
     function FailingChild() {
       if (shouldThrow) {
-        throw new Error('redis://secret-provider.internal raw stack');
+        throw new Error("redis://secret-provider.internal raw stack");
       }
       return <p>Recovered</p>;
     }
@@ -224,16 +251,18 @@ describe('shared UI states', () => {
       </ErrorBoundary>,
     );
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Something went wrong. Please try again.',
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Something went wrong. Please try again.",
     );
-    expect(screen.queryByText(/secret-provider|redis:\/\//i)).not.toBeInTheDocument();
-    const actions = screen.getAllByRole('button');
+    expect(
+      screen.queryByText(/secret-provider|redis:\/\//i),
+    ).not.toBeInTheDocument();
+    const actions = screen.getAllByRole("button");
     expect(actions).toHaveLength(1);
-    expect(actions[0]).toHaveAccessibleName('Try again');
+    expect(actions[0]).toHaveAccessibleName("Try again");
 
     fireEvent.click(actions[0]);
     expect(retry).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Recovered')).toBeInTheDocument();
+    expect(screen.getByText("Recovered")).toBeInTheDocument();
   });
 });

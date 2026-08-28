@@ -1,8 +1,5 @@
 import { HttpException } from '@nestjs/common';
-import {
-  GUARDS_METADATA,
-  ROUTE_ARGS_METADATA,
-} from '@nestjs/common/constants';
+import { GUARDS_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -89,6 +86,35 @@ describe('Leaderboard DTO validation', () => {
       LeaderboardErrorCode.LEADERBOARD_ENTRY_NOT_FOUND,
     );
   });
+
+  it('defines exactly system, mine, combined and validates scope with Combined default', () => {
+    const shared = require('@crypto-strategy-lab/shared') as {
+      LeaderboardScope?: Record<string, string>;
+    };
+    const dto = require('./leaderboard.dto') as {
+      LeaderboardScopePipe?: new () => {
+        transform(value: string | undefined): string;
+      };
+    };
+
+    expect(shared.LeaderboardScope).toEqual({
+      SYSTEM: 'system',
+      MINE: 'mine',
+      COMBINED: 'combined',
+    });
+    expect(dto.LeaderboardScopePipe).toEqual(expect.any(Function));
+    const scopePipe = new dto.LeaderboardScopePipe!();
+    expect(scopePipe.transform(undefined)).toBe('combined');
+    expect(scopePipe.transform('')).toBe('combined');
+    for (const scope of ['system', 'mine', 'combined']) {
+      expect(scopePipe.transform(scope)).toBe(scope);
+    }
+    expectStableHttpError(
+      () => scopePipe.transform('foreign-user'),
+      400,
+      'INVALID_LEADERBOARD_SCOPE' as LeaderboardErrorCode,
+    );
+  });
 });
 
 describe('LeaderboardController', () => {
@@ -103,9 +129,49 @@ describe('LeaderboardController', () => {
     expect(service.getLeaderboard).toHaveBeenCalledWith(
       RankingCriterion.SCORE,
       null,
+      'combined',
     );
-    expect(service.getDetail).toHaveBeenCalledWith(STRATEGY_VERSION_ID, null);
+    expect(service.getDetail).toHaveBeenCalledWith(
+      STRATEGY_VERSION_ID,
+      null,
+      'combined',
+    );
   });
+
+  it.each(['system', 'mine', 'combined'] as const)(
+    'passes explicit %s scope and verified viewer to list and detail',
+    async (scope) => {
+      const service = serviceFake();
+      const controller = new LeaderboardController(
+        service as never,
+      ) as unknown as {
+        list(
+          criterion: RankingCriterion,
+          viewerUserId: string | null,
+          scope: string,
+        ): Promise<LeaderboardSnapshot>;
+        detail(
+          strategyVersionId: string,
+          viewerUserId: string | null,
+          scope: string,
+        ): Promise<LeaderboardDetail>;
+      };
+
+      await controller.list(RankingCriterion.SHARPE_RATIO, USER_A, scope);
+      await controller.detail(STRATEGY_VERSION_ID, USER_A, scope);
+
+      expect(service.getLeaderboard).toHaveBeenCalledWith(
+        RankingCriterion.SHARPE_RATIO,
+        USER_A,
+        scope,
+      );
+      expect(service.getDetail).toHaveBeenCalledWith(
+        STRATEGY_VERSION_ID,
+        USER_A,
+        scope,
+      );
+    },
+  );
 
   it('returns stable LEADERBOARD_ENTRY_NOT_FOUND', async () => {
     const service = serviceFake();
@@ -134,9 +200,9 @@ describe('LeaderboardController', () => {
 
 describe('T011 optional-auth controller scope', () => {
   it('uses SupabaseJwtGuard and CurrentUser on every list/detail read without RequireAuth', () => {
-    expect(Reflect.getMetadata(GUARDS_METADATA, LeaderboardController)).toEqual([
-      SupabaseJwtGuard,
-    ]);
+    expect(Reflect.getMetadata(GUARDS_METADATA, LeaderboardController)).toEqual(
+      [SupabaseJwtGuard],
+    );
 
     const listArgs = Reflect.getMetadata(
       ROUTE_ARGS_METADATA,
@@ -179,10 +245,12 @@ describe('T011 optional-auth controller scope', () => {
       expect(service.getLeaderboard).toHaveBeenCalledWith(
         RankingCriterion.SCORE,
         viewerUserId,
+        'combined',
       );
       expect(service.getDetail).toHaveBeenCalledWith(
         STRATEGY_VERSION_ID,
         viewerUserId,
+        'combined',
       );
     },
   );

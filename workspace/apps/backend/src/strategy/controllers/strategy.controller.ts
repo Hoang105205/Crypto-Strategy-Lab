@@ -25,6 +25,7 @@ import { CreateCompositeDto } from './dtos/create-composite.dto';
 import { RequestBacktestDto } from './dtos/request-backtest.dto';
 import { UseGuards } from '@nestjs/common';
 import { SupabaseJwtGuard } from '../../auth/supabase-jwt.guard';
+import { RequireAuth } from '../../auth/require-auth.guard';
 import { CurrentUser } from '../../auth/current-user.decorator';
 
 @Controller('api/strategies')
@@ -83,6 +84,7 @@ export class StrategyController {
   }
 
   @Post('composite')
+  @UseGuards(RequireAuth)
   async createComposite(@Body() dto: CreateCompositeDto, @CurrentUser() userId: string | null) {
     if (!dto || !dto.name || !dto.childStrategyNames || dto.childStrategyNames.length < 2) {
       throw new HttpException('Composite requires at least 2 strategies', HttpStatus.BAD_REQUEST);
@@ -99,7 +101,10 @@ export class StrategyController {
           const latestVersion = dbVersions.reduce((latest, current) => 
             current.version > latest.version ? current : latest
           );
-          const executionResult = await this.executionPort.resolveVersion(latestVersion.id);
+          const executionResult = await this.executionPort.resolveVersion(
+            latestVersion.id,
+            userId,
+          );
           if (executionResult) {
             child = executionResult.strategy;
           }
@@ -144,6 +149,7 @@ export class StrategyController {
   }
 
   @Post('backtest')
+  @UseGuards(RequireAuth)
   @HttpCode(HttpStatus.ACCEPTED)
   async requestBacktest(@Body() dto: RequestBacktestDto, @CurrentUser() userId: string | null) {
     if (!dto || !dto.strategyName || !dto.pair || !dto.timeframe) {
@@ -214,14 +220,12 @@ export class StrategyController {
   }
 
   @Get('backtest/:id')
+  @UseGuards(RequireAuth)
   async getBacktestResult(@Param('id') id: string, @CurrentUser() userId: string | null) {
     const result = await this.prisma.backtestResult.findFirst({
-      where: { 
+      where: {
         jobId: id,
-        OR: [
-          { userId: null },
-          { userId: userId },
-        ],
+        userId,
       },
     });
     if (!result) {

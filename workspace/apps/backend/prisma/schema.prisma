@@ -210,6 +210,37 @@ model SearchLoopCandidate {
   @@index([loopRunId])
 }
 
+// Singleton desired-state and lease record for the 24/7 system search loop.
+// Individual SearchLoopRun rows remain bounded; the supervisor creates the
+// next run while this control is enabled.
+model SearchLoopControl {
+  id                              String    @id
+  enabled                         Boolean   @default(false)
+  generatorType                   String    @default("RANDOM")
+  pair                            String    @default("BTCUSDT")
+  timeframe                       String    @default("1h")
+  backtestWindowDays              Int       @default(180)
+  initialCapital                  Float     @default(10000)
+  positionSizePercent             Float     @default(100)
+  commission                      Float?
+  slippage                        Float?
+  maxCandidatesPerRun             Int?      @default(100)
+  maxDurationMsPerRun             Int?
+  stopOnNoImprovementIterations   Int       @default(50)
+  cooldownMs                      Int       @default(30000)
+  failureCount                    Int       @default(0)
+  nextRunAt                       DateTime?
+  lastStartedRunId                String?
+  lastError                       String?
+  leaseOwner                      String?
+  leaseUntil                      DateTime?
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
+
+  @@index([enabled, nextRunAt])
+  @@index([leaseUntil])
+}
+
 model DeadLetterJob {
   id              String    @id @default(uuid())
   jobId           String    @unique

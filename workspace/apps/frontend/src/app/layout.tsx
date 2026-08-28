@@ -5,6 +5,7 @@ import { AppShell } from "../components/common/app-shell";
 import { ErrorBoundary } from "../components/common/error-boundary";
 import { InfrastructureProvider } from "../components/common/infrastructure-provider";
 import { AuthProvider } from "../contexts/auth-context";
+import { LeaderboardLiveProvider } from "../contexts/leaderboard-live-context";
 import "./globals.css";
 
 const inter = Inter({
@@ -19,7 +20,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Crypto Strategy Lab",
-  description: "Platform for analyzing, combining & evaluating crypto trading strategies",
+  description:
+    "Platform for analyzing, combining & evaluating crypto trading strategies",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -29,7 +31,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ErrorBoundary>
           <AuthProvider>
             <InfrastructureProvider>
-              <AppShell>{children}</AppShell>
+              <LeaderboardLiveProvider>
+                <AppShell>{children}</AppShell>
+              </LeaderboardLiveProvider>
             </InfrastructureProvider>
           </AuthProvider>
         </ErrorBoundary>

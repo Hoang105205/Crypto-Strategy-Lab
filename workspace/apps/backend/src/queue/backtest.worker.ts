@@ -110,16 +110,16 @@ export class BacktestWorker {
           ),
       );
       if (candles.length === 0) {
-        throw new WorkerFailure(
-          WorkerFailureCode.NO_HISTORICAL_CANDLES,
-          false,
-        );
+        throw new WorkerFailure(WorkerFailureCode.NO_HISTORICAL_CANDLES, false);
       }
 
       const resolved = await this.stage(
         WorkerFailureCode.STRATEGY_ENGINE_UNAVAILABLE,
         () =>
-          this.strategyExecutionPort.resolveVersion(payload.strategyVersionId),
+          this.strategyExecutionPort.resolveVersion(
+            payload.strategyVersionId,
+            payload.userId,
+          ),
       );
       if (!resolved) {
         throw new WorkerFailure(
@@ -130,11 +130,20 @@ export class BacktestWorker {
 
       const trades = await this.stage(
         WorkerFailureCode.BACKTEST_EXECUTION_FAILED,
-        () => this.backtester.run(resolved.strategy, candles, payload.backtestConfig),
+        () =>
+          this.backtester.run(
+            resolved.strategy,
+            candles,
+            payload.backtestConfig,
+          ),
       );
       const rawMetrics = await this.stage(
         WorkerFailureCode.EVALUATION_FAILED,
-        () => this.evaluator.evaluate(trades, payload.backtestConfig.initialCapital),
+        () =>
+          this.evaluator.evaluate(
+            trades,
+            payload.backtestConfig.initialCapital,
+          ),
       );
       const metrics = normalizeMetrics(rawMetrics);
       const executedAt = new Date();
@@ -221,7 +230,8 @@ export class BacktestWorker {
         ...job.data,
         queueMetadata: {
           enqueueToken:
-            job.data.queueMetadata?.enqueueToken ?? String(job.id ?? payload.jobId),
+            job.data.queueMetadata?.enqueueToken ??
+            String(job.id ?? payload.jobId),
           deadLettered: true,
           deadLetterReason: lastError,
         },
@@ -276,12 +286,9 @@ export class BacktestWorker {
 }
 
 function rehydrateDate(value: Date): Date {
-  const date = value instanceof Date ? value : new Date(value as unknown as string);
+  const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) {
-    throw new WorkerFailure(
-      WorkerFailureCode.BACKTEST_EXECUTION_FAILED,
-      false,
-    );
+    throw new WorkerFailure(WorkerFailureCode.BACKTEST_EXECUTION_FAILED, false);
   }
   return date;
 }
@@ -300,27 +307,18 @@ function normalizeMetrics(metrics: EvaluationMetrics): EvaluationMetrics & {
     !Number.isInteger(metrics.totalTrades) ||
     metrics.totalTrades < 0
   ) {
-    throw new WorkerFailure(
-      WorkerFailureCode.INVALID_EVALUATION_METRICS,
-      true,
-    );
+    throw new WorkerFailure(WorkerFailureCode.INVALID_EVALUATION_METRICS, true);
   }
   return { ...metrics, winRate: normalizeWinRate(metrics.winRate) };
 }
 
 function normalizeWinRate(value: number): NormalizedRate {
   if (!Number.isFinite(value)) {
-    throw new WorkerFailure(
-      WorkerFailureCode.INVALID_EVALUATION_METRICS,
-      true,
-    );
+    throw new WorkerFailure(WorkerFailureCode.INVALID_EVALUATION_METRICS, true);
   }
   const normalized = value > 1 && value <= 100 ? value / 100 : value;
   if (normalized < 0 || normalized > 1) {
-    throw new WorkerFailure(
-      WorkerFailureCode.INVALID_EVALUATION_METRICS,
-      true,
-    );
+    throw new WorkerFailure(WorkerFailureCode.INVALID_EVALUATION_METRICS, true);
   }
   return normalized as NormalizedRate;
 }

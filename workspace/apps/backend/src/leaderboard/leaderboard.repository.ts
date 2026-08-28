@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  LeaderboardScope,
   RankingCriterion,
   type LeaderboardEntryPayload,
   type NormalizedRate,
@@ -27,6 +28,13 @@ export interface LeaderboardCreateInput {
   sharpeRatio: number;
   totalTrades: number;
   executedAt: Date;
+}
+
+export interface LeaderboardSourceReference {
+  id: string;
+  userId: string | null;
+  strategyVersionId: string;
+  backtestResultId: string;
 }
 
 @Injectable()
@@ -70,6 +78,25 @@ export class LeaderboardRepository {
     return entry ? this.map(entry) : null;
   }
 
+  findSourceReferences(): Promise<LeaderboardSourceReference[]> {
+    return this.prisma.leaderboardEntry.findMany({
+      select: {
+        id: true,
+        userId: true,
+        strategyVersionId: true,
+        backtestResultId: true,
+      },
+    });
+  }
+
+  async deleteByIds(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await this.prisma.leaderboardEntry.deleteMany({
+      where: { id: { in: [...ids] } },
+    });
+    return result.count;
+  }
+
   async rerank(): Promise<void> {
     await this.prisma.$transaction(async (transaction) => {
       const entries = await transaction.leaderboardEntry.findMany();
@@ -89,9 +116,12 @@ export class LeaderboardRepository {
   async getTopK(
     criterion: RankingCriterion,
     viewerUserId: string | null = null,
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
   ): Promise<LeaderboardEntryPayload[]> {
+    const visibility = resolveVisibility(scope, viewerUserId);
+    if (visibility.kind === 'empty') return [];
     const entries = await this.prisma.leaderboardEntry.findMany({
-      where: visibilityWhere(viewerUserId),
+      where: visibility.where,
     });
     const bestPerVersion = this.bestPerStrategyVersion(entries, criterion);
     return bestPerVersion
@@ -102,23 +132,28 @@ export class LeaderboardRepository {
   async findBestByStrategyVersionId(
     strategyVersionId: string,
     viewerUserId: string | null = null,
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
   ): Promise<LeaderboardEntryPayload | null> {
+    const visibility = resolveVisibility(scope, viewerUserId);
+    if (visibility.kind === 'empty') return null;
     const entries = await this.prisma.leaderboardEntry.findMany({
-      where: visibilityWhere(viewerUserId),
+      where: visibility.where,
     });
-    const ranked = this.bestPerStrategyVersion(
-      entries,
-      RankingCriterion.SCORE,
-    );
+    const ranked = this.bestPerStrategyVersion(entries, RankingCriterion.SCORE);
     const index = ranked.findIndex(
       (entry) => entry.strategyVersionId === strategyVersionId,
     );
     return index >= 0 ? this.map(ranked[index], index + 1) : null;
   }
 
-  async getUpdatedAt(viewerUserId: string | null = null): Promise<Date> {
+  async getUpdatedAt(
+    viewerUserId: string | null = null,
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
+  ): Promise<Date> {
+    const visibility = resolveVisibility(scope, viewerUserId);
+    if (visibility.kind === 'empty') return new Date(0);
     const latest = await this.prisma.leaderboardEntry.findFirst({
-      where: visibilityWhere(viewerUserId),
+      where: visibility.where,
       orderBy: { updatedAt: 'desc' },
     });
     return latest?.updatedAt ?? new Date(0);
@@ -196,12 +231,32 @@ export class LeaderboardRepository {
   }
 }
 
-function visibilityWhere(
+type LeaderboardVisibility =
+  | { kind: 'query'; where: Prisma.LeaderboardEntryWhereInput }
+  | { kind: 'empty' };
+
+function resolveVisibility(
+  scope: LeaderboardScope,
   viewerUserId: string | null,
-): Prisma.LeaderboardEntryWhereInput {
-  return viewerUserId === null
-    ? { userId: null }
-    : { OR: [{ userId: null }, { userId: viewerUserId }] };
+): LeaderboardVisibility {
+  switch (scope) {
+    case LeaderboardScope.SYSTEM:
+      return { kind: 'query', where: { userId: null } };
+    case LeaderboardScope.MINE:
+      return viewerUserId === null
+        ? { kind: 'empty' }
+        : { kind: 'query', where: { userId: viewerUserId } };
+    case LeaderboardScope.COMBINED:
+      return {
+        kind: 'query',
+        where:
+          viewerUserId === null
+            ? { userId: null }
+            : { OR: [{ userId: null }, { userId: viewerUserId }] },
+      };
+    default:
+      return assertNever(scope);
+  }
 }
 
 function isUniqueConflict(error: unknown): boolean {

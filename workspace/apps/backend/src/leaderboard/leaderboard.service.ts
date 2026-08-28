@@ -1,11 +1,14 @@
 import {
   Inject,
   Injectable,
+  Logger,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import {
   EventType,
+  LeaderboardScope,
   RankingCriterion,
   type BacktestResultDetail,
   type BacktestCompletedPayload,
@@ -24,6 +27,8 @@ import { LeaderboardRepository } from './leaderboard.repository';
 import { ISCORING_POLICY } from '../shared/tokens';
 import type { IScoringPolicy } from './scoring-policy';
 
+export const LEADERBOARD_ORPHAN_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
 export interface LeaderboardDetail extends LeaderboardEntryPayload {
   strategyVersion: StrategyVersion;
   trades: Trade[];
@@ -39,7 +44,9 @@ export class StrategyEngineUnavailableError extends Error {
 
 @Injectable()
 export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(LeaderboardService.name);
   private subscription: EventSubscription | null = null;
+  private cleanupInFlight: Promise<number> | null = null;
 
   constructor(
     @Inject(IEVENT_BUS) private readonly eventBus: IEventBus,
@@ -56,6 +63,14 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
       EventType.BacktestCompleted,
       (envelope) => this.handleBacktestCompleted(envelope),
     );
+    void this.cleanupOrphans().catch((error: unknown) => {
+      const detail =
+        error instanceof Error ? (error.stack ?? error.message) : String(error);
+      this.logger.error(
+        'Leaderboard orphan cleanup failed during startup',
+        detail,
+      );
+    });
   }
 
   onModuleDestroy(): void {
@@ -63,6 +78,45 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
     const subscription = this.subscription;
     this.subscription = null;
     this.eventBus.unsubscribe(subscription);
+  }
+
+  @Interval(
+    'leaderboard-orphan-cleanup',
+    LEADERBOARD_ORPHAN_CLEANUP_INTERVAL_MS,
+  )
+  cleanupOrphans(): Promise<number> {
+    if (this.cleanupInFlight) return this.cleanupInFlight;
+    const cleanup = this.performOrphanCleanup().finally(() => {
+      if (this.cleanupInFlight === cleanup) this.cleanupInFlight = null;
+    });
+    this.cleanupInFlight = cleanup;
+    return cleanup;
+  }
+
+  private async performOrphanCleanup(): Promise<number> {
+    const references = await this.repository.findSourceReferences();
+    const checks = await Promise.allSettled(
+      references.map((reference) =>
+        this.resultPort.getById(reference.backtestResultId),
+      ),
+    );
+    const orphanIds = references.flatMap((reference, index) => {
+      const check = checks[index];
+      if (check?.status !== 'fulfilled') return [];
+      const source = check.value;
+      return source === null ||
+        source.strategyVersionId !== reference.strategyVersionId ||
+        source.userId !== reference.userId
+        ? [reference.id]
+        : [];
+    });
+    if (orphanIds.length === 0) return 0;
+    const deleted = await this.repository.deleteByIds(orphanIds);
+    if (deleted > 0) {
+      await this.repository.rerank();
+      this.logger.warn(`Removed ${deleted} orphaned leaderboard entries`);
+    }
+    return deleted;
   }
 
   async handleBacktestCompleted(
@@ -100,8 +154,15 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
     if (!created) return;
 
     await this.repository.rerank();
-    const topK = await this.repository.getTopK(RankingCriterion.SCORE, null);
-    const updatedAt = await this.repository.getUpdatedAt(null);
+    const topK = await this.repository.getTopK(
+      RankingCriterion.SCORE,
+      null,
+      LeaderboardScope.SYSTEM,
+    );
+    const updatedAt = await this.repository.getUpdatedAt(
+      null,
+      LeaderboardScope.SYSTEM,
+    );
 
     this.eventBus.publish(
       EventType.LeaderboardUpdated,
@@ -119,10 +180,12 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
   async getDetail(
     strategyVersionId: string,
     viewerUserId: string | null = null,
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
   ): Promise<LeaderboardDetail | null> {
     const entry = await this.repository.findBestByStrategyVersionId(
       strategyVersionId,
       viewerUserId,
+      scope,
     );
     if (!entry) return null;
 
@@ -145,9 +208,32 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
   async getLeaderboard(
     criterion: RankingCriterion = RankingCriterion.SCORE,
     viewerUserId: string | null = null,
+    scope: LeaderboardScope = LeaderboardScope.COMBINED,
   ): Promise<LeaderboardSnapshot> {
-    const entries = await this.repository.getTopK(criterion, viewerUserId);
-    const updatedAt = await this.repository.getUpdatedAt(viewerUserId);
+    const projectedEntries = await this.repository.getTopK(
+      criterion,
+      viewerUserId,
+      scope,
+    );
+    const sourceResults = await Promise.all(
+      projectedEntries.map((entry) =>
+        this.resultPort.getById(entry.backtestResultId),
+      ),
+    );
+    const entries = projectedEntries
+      .filter((entry, index) => {
+        const source = sourceResults[index];
+        return (
+          source != null &&
+          source.strategyVersionId === entry.strategyVersionId &&
+          source.userId === entry.userId
+        );
+      })
+      .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    const updatedAt =
+      entries.length === 0
+        ? new Date(0)
+        : await this.repository.getUpdatedAt(viewerUserId, scope);
     return { rankingCriterion: criterion, updatedAt, entries };
   }
 }

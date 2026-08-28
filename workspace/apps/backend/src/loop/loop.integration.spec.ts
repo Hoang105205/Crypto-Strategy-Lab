@@ -1,7 +1,5 @@
-/* eslint-disable @typescript-eslint/unbound-method -- integration assertions inspect contract fakes. */
 import {
   Module,
-  type CanActivate,
   type ExecutionContext,
   type INestApplication,
 } from '@nestjs/common';
@@ -25,11 +23,11 @@ import {
   type NormalizedRate,
   type SearchLoopConfig,
   type SearchLoopProgressPayload,
-  type SearchLoopRun,
   type SearchLoopStoppedPayload,
 } from '@crypto-strategy-lab/shared';
 import type {
   SearchLoopCandidate as PrismaCandidate,
+  SearchLoopControl as PrismaControl,
   SearchLoopRun as PrismaRun,
 } from '@prisma/client';
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
@@ -66,7 +64,7 @@ class ContractJobQueueFake implements IJobQueue {
   statusOutage = false;
 
   readonly enqueue = jest.fn<IJobQueue['enqueue']>(
-    async (jobType, payload, correlationId) => {
+    (jobType, payload, correlationId) => {
       const identity = correlationId ?? randomUUID();
       this.enqueued.push({ jobType, payload, correlationId: identity });
       this.statuses.set(payload.jobId, {
@@ -76,11 +74,11 @@ class ContractJobQueueFake implements IJobQueue {
         lastError: null,
         updatedAt: new Date(),
       });
-      return { jobId: payload.jobId };
+      return Promise.resolve({ jobId: payload.jobId });
     },
   );
 
-  readonly getStatus = jest.fn<IJobQueue['getStatus']>(async (jobId) => {
+  readonly getStatus = jest.fn<IJobQueue['getStatus']>((jobId) => {
     if (this.statusOutage) {
       throw Object.assign(new Error('private redis endpoint'), {
         code: 'QUEUE_UNAVAILABLE',
@@ -92,7 +90,7 @@ class ContractJobQueueFake implements IJobQueue {
         code: 'JOB_NOT_FOUND',
       });
     }
-    return status;
+    return Promise.resolve(status);
   });
 
   readonly retry = jest.fn<IJobQueue['retry']>();
@@ -118,17 +116,17 @@ class ContractCandidatePortFake implements IStrategyCandidatePort {
   readonly outcomes: CandidateOutcome[] = [];
   private generated = 0;
 
-  async generateCandidate(generatorType: StrategyGeneratorType) {
+  generateCandidate(generatorType: StrategyGeneratorType) {
     this.calls.push(generatorType);
     const outcome = this.outcomes.shift();
     if (outcome instanceof Error) throw outcome;
-    if (outcome) return outcome;
+    if (outcome) return Promise.resolve(outcome);
 
     const sequence = this.generated++;
-    return {
+    return Promise.resolve({
       strategyVersionId: uuidFor(1_000 + sequence),
       strategyName: `Candidate ${sequence + 1}`,
-    };
+    });
   }
 }
 
@@ -532,8 +530,12 @@ describe('T018 optional-auth identities observe one global SearchLoopRun', () =>
       candidates: harness.prisma.candidates,
     });
     expect(persistenceEvidence).not.toContain('userId');
-    expect(persistenceEvidence).not.toContain('11111111-1111-4111-8111-111111111111');
-    expect(persistenceEvidence).not.toContain('22222222-2222-4222-8222-222222222222');
+    expect(persistenceEvidence).not.toContain(
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(persistenceEvidence).not.toContain(
+      '22222222-2222-4222-8222-222222222222',
+    );
   });
 });
 
@@ -645,6 +647,7 @@ function publishCompleted(
   const payload: BacktestCompletedPayload = {
     jobId: job.payload.jobId,
     correlationId: job.correlationId,
+    userId: null,
     loopRunId: job.payload.loopRunId,
     backtestResultId: uuidFor(20_000 + queueIndex),
     strategyVersionId: job.payload.strategyVersionId,
@@ -696,13 +699,13 @@ function requiredJob(harness: Harness, index: number): EnqueuedJob {
 }
 
 function terminalCandidates(harness: Harness, loopRunId: string): number {
-  return harness.prisma
-    .candidatesFor(loopRunId)
-    .filter(
-      (item) =>
-        item.status === SearchLoopCandidateStatus.EVALUATED ||
-        item.status === SearchLoopCandidateStatus.FAILED,
-    ).length;
+  return harness.prisma.candidatesFor(loopRunId).filter((item) => {
+    const status = item.status as SearchLoopCandidateStatus;
+    return (
+      status === SearchLoopCandidateStatus.EVALUATED ||
+      status === SearchLoopCandidateStatus.FAILED
+    );
+  }).length;
 }
 
 async function eventually(assertion: () => boolean): Promise<void> {
@@ -741,6 +744,55 @@ class InMemoryLoopPrisma {
   readonly runs: PrismaRun[] = [];
   readonly candidates: PrismaCandidate[] = [];
   private clock = 0;
+  private control = controlRow();
+
+  readonly searchLoopControl = {
+    upsert: jest.fn(
+      ({ update }: { update: Partial<PrismaControl> }) => {
+        this.control = {
+          ...this.control,
+          ...update,
+          updatedAt: new Date(),
+        };
+        return Promise.resolve({ ...this.control });
+      },
+    ),
+    update: jest.fn(
+      ({ data }: { data: Partial<PrismaControl> }) => {
+        this.control = {
+          ...this.control,
+          ...data,
+          updatedAt: new Date(),
+        };
+        return Promise.resolve({ ...this.control });
+      },
+    ),
+    updateMany: jest.fn(
+      ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Partial<PrismaControl>;
+      }) => {
+        const enabledMatches =
+          where.enabled === undefined || where.enabled === this.control.enabled;
+        const ownerMatches =
+          where.leaseOwner === undefined ||
+          where.leaseOwner === this.control.leaseOwner;
+        if (!enabledMatches || !ownerMatches) {
+          return Promise.resolve({ count: 0 });
+        }
+        this.control = {
+          ...this.control,
+          ...data,
+          updatedAt: new Date(),
+        };
+        return Promise.resolve({ count: 1 });
+      },
+    ),
+    findUniqueOrThrow: jest.fn(() => Promise.resolve({ ...this.control })),
+  };
 
   readonly searchLoopRun = {
     findFirst: jest.fn(async (args?: Record<string, unknown>) => {
@@ -748,27 +800,27 @@ class InMemoryLoopPrisma {
       const found = this.runs.find((run) =>
         statuses.length > 0
           ? statuses.includes(run.status)
-          : run.status === LoopStatus.RUNNING ||
-            run.status === LoopStatus.PAUSED,
+          : (run.status as LoopStatus) === LoopStatus.RUNNING ||
+            (run.status as LoopStatus) === LoopStatus.PAUSED,
       );
       await Promise.resolve();
       return found ? { ...found } : null;
     }),
-    findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+    findUnique: jest.fn(({ where }: { where: { id: string } }) => {
       const found = this.runs.find((run) => run.id === where.id);
-      return found ? { ...found } : null;
+      return Promise.resolve(found ? { ...found } : null);
     }),
-    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
       const created = runRow({
         ...(data as Partial<PrismaRun>),
         id: (data.id as string | undefined) ?? randomUUID(),
         startedAt: (data.startedAt as Date | undefined) ?? new Date(),
       });
       this.runs.push(created);
-      return { ...created };
+      return Promise.resolve({ ...created });
     }),
     update: jest.fn(
-      async ({
+      ({
         where,
         data,
       }: {
@@ -778,11 +830,11 @@ class InMemoryLoopPrisma {
         const index = this.runs.findIndex((run) => run.id === where.id);
         if (index < 0) throw new Error('Run not found');
         this.runs[index] = applyUpdate(this.runs[index], data);
-        return { ...this.runs[index] };
+        return Promise.resolve({ ...this.runs[index] });
       },
     ),
     updateMany: jest.fn(
-      async ({
+      ({
         where,
         data,
       }: {
@@ -795,16 +847,18 @@ class InMemoryLoopPrisma {
         for (const { index } of matches) {
           this.runs[index] = applyUpdate(this.runs[index], data);
         }
-        return { count: matches.length };
+        return Promise.resolve({ count: matches.length });
       },
     ),
   };
 
   readonly searchLoopCandidate = {
-    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
       const jobId = data.jobId as string;
       if (this.candidates.some((candidate) => candidate.jobId === jobId)) {
-        throw { code: 'P2002' };
+        throw Object.assign(new Error('Unique constraint violation'), {
+          code: 'P2002',
+        });
       }
       const created = candidateRow(data.loopRunId as string, {
         ...(data as Partial<PrismaCandidate>),
@@ -813,28 +867,26 @@ class InMemoryLoopPrisma {
         updatedAt: new Date(Date.now() + this.clock++),
       });
       this.candidates.push(created);
-      return { ...created };
+      return Promise.resolve({ ...created });
     }),
     findUnique: jest.fn(
-      async ({ where }: { where: { jobId?: string; id?: string } }) => {
+      ({ where }: { where: { jobId?: string; id?: string } }) => {
         const found = this.candidates.find(
           (candidate) =>
             (where.jobId !== undefined && candidate.jobId === where.jobId) ||
             (where.id !== undefined && candidate.id === where.id),
         );
-        return found ? { ...found } : null;
+        return Promise.resolve(found ? { ...found } : null);
       },
     ),
-    findFirst: jest.fn(
-      async ({ where }: { where: Record<string, unknown> }) => {
-        const found = this.candidates.find((candidate) =>
-          matchesWhere(candidate, where),
-        );
-        return found ? { ...found } : null;
-      },
-    ),
+    findFirst: jest.fn(({ where }: { where: Record<string, unknown> }) => {
+      const found = this.candidates.find((candidate) =>
+        matchesWhere(candidate, where),
+      );
+      return Promise.resolve(found ? { ...found } : null);
+    }),
     findMany: jest.fn(
-      async ({
+      ({
         where,
         orderBy,
       }: {
@@ -845,15 +897,17 @@ class InMemoryLoopPrisma {
           where ? matchesWhere(candidate, where) : true,
         );
         const direction = orderBy?.iteration === 'desc' ? -1 : 1;
-        return [...filtered].sort(
-          (left, right) =>
-            direction * (left.iteration - right.iteration) ||
-            left.id.localeCompare(right.id),
+        return Promise.resolve(
+          [...filtered].sort(
+            (left, right) =>
+              direction * (left.iteration - right.iteration) ||
+              left.id.localeCompare(right.id),
+          ),
         );
       },
     ),
     updateMany: jest.fn(
-      async ({
+      ({
         where,
         data,
       }: {
@@ -866,7 +920,7 @@ class InMemoryLoopPrisma {
         for (const { index } of matches) {
           this.candidates[index] = applyUpdate(this.candidates[index], data);
         }
-        return { count: matches.length };
+        return Promise.resolve({ count: matches.length });
       },
     ),
   };
@@ -886,6 +940,34 @@ class InMemoryLoopPrisma {
       .filter((candidate) => candidate.loopRunId === loopRunId)
       .sort((left, right) => left.iteration - right.iteration);
   }
+}
+
+function controlRow(): PrismaControl {
+  const now = new Date('2026-08-28T00:00:00.000Z');
+  return {
+    id: 'system',
+    enabled: false,
+    generatorType: StrategyGeneratorType.RANDOM,
+    pair: 'BTCUSDT',
+    timeframe: '1h',
+    backtestWindowDays: 180,
+    initialCapital: 10_000,
+    positionSizePercent: 100,
+    commission: null,
+    slippage: null,
+    maxCandidatesPerRun: 100,
+    maxDurationMsPerRun: null,
+    stopOnNoImprovementIterations: 50,
+    cooldownMs: 30_000,
+    failureCount: 0,
+    nextRunAt: null,
+    lastStartedRunId: null,
+    lastError: null,
+    leaseOwner: null,
+    leaseUntil: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 function runRow(overrides: Partial<PrismaRun> = {}): PrismaRun {

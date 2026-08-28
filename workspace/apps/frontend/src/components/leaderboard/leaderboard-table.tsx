@@ -1,13 +1,28 @@
 'use client';
 
-import { RankingCriterion, type LeaderboardEntryPayload, type LeaderboardSnapshot } from '@crypto-strategy-lab/shared';
+import {
+  LeaderboardScope,
+  RankingCriterion,
+  type LeaderboardEntryPayload,
+} from '@crypto-strategy-lab/shared';
+import type { ReactNode } from 'react';
+import type { ProjectionViewState } from '../../contexts/leaderboard-live-context';
 
 interface LeaderboardTableProps {
-  snapshot: LeaderboardSnapshot;
+  heading: string;
+  description: string;
+  headingId: string;
+  tableName: string;
+  sourceScope: LeaderboardScope.SYSTEM | LeaderboardScope.MINE;
+  projection: ProjectionViewState;
   sortBy: RankingCriterion;
   selectedStrategyVersionId: string | null;
   onSortByChange: (criterion: RankingCriterion) => void;
-  onSelectStrategy: (strategyVersionId: string) => void;
+  onSelectStrategy: (
+    strategyVersionId: string,
+    sourceScope: LeaderboardScope.SYSTEM | LeaderboardScope.MINE,
+  ) => void;
+  emptyState: ReactNode;
 }
 
 const SORTABLE_COLUMNS: ReadonlyArray<{ criterion: RankingCriterion; label: string }> = [
@@ -45,81 +60,125 @@ function FinancialCell({ entry, criterion }: { entry: LeaderboardEntryPayload; c
   }
 }
 
-export function LeaderboardTable({ snapshot, sortBy, selectedStrategyVersionId, onSortByChange, onSelectStrategy }: LeaderboardTableProps) {
+function RetryButton({ heading, refetch }: { heading: string; refetch(): Promise<void> }) {
   return (
-    <section aria-labelledby="leaderboard-heading" className="min-w-0 overflow-hidden rounded-xl border border-hairline-dark/80 bg-surface-card shadow-md">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline-dark/80 px-6 py-5">
-        <div>
-          <h1 id="leaderboard-heading" className="text-2xl font-bold tracking-tight text-body">Strategy Leaderboard</h1>
-          <p className="mt-1 text-xs font-medium text-muted">Last updated: {snapshot.updatedAt.toLocaleString()}</p>
+    <button
+      type="button"
+      aria-label={`Retry ${heading}`}
+      onClick={() => void refetch()}
+      className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark"
+    >
+      Retry
+    </button>
+  );
+}
+
+export function LeaderboardTable({
+  heading,
+  description,
+  headingId,
+  tableName,
+  sourceScope,
+  projection,
+  sortBy,
+  selectedStrategyVersionId,
+  onSortByChange,
+  onSelectStrategy,
+  emptyState,
+}: LeaderboardTableProps) {
+  const { snapshot, loading, error, isStale, lastSuccessfulAt, refetch } = projection;
+  return (
+    <section aria-labelledby={headingId} className="min-w-0 overflow-hidden rounded-xl border border-hairline-dark/80 bg-surface-card shadow-md">
+      <header className="border-b border-hairline-dark/80 px-6 py-5">
+        <h2 id={headingId} className="text-2xl font-bold tracking-tight text-body">{heading}</h2>
+        <p className="mt-1 text-sm text-muted">{description}</p>
+        {snapshot ? <p className="mt-2 text-xs font-medium text-muted">Last updated: {snapshot.updatedAt.toLocaleString()}</p> : null}
+      </header>
+
+      {loading && !snapshot ? (
+        <div role="status" aria-label={`Loading ${heading}`} aria-busy="true" className="min-h-48 p-6 text-sm text-muted">
+          Loading {heading.toLowerCase()}…
         </div>
-        <label className="flex items-center gap-2.5 text-sm font-medium text-muted">
-          <span>Ranking criterion</span>
-          <select
-            aria-label="Ranking criterion"
-            className="rounded-xl border border-hairline-dark/80 bg-canvas-dark px-3.5 py-2 text-sm font-medium text-body cursor-pointer transition-colors hover:border-muted-strong outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary shadow-sm"
-            value={sortBy}
-            onChange={(event) => onSortByChange(event.target.value as RankingCriterion)}
-          >
-            {SORTABLE_COLUMNS.map(({ criterion, label }) => <option key={criterion} value={criterion}>{label}</option>)}
-          </select>
-        </label>
-      </div>
+      ) : null}
 
-      <div data-testid="leaderboard-scroll" className="max-h-[680px] overflow-x-auto overflow-y-auto">
-        <table aria-label="Strategy leaderboard" className="w-full min-w-[760px] border-collapse text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-canvas-dark/95 backdrop-blur-sm text-xs font-bold uppercase tracking-wider text-muted-strong border-b border-hairline-dark/80">
-            <tr>
-              <th className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">Rank</th>
-              <th className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">Strategy</th>
-              {SORTABLE_COLUMNS.map(({ criterion, label }) => (
-                <th key={criterion} aria-sort={criterion === sortBy ? 'descending' : 'none'} className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold transition-colors hover:text-primary hover:bg-surface-elevated/50 outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    onClick={() => onSortByChange(criterion)}
-                    aria-label={`Sort by ${label}`}
-                  >
-                    {label} {criterion === sortBy ? <span aria-hidden="true" className="text-primary font-extrabold">↓</span> : null}
-                  </button>
-                </th>
-              ))}
-              <th className="px-4 py-3 text-left text-muted font-normal whitespace-nowrap" scope="col">Trades</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline-dark/60">
-            {snapshot.entries.map((entry) => {
-              const selected = entry.strategyVersionId === selectedStrategyVersionId;
-              const rankBadge =
-                entry.rank === 1
-                  ? 'text-yellow-400 font-bold bg-yellow-400/15 px-2.5 py-1 rounded-md border border-yellow-400/30'
-                  : entry.rank === 2
-                    ? 'text-slate-300 font-bold bg-slate-300/15 px-2.5 py-1 rounded-md border border-slate-300/30'
-                    : entry.rank === 3
-                      ? 'text-amber-500 font-bold bg-amber-500/15 px-2.5 py-1 rounded-md border border-amber-500/30'
-                      : 'text-body font-mono font-medium';
+      {error && !snapshot ? (
+        <div role="alert" aria-label={`${heading} unavailable`} className="space-y-4 p-6">
+          <p className="text-sm text-rose-400">{heading} is temporarily unavailable.</p>
+          <RetryButton heading={heading} refetch={refetch} />
+        </div>
+      ) : null}
 
-              return (
-                <tr key={entry.strategyVersionId} aria-selected={selected} className={`transition-colors ${selected ? 'bg-primary/15 border-l-4 border-l-primary' : 'hover:bg-canvas-dark/70'}`}>
-                  <td className="px-4 py-3 whitespace-nowrap"><span className={`font-mono tabular-nums ${rankBadge}`}>#{entry.rank}</span></td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+      {!loading && !error && snapshot?.entries.length === 0 ? (
+        <div className="p-6 text-sm text-muted">{emptyState}</div>
+      ) : null}
+
+      {snapshot && isStale ? (
+        <div className="border-b border-amber-400/30 bg-amber-400/10 px-6 py-3">
+          <p role="status" aria-label={`${heading} is stale`} className="text-sm text-amber-200">
+            Showing the last successful snapshot{lastSuccessfulAt ? ` from ${lastSuccessfulAt.toLocaleString()}` : ''}.
+          </p>
+        </div>
+      ) : null}
+
+      {snapshot && snapshot.entries.length > 0 ? (
+        <div
+          role="region"
+          aria-label={`Scroll ${tableName}`}
+          tabIndex={0}
+          className="max-h-[680px] overflow-x-auto overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+        >
+          <table aria-label={tableName} className="w-full min-w-[760px] border-collapse text-left text-sm">
+            <thead className="sticky top-0 z-10 border-b border-hairline-dark/80 bg-canvas-dark/95 text-xs font-bold uppercase tracking-wider text-muted-strong backdrop-blur-sm">
+              <tr>
+                <th className="px-4 py-3 text-left font-normal text-muted whitespace-nowrap" scope="col">Rank</th>
+                <th className="px-4 py-3 text-left font-normal text-muted whitespace-nowrap" scope="col">Strategy</th>
+                {SORTABLE_COLUMNS.map(({ criterion, label }) => (
+                  <th key={criterion} aria-sort={criterion === sortBy ? 'descending' : 'none'} className="px-4 py-3 text-left font-normal text-muted whitespace-nowrap" scope="col">
                     <button
                       type="button"
-                      aria-label={`Select ${entry.strategyName}`}
-                      className="rounded-md font-semibold text-body underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary text-left max-w-[200px] sm:max-w-[260px] lg:max-w-[320px] truncate block"
-                      onClick={() => onSelectStrategy(entry.strategyVersionId)}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold transition-colors hover:bg-surface-elevated/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      onClick={() => onSortByChange(criterion)}
+                      aria-label={`Sort by ${label}`}
                     >
-                      {entry.strategyName}
+                      {label} {criterion === sortBy ? <span aria-hidden="true" className="font-extrabold text-primary">↓</span> : null}
                     </button>
-                  </td>
-                  {SORTABLE_COLUMNS.map(({ criterion }) => <td key={criterion} className="px-4 py-3 whitespace-nowrap"><FinancialCell entry={entry} criterion={criterion} /></td>)}
-                  <td className="px-4 py-3 whitespace-nowrap"><span className="font-mono tabular-nums text-body">{entry.totalTrades}</span></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-left font-normal text-muted whitespace-nowrap" scope="col">Trades</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline-dark/60">
+              {snapshot.entries.map((entry) => {
+                const selected = entry.strategyVersionId === selectedStrategyVersionId;
+                const rankBadge = entry.rank === 1
+                  ? 'border border-yellow-400/30 bg-yellow-400/15 px-2.5 py-1 font-bold text-yellow-400 rounded-md'
+                  : entry.rank === 2
+                    ? 'border border-slate-300/30 bg-slate-300/15 px-2.5 py-1 font-bold text-slate-300 rounded-md'
+                    : entry.rank === 3
+                      ? 'border border-amber-500/30 bg-amber-500/15 px-2.5 py-1 font-bold text-amber-500 rounded-md'
+                      : 'font-mono font-medium text-body';
+                return (
+                  <tr key={entry.strategyVersionId} aria-selected={selected} className={`transition-colors ${selected ? 'border-l-4 border-l-primary bg-primary/15' : 'hover:bg-canvas-dark/70'}`}>
+                    <td className="px-4 py-3 whitespace-nowrap"><span className={`font-mono tabular-nums ${rankBadge}`}>#{entry.rank}</span></td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <button
+                        type="button"
+                        aria-label={`Select ${entry.strategyName}`}
+                        className="block max-w-[200px] truncate rounded-md text-left font-semibold text-body underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:max-w-[260px] lg:max-w-[320px]"
+                        onClick={() => onSelectStrategy(entry.strategyVersionId, sourceScope)}
+                      >
+                        {entry.strategyName}
+                      </button>
+                    </td>
+                    {SORTABLE_COLUMNS.map(({ criterion }) => <td key={criterion} className="px-4 py-3 whitespace-nowrap"><FinancialCell entry={entry} criterion={criterion} /></td>)}
+                    <td className="px-4 py-3 whitespace-nowrap"><span className="font-mono tabular-nums text-body">{entry.totalTrades}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </section>
   );
 }

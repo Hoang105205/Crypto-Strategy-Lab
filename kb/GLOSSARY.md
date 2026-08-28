@@ -12,7 +12,12 @@ in code, documentation, and communication.
 | Backtest | Simulating a strategy over historical candles | Strategy Engine, Event Infrastructure |
 | Evaluation Metrics | Return, Win Rate, Max Drawdown, Sharpe Ratio | Strategy Engine |
 | Leaderboard | Caller-visible Top-K ranked strategies: system entries plus the current user's private entries, computed after visibility scoping | Event Infrastructure, Frontend |
+| Leaderboard Entry | Denormalized Event Infrastructure read-model row created from `BacktestCompleted`; it stores copied metrics plus logical `strategyVersionId`/`backtestResultId` references and is not the authoritative backtest result | Event Infrastructure |
+| Logical ID Reference | UUID stored to identify an entity owned by another module without declaring a Prisma relation or database foreign key; validity is maintained through public contracts and reconciliation | All modules |
+| Orphaned Leaderboard Entry | A leaderboard projection whose source result is missing or whose strategy/owner IDs no longer match; confirmed orphans are deleted by the startup/five-minute reconciler and survivors are reranked | Event Infrastructure |
 | Search Loop | One global system process continuously cycling through generate → backtest → evaluate → rank; browser navigation and Live updates do not control it | Event Infrastructure |
+| Search Loop Supervisor | In-process scheduler that reads persistent desired state, owns a PostgreSQL lease, and creates successive bounded Search Loop Runs while automation is enabled (ADR-0017) | Event Infrastructure |
+| Search Loop Control | Singleton PostgreSQL record containing the global loop ON/OFF desired state, rolling backtest configuration, retry schedule, and supervisor lease; it survives backend restart and has no user ownership | Event Infrastructure |
 | Strategy Generator | Algorithm producing candidate strategies (Random, Domain-Guided) | Strategy Engine |
 | Sentiment Score | Numeric sentiment of a news article (VADER) | News & Sentiment |
 | Adapter | Class implementing a provider interface (Binance, RSS, CryptoPanic) | Market Data, News & Sentiment |
@@ -46,7 +51,7 @@ in code, documentation, and communication.
 | Retry Policy | Rule set governing how a failed BullMQ job is retried: three total attempts, active delays of 1s then 4s, and terminal dead-letter handling | Event Infrastructure |
 | Backoff | Delay strategy between job attempts; the backtest queue uses a deterministic custom BullMQ schedule of 1s before attempt 2 and 4s before attempt 3 | Event Infrastructure |
 | Top-K | The K highest-ranked entries after applying the relevant visibility scope (default K = 10); the namespace-wide event carries only the system Top-K | Event Infrastructure |
-| Search Loop Run | One execution record of the global system search process; it has no user ownership. Existing terminal status values remain wire-compatible operational state | Event Infrastructure |
+| Search Loop Run | One bounded execution record of the global system search process; it has no user ownership. The 24/7 supervisor creates a later run after this record becomes terminal | Event Infrastructure |
 | Live Updates Preference | Explicit browser-persisted user choice controlling the leaderboard listener; absent choice defaults OFF, and reload/reconnect never forces ON | Frontend |
 | Safe Invalidation | A privacy-safe `leaderboard:update` notification whose payload is not trusted as a viewer snapshot; while the persisted Live updates choice is ON, the app-level provider refetches REST using the current session | Event Infrastructure, Frontend |
 | WebSocket Gateway | Server-side component (`PushGateway`) that relays bus events (`LeaderboardUpdated`, `SearchLoopProgress`, etc.) to connected frontend clients over WebSocket | Event Infrastructure |

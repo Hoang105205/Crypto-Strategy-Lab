@@ -14,7 +14,13 @@ import { PushGateway } from './push.gateway';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [AuthModule, EventsModule, LeaderboardModule, LoopModule, QueueModule],
+  imports: [
+    AuthModule,
+    EventsModule,
+    LeaderboardModule,
+    LoopModule,
+    QueueModule,
+  ],
   controllers: [DashboardController],
   providers: [DashboardService, PushGateway, InfrastructureErrorFilter],
 })

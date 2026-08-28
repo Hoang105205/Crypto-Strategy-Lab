@@ -1,5 +1,7 @@
 # Module Boundaries
 
+> **Last Updated**: 2026-08-28
+
 ## Module Overview
 
 | Module | Owner | Responsibility | Layer | Depends On |
@@ -44,16 +46,18 @@
 - **Related ADRs**: `kb/ADR/0009-sentiment-service-as-separate-process.md`, `kb/ADR/0010-news-provider-adapter-pattern.md`, `kb/ADR/0014-llm-assisted-crawler-selector-caching.md`
 
 ### Event Infrastructure (Phương)
-- **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (search orchestration via events), dashboard/ (BFF composition)
-- **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs
-- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry reads only). `SearchLoopRun` remains one global system process and is not user-scoped.
+- **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (bounded run orchestration plus persistent 24/7 supervisor/DB lease), dashboard/ (BFF composition)
+- **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs, authenticated persistent Search Loop enable/disable/config APIs
+- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, PostgreSQL lease/control state, **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry reads; `RequireAuth` on loop-control mutations). `SearchLoopRun` remains one global system process and is not user-scoped.
 - **Module doc**: `kb/modules/event-infrastructure.md`
 - **Contracts**: `kb/contracts/events.yaml`
+- **Related ADRs**: ADR-0005, ADR-0006, ADR-0011, ADR-0013, ADR-0017
 
 ## Cross-Module Communication
 - Market Data → Event Infrastructure: publishes `MarketDataUpdated` (reserved; not yet consumed — see `kb/contracts/events.yaml`)
 - Strategy Engine → Event Infrastructure: awaits `IJobQueue.enqueue` for USER work, then publishes observational `BacktestRequested`
 - Event Infrastructure Loop Controller → Job Queue: awaits `IJobQueue.enqueue` for SEARCH_LOOP work, then publishes observational `BacktestRequested`
+- Event Infrastructure Search Loop Supervisor → PostgreSQL: persists desired state and atomically acquires/renews the singleton coordination lease before starting bounded runs
 - Event Infrastructure → Frontend: broadcasts system-safe `leaderboard:update`; the app-level provider refetches caller-scoped REST while ON and never filters private broadcast rows client-side
 - Event Infrastructure → Redis: BullMQ persists queue state, priorities, delays, locks, and bounded job history
 - Event Infrastructure → Strategy Engine: publishes `BacktestCompleted` / `BacktestFailed`
@@ -63,7 +67,7 @@
 
 ## Module Boundary Rules
 1. Modules communicate through defined contracts and events only — never direct imports
-2. No direct database access across module boundaries
+2. No direct database access across module boundaries. Cross-module identifiers are logical ID references, not Prisma relations/database foreign keys; lifecycle consistency must use public ports, events, or an owning-module reconciler.
 3. Shared interfaces go in `shared/` — owned by Hoàng
 4. Circular dependencies are forbidden
 5. Interface change → update `kb/contracts/` + notify team (same day)

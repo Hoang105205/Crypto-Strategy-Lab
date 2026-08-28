@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  LeaderboardScope,
   RankingCriterion,
   type IJobQueue,
   type LeaderboardSnapshot,
@@ -31,7 +32,11 @@ export class DashboardService {
     viewerUserId: string | null = null,
   ): Promise<DashboardSummary> {
     const [leaderboard, loop, queue] = await Promise.all([
-      this.leaderboard.getLeaderboard(RankingCriterion.SCORE, viewerUserId),
+      this.leaderboard.getLeaderboard(
+        RankingCriterion.SCORE,
+        viewerUserId,
+        LeaderboardScope.COMBINED,
+      ),
       this.loopStatus.getCurrent(),
       this.jobQueue.getStats(),
     ]);

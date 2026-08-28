@@ -44,18 +44,21 @@ describe('BacktestResultPort', () => {
   it.each([
     ['USER UUID', USER_ID],
     ['SEARCH_LOOP null', null],
-  ] as const)('persists and maps %s ownership unchanged', async (_label, userId) => {
-    const ownedInput = { ...input, userId };
-    const ownedStored = { id: 'result-1', ...ownedInput };
-    const prisma = mockPrisma(null);
-    prisma.backtestResult.create.mockResolvedValue(ownedStored);
-    const port = new BacktestResultPort(prisma as never);
+  ] as const)(
+    'persists and maps %s ownership unchanged',
+    async (_label, userId) => {
+      const ownedInput = { ...input, userId };
+      const ownedStored = { id: 'result-1', ...ownedInput };
+      const prisma = mockPrisma(null);
+      prisma.backtestResult.create.mockResolvedValue(ownedStored);
+      const port = new BacktestResultPort(prisma as never);
 
-    await expect(port.save(ownedInput)).resolves.toMatchObject({ userId });
-    expect(prisma.backtestResult.create).toHaveBeenCalledWith({
-      data: { ...ownedInput, trades: ownedInput.trades },
-    });
-  });
+      await expect(port.save(ownedInput)).resolves.toMatchObject({ userId });
+      expect(prisma.backtestResult.create).toHaveBeenCalledWith({
+        data: { ...ownedInput, trades: ownedInput.trades },
+      });
+    },
+  );
 
   it('creates a result once using producer jobId', async () => {
     const prisma = mockPrisma(null);

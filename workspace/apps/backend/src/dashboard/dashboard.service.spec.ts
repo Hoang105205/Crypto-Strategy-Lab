@@ -118,6 +118,7 @@ describe('DashboardService BFF contract (T035)', () => {
     expect(leaderboard.getLeaderboard).toHaveBeenCalledWith(
       RankingCriterion.SCORE,
       null,
+      'combined',
     );
     expect(summary.leaderboard).toEqual({
       rankingCriterion: RankingCriterion.SCORE,
@@ -235,6 +236,7 @@ describe('T016 dashboard leaderboard viewer scope', () => {
       expect(leaderboard.getLeaderboard).toHaveBeenCalledWith(
         RankingCriterion.SCORE,
         viewerUserId,
+        'combined',
       );
       expect(summary.leaderboard.updatedAt).toBe(LEADERBOARD_UPDATED_AT);
       expect(loopStatus.getCurrent).toHaveBeenCalledWith();
@@ -361,9 +363,9 @@ describe('DashboardController HTTP contract (T035)', () => {
       DashboardController,
       'getSummary',
     ) as Record<string, { index: number }> | undefined;
-    expect(Object.values(routeArgs ?? {}).some(({ index }) => index === 0)).toBe(
-      true,
-    );
+    expect(
+      Object.values(routeArgs ?? {}).some(({ index }) => index === 0),
+    ).toBe(true);
   });
 });
 

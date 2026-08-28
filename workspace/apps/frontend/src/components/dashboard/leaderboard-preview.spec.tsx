@@ -93,6 +93,28 @@ async function loadPreview(): Promise<LeaderboardPreviewModule> {
 }
 
 describe('LeaderboardPreview contract', () => {
+  it('remains one Combined Top-5 preview rather than rendering scoped cards', async () => {
+    const { LeaderboardPreview } = await loadPreview();
+    render(
+      <LeaderboardPreview
+        snapshot={snapshot([
+          entry(1, 1),
+          entry(2, 2),
+          entry(3, 3),
+          entry(4, 4),
+          entry(5, 5),
+          entry(6, 6),
+        ])}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole('list', { name: /leaderboard preview/i })).toHaveLength(1);
+    expect(screen.getAllByRole('listitem')).toHaveLength(5);
+    expect(screen.queryByText(/my strategies/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/system leaderboard/i)).not.toBeInTheDocument();
+  });
+
   it('shows at most five entries with continuous view-local ranks and valid navigation', async () => {
     const { LeaderboardPreview } = await loadPreview();
     const selectStrategy = vi.fn();

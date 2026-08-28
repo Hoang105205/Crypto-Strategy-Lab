@@ -13,6 +13,10 @@
 - [x] Success criteria are measurable
 - [x] Edge cases are identified
 - [x] Acceptance scenarios separately cover anonymous, user A, user B, list, detail, realtime on/off/re-enable, reconnect, and listener cleanup
+- [x] Cross-route acceptance covers ON/OFF navigation, off-route invalidation, `/leaderboard` integration, return-to-Dashboard cache continuity, and subscribe-before-refetch ordering
+- [x] Explicit ON/OFF persists across reload/browser restart; absent or invalid choice defaults OFF and never auto-enables
+- [x] Page unmount and app-level provider cleanup boundaries are distinguished explicitly
+- [x] Identity transitions A → B and A → anonymous clear old cache before render and reject delayed A requests
 - [x] Cross-user REST and realtime non-disclosure is explicit
 - [x] SearchLoopRun remains global and outside per-user expansion
 
@@ -22,7 +26,8 @@
 - [x] Auth, Event Infrastructure, and Frontend module boundaries are respected
 - [x] Glossary terms are used consistently
 - [x] Active auth/events contracts are referenced as authoritative
-- [x] The stale `kb/flows/strategy-search-loop.md` conflict is recorded and resolved in favor of the 2026-08-18 decision
+- [x] Updated leaderboard/search-loop KB flows are used as current architectural authority
+- [x] No room, socket-auth handshake, namespace change, client privacy filter, disconnect, migration, wire-field change, or per-user SearchLoopRun is introduced
 - [x] No unresolved conflict with the current architecture remains in the specification
 
 ## Validation Result

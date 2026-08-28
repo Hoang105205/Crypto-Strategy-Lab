@@ -1,28 +1,22 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect } from "react";
 import {
-  RankingCriterion,
-  type LeaderboardSnapshot,
-  type LeaderboardUpdatedPayload,
-} from '@crypto-strategy-lab/shared';
-import { apiClient } from '../services/api-client';
-import { getInfrastructureSocket } from '../services/infrastructure-socket';
-import type { InfrastructureEventSocket } from './use-dashboard-summary';
-
-type EventHandler = (payload: never) => void;
-
-type LeaderboardUpdatedWire = Omit<LeaderboardUpdatedPayload, 'updatedAt'> & {
-  updatedAt: string | Date;
-};
-
-export interface UseLeaderboardOptions {
-  getLeaderboard?: (sortBy: RankingCriterion) => Promise<LeaderboardSnapshot>;
-  socket?: InfrastructureEventSocket;
-}
+  LeaderboardScope,
+  type RankingCriterion,
+} from "@crypto-strategy-lab/shared";
+import {
+  useLeaderboardLive,
+  type ProjectionViewState,
+  type SelectedLeaderboardStrategy,
+} from "../contexts/leaderboard-live-context";
 
 export interface LeaderboardState {
-  data: LeaderboardSnapshot | null;
+  system: ProjectionViewState;
+  mine: ProjectionViewState;
+  selectedStrategy: SelectedLeaderboardStrategy | null;
+  setSelectedStrategy(value: SelectedLeaderboardStrategy | null): void;
+  data: ProjectionViewState["snapshot"];
   loading: boolean;
   error: Error | null;
   isStale: boolean;
@@ -34,147 +28,55 @@ export interface LeaderboardState {
   refetch(): Promise<void>;
 }
 
-function asDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value);
-}
-
-function errorFrom(reason: unknown): Error {
-  return reason instanceof Error ? reason : new Error(String(reason));
-}
-
-export function useLeaderboard(
-  options: UseLeaderboardOptions = {},
-): LeaderboardState {
-  const getLeaderboard = options.getLeaderboard ?? apiClient.getLeaderboard;
-  const socket =
-    options.socket ??
-    (getInfrastructureSocket() as unknown as InfrastructureEventSocket);
-  const [data, setData] = useState<LeaderboardSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const [isStale, setIsStale] = useState(true);
-  const [lastSuccessfulAt, setLastSuccessfulAt] = useState<Date | null>(null);
-  const [sortBy, setSortByState] = useState<RankingCriterion>(
-    RankingCriterion.SCORE,
-  );
-  const [selectedStrategyVersionId, setSelectedStrategyVersionId] = useState<
-    string | null
-  >(null);
-  const dataRef = useRef<LeaderboardSnapshot | null>(null);
-  const sortByRef = useRef(sortBy);
-  const requestGenerationRef = useRef(0);
-  const liveRevisionRef = useRef(0);
-  const realtimeWatermarkRef = useRef(Number.NEGATIVE_INFINITY);
-  const mountedRef = useRef(false);
-
-  const commitData = useCallback((next: LeaderboardSnapshot) => {
-    dataRef.current = next;
-    setData(next);
-  }, []);
-
-  const fetchSnapshot = useCallback(
-    async (criterion: RankingCriterion) => {
-      const requestGeneration = ++requestGenerationRef.current;
-      const liveRevisionAtStart = liveRevisionRef.current;
-      setLoading(true);
-      setError(null);
-      try {
-        const snapshot = await getLeaderboard(criterion);
-        if (
-          !mountedRef.current ||
-          requestGeneration !== requestGenerationRef.current
-        ) {
-          return;
-        }
-        if (snapshot.updatedAt.getTime() < realtimeWatermarkRef.current) {
-          return;
-        }
-        if (
-          liveRevisionRef.current !== liveRevisionAtStart &&
-          dataRef.current !== null &&
-          snapshot.updatedAt < dataRef.current.updatedAt
-        ) {
-          return;
-        }
-        realtimeWatermarkRef.current = Math.max(
-          realtimeWatermarkRef.current,
-          snapshot.updatedAt.getTime(),
-        );
-        commitData(snapshot);
-        setLastSuccessfulAt(snapshot.updatedAt);
-        setIsStale(false);
-      } catch (reason) {
-        if (
-          mountedRef.current &&
-          requestGeneration === requestGenerationRef.current
-        ) {
-          setError(errorFrom(reason));
-        }
-      } finally {
-        if (
-          mountedRef.current &&
-          requestGeneration === requestGenerationRef.current
-        ) {
-          setLoading(false);
-        }
-      }
-    },
-    [commitData, getLeaderboard],
-  );
-
-  const refetch = useCallback(
-    () => fetchSnapshot(sortByRef.current),
-    [fetchSnapshot],
-  );
-
-  const setSortBy = useCallback(
-    (value: RankingCriterion) => {
-      sortByRef.current = value;
-      setSortByState(value);
-    },
-    [],
-  );
-
+export function useLeaderboard(): LeaderboardState {
+  const leaderboard = useLeaderboardLive();
+  const maintainScopedProjections = leaderboard.maintainScopedProjections;
   useEffect(() => {
-    mountedRef.current = true;
-
-    const handleConnect = () => {
-      setIsStale(true);
-      void refetch();
-    };
-    const handleDisconnect = () => setIsStale(true);
-    const handleLeaderboard = (wire: LeaderboardUpdatedWire) => {
-      const updatedAt = asDate(wire.updatedAt);
-      if (updatedAt.getTime() < realtimeWatermarkRef.current) return;
-
-      realtimeWatermarkRef.current = updatedAt.getTime();
-      liveRevisionRef.current += 1;
-      void refetch();
-    };
-
-    socket.on('connect', handleConnect as EventHandler);
-    socket.on('disconnect', handleDisconnect as EventHandler);
-    socket.on('leaderboard:update', handleLeaderboard as EventHandler);
-    void refetch();
-
-    return () => {
-      mountedRef.current = false;
-      socket.off('connect', handleConnect as EventHandler);
-      socket.off('disconnect', handleDisconnect as EventHandler);
-      socket.off('leaderboard:update', handleLeaderboard as EventHandler);
-    };
-  }, [commitData, refetch, socket]);
+    maintainScopedProjections?.();
+  }, [maintainScopedProjections]);
 
   return {
-    data,
-    loading,
-    error,
-    isStale,
-    lastSuccessfulAt,
-    sortBy,
-    setSortBy,
-    selectedStrategyVersionId,
-    setSelectedStrategyVersionId,
-    refetch,
+    system: leaderboard.system,
+    mine: leaderboard.mine,
+    selectedStrategy: leaderboard.selectedStrategy,
+    setSelectedStrategy: leaderboard.setSelectedStrategy,
+    // Legacy one-table aliases remain until the Phase 5 page migration.
+    data: leaderboard.system?.snapshot ?? leaderboard.activeSnapshot,
+    loading: leaderboard.system?.loading ?? leaderboard.loading,
+    error: leaderboard.system?.error ?? leaderboard.error,
+    isStale: leaderboard.system?.isStale ?? leaderboard.isStale,
+    lastSuccessfulAt:
+      leaderboard.system?.lastSuccessfulAt ?? leaderboard.lastSuccessfulAt,
+    sortBy: leaderboard.activeCriterion,
+    setSortBy: (value) => {
+      void leaderboard.setActiveCriterion(value);
+    },
+    selectedStrategyVersionId:
+      leaderboard.selectedStrategy?.strategyVersionId ??
+      leaderboard.selectedStrategyVersionId,
+    setSelectedStrategyVersionId: (value) => {
+      if (leaderboard.setSelectedStrategy !== undefined) {
+        leaderboard.setSelectedStrategy(
+          value === null
+            ? null
+            : {
+                strategyVersionId: value,
+                sourceScope: LeaderboardScope.SYSTEM,
+              },
+        );
+        return;
+      }
+      leaderboard.setSelectedStrategyVersionId(value);
+    },
+    refetch: async () => {
+      if (leaderboard.system !== undefined && leaderboard.mine !== undefined) {
+        await Promise.all([
+          leaderboard.system.refetch(),
+          leaderboard.mine.refetch(),
+        ]);
+        return;
+      }
+      await leaderboard.refetch();
+    },
   };
 }

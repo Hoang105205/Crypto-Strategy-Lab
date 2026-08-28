@@ -413,9 +413,9 @@ describe('T016 dashboard optional-auth integration', () => {
       .expect(200);
 
     expect(harness.leaderboard.getLeaderboard.mock.calls).toEqual([
-      [RankingCriterion.SCORE, null],
-      [RankingCriterion.SCORE, USER_A],
-      [RankingCriterion.SCORE, USER_B],
+      [RankingCriterion.SCORE, null, 'combined'],
+      [RankingCriterion.SCORE, USER_A, 'combined'],
+      [RankingCriterion.SCORE, USER_B, 'combined'],
     ]);
     expect(harness.loop.getCurrent.mock.calls).toEqual([[], [], []]);
     expect(harness.queue.getStats.mock.calls).toEqual([[], [], []]);

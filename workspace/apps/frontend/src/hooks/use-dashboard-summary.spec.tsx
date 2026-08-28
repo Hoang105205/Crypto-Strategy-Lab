@@ -1,69 +1,34 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  LoopStatus,
+  RankingCriterion,
+  StrategyGeneratorType,
+  type LeaderboardSnapshot,
+  type NormalizedRate,
+} from "@crypto-strategy-lab/shared";
+import type { DashboardSummary } from "../services/api-client";
 
-vi.mock('../services/api-client', () => ({
+const liveState = vi.hoisted(() => ({
+  setIsLive: vi.fn(),
+  refetch: vi.fn(),
+  combinedRefetch: vi.fn(),
+  value: {} as Record<string, unknown>,
+}));
+
+vi.mock("../contexts/leaderboard-live-context", () => ({
+  useLeaderboardLive: () => liveState.value,
+}));
+
+vi.mock("../services/api-client", () => ({
   apiClient: { getDashboardSummary: vi.fn() },
 }));
 
-vi.mock('../services/infrastructure-socket', () => ({
+vi.mock("../services/infrastructure-socket", () => ({
   getInfrastructureSocket: vi.fn(),
 }));
 
 type Handler = (...args: unknown[]) => void;
-
-interface LoopState {
-  id: string;
-  status: 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'STOPPED_BY_USER' | 'FAILED';
-  generatorType: 'RANDOM' | 'DOMAIN_GUIDED';
-  iteration: number;
-  testedCandidates: number;
-  maxCandidates: number | null;
-  maxDurationMs: number | null;
-  stopOnNoImprovementIterations: number;
-  currentCandidateStrategyVersionId: string | null;
-  bestStrategyVersionId: string | null;
-  bestScore: number | null;
-  stopReason: string | null;
-  startedAt: Date;
-  pausedAt: Date | null;
-  stoppedAt: Date | null;
-}
-
-interface DashboardSummary {
-  leaderboard: {
-    rankingCriterion: 'score';
-    updatedAt: Date;
-    entries: unknown[];
-  };
-  loop: LoopState | null;
-  queue: {
-    queued: number;
-    processing: number;
-    completedLast24h: number;
-    deadLettered: number;
-    delayed: number;
-    redisConnected: boolean;
-  };
-  generatedAt: Date;
-}
-
-interface DashboardHookState {
-  data: DashboardSummary | null;
-  loading: boolean;
-  error: Error | null;
-  isStale: boolean;
-  lastSuccessfulAt: Date | null;
-  isLeaderboardLive: boolean;
-  setIsLeaderboardLive(value: boolean): void;
-  refetch(): Promise<void>;
-}
-
-interface DashboardHookModule {
-  useDashboardSummary(options: {
-    getDashboardSummary(): Promise<DashboardSummary>;
-    socket: FakeSocket;
-  }): DashboardHookState;
-}
 
 class FakeSocket {
   private readonly handlers = new Map<string, Set<Handler>>();
@@ -79,7 +44,7 @@ class FakeSocket {
   });
   readonly disconnect = vi.fn();
 
-  serverEmit(event: string, payload?: unknown) {
+  emitFromServer(event: string, payload?: unknown) {
     this.handlers.get(event)?.forEach((handler) => handler(payload));
   }
 
@@ -88,456 +53,218 @@ class FakeSocket {
   }
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-function loopFixture(overrides: Partial<LoopState> = {}): LoopState {
+function leaderboard(ids: string[]): LeaderboardSnapshot {
   return {
-    id: '11111111-1111-4111-8111-111111111111',
-    status: 'RUNNING',
-    generatorType: 'RANDOM',
-    iteration: 2,
-    testedCandidates: 1,
-    maxCandidates: 5,
-    maxDurationMs: null,
-    stopOnNoImprovementIterations: 50,
-    currentCandidateStrategyVersionId: 'version-2',
-    bestStrategyVersionId: 'version-1',
-    bestScore: 0.5,
-    stopReason: null,
-    startedAt: new Date('2026-08-16T09:00:00.000Z'),
-    pausedAt: null,
-    stoppedAt: null,
-    ...overrides,
+    rankingCriterion: RankingCriterion.SCORE,
+    updatedAt: new Date("2026-08-24T10:00:00.000Z"),
+    entries: ids.map((id, index) => ({
+      rank: index + 1,
+      userId: null,
+      strategyVersionId: id,
+      strategyName: id,
+      strategyType: "MA_CROSSOVER",
+      isComposite: false,
+      backtestResultId: `result-${id}`,
+      score: 1 - index / 10,
+      totalReturn: 1,
+      winRate: 0.5 as NormalizedRate,
+      maxDrawdown: -0.1,
+      sharpeRatio: 1,
+      totalTrades: 2,
+    })),
   };
 }
 
-function summaryFixture(
-  generatedAt: string,
-  loop: LoopState | null = loopFixture(),
-): DashboardSummary {
+function summaryFixture(): DashboardSummary {
   return {
-    leaderboard: {
-      rankingCriterion: 'score',
-      updatedAt: new Date(generatedAt),
-      entries: [],
+    leaderboard: leaderboard(["bff-row-must-not-own"]),
+    loop: {
+      id: "11111111-1111-4111-8111-111111111111",
+      status: LoopStatus.RUNNING,
+      generatorType: StrategyGeneratorType.RANDOM,
+      iteration: 1,
+      testedCandidates: 1,
+      maxCandidates: 10,
+      maxDurationMs: null,
+      stopOnNoImprovementIterations: 5,
+      currentCandidateStrategyVersionId: null,
+      bestStrategyVersionId: null,
+      bestScore: null,
+      stopReason: null,
+      startedAt: new Date("2026-08-24T09:00:00.000Z"),
+      pausedAt: null,
+      stoppedAt: null,
     },
-    loop,
     queue: {
       queued: 1,
-      processing: 2,
-      completedLast24h: 3,
-      deadLettered: 4,
-      delayed: 5,
+      processing: 1,
+      completedLast24h: 2,
+      deadLettered: 0,
+      delayed: 0,
       redisConnected: true,
     },
-    generatedAt: new Date(generatedAt),
+    generatedAt: new Date("2026-08-24T10:00:01.000Z"),
   };
 }
 
-async function loadHook(): Promise<DashboardHookModule> {
-  const modulePath = './use-dashboard-summary';
-  return import(/* @vite-ignore */ modulePath) as Promise<DashboardHookModule>;
-}
+describe("useDashboardSummary provider composition", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    liveState.setIsLive.mockReset();
+    liveState.refetch.mockReset();
+    liveState.combinedRefetch.mockReset();
+    liveState.value = {
+      isLive: true,
+      setIsLive: liveState.setIsLive,
+      scoreSnapshot: leaderboard([
+        "provider-1",
+        "provider-2",
+        "provider-3",
+        "provider-4",
+        "provider-5",
+        "provider-6",
+      ]),
+      activeSnapshot: null,
+      activeCriterion: RankingCriterion.SCORE,
+      setActiveCriterion: vi.fn(),
+      selectedStrategyVersionId: null,
+      setSelectedStrategyVersionId: vi.fn(),
+      loading: false,
+      error: null,
+      isStale: false,
+      lastSuccessfulAt: new Date("2026-08-24T10:00:02.000Z"),
+      refetch: liveState.refetch,
+    };
+  });
 
-describe('useDashboardSummary contract', () => {
-  it('defaults Live updates ON and treats the system-safe event as a REST invalidation', async () => {
-    const { useDashboardSummary } = await loadHook();
+  it("consumes only Combined SCORE projection state and delegates Dashboard retry to it", async () => {
+    liveState.value = {
+      ...liveState.value,
+      scoreSnapshot: leaderboard(["legacy-alias-must-not-render"]),
+      combinedScore: {
+        snapshot: leaderboard([
+          "combined-1",
+          "combined-2",
+          "combined-3",
+          "combined-4",
+          "combined-5",
+          "combined-6",
+        ]),
+        loading: false,
+        error: null,
+        isStale: false,
+        lastSuccessfulAt: new Date("2026-08-24T10:00:02.000Z"),
+        refetch: liveState.combinedRefetch,
+      },
+      system: {
+        snapshot: leaderboard(["system-must-not-render"]),
+      },
+      mine: {
+        snapshot: leaderboard(["mine-private-must-not-render"]),
+      },
+    };
+    const { useDashboardSummary } = await import("./use-dashboard-summary");
     const socket = new FakeSocket();
-    const first = summaryFixture('2026-08-16T10:00:00.000Z');
-    first.leaderboard.entries = [{ id: 'owner-row-from-rest' }];
-    const refresh = deferred<DashboardSummary>();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValueOnce(first)
-      .mockReturnValueOnce(refresh.promise);
+    const getDashboardSummary = vi.fn().mockResolvedValue(summaryFixture());
     const { result } = renderHook(() =>
       useDashboardSummary({ getDashboardSummary, socket }),
     );
-    await waitFor(() => expect(result.current.data).toEqual(first));
 
-    expect(result.current.isLeaderboardLive).toBe(true);
-    expect(socket.listenerCount('leaderboard:update')).toBe(1);
-    act(() =>
-      socket.serverEmit('leaderboard:update', {
-        updatedAt: '2026-08-16T10:01:00.000Z',
-        triggeredByBacktestResultId: null,
-        rankingCriterion: 'score',
-        topK: [{ id: 'untrusted-system-wire-row' }],
-      }),
-    );
-
-    expect(getDashboardSummary).toHaveBeenCalledTimes(2);
-    expect(result.current.data?.leaderboard.entries).toEqual([
-      { id: 'owner-row-from-rest' },
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(
+      result.current.data?.leaderboard.entries.map(
+        (entry) => entry.strategyVersionId,
+      ),
+    ).toEqual([
+      "combined-1",
+      "combined-2",
+      "combined-3",
+      "combined-4",
+      "combined-5",
     ]);
-    const scoped = summaryFixture('2026-08-16T10:02:00.000Z');
-    scoped.leaderboard.entries = [{ id: 'scoped-rest-row' }];
-    await act(async () => refresh.resolve(scoped));
-    await waitFor(() =>
-      expect(result.current.data?.leaderboard.entries).toEqual([
-        { id: 'scoped-rest-row' },
-      ]),
-    );
-    act(() =>
-      socket.serverEmit('leaderboard:update', {
-        updatedAt: '2026-08-16T10:01:30.000Z',
-        triggeredByBacktestResultId: null,
-        rankingCriterion: 'score',
-        topK: [],
-      }),
-    );
-    expect(getDashboardSummary).toHaveBeenCalledTimes(2);
+    expect(socket.listenerCount("leaderboard:update")).toBe(0);
+    await act(async () => result.current.refetch());
+    expect(liveState.combinedRefetch).toHaveBeenCalledTimes(1);
+    expect(liveState.refetch).not.toHaveBeenCalled();
   });
 
-  it('turns OFF by removing only the exact leaderboard handler and freezes that snapshot', async () => {
-    const { useDashboardSummary } = await loadHook();
+  it("composes provider SCORE Top-5 with global loop/queue and owns zero leaderboard handlers", async () => {
+    const { useDashboardSummary } = await import("./use-dashboard-summary");
     const socket = new FakeSocket();
-    const first = summaryFixture('2026-08-16T10:00:00.000Z');
-    first.leaderboard.entries = [{ id: 'frozen-row' }];
-    const getDashboardSummary = vi.fn().mockResolvedValue(first);
-    const { result, unmount } = renderHook(() =>
+    const getDashboardSummary = vi.fn().mockResolvedValue(summaryFixture());
+    const { result } = renderHook(() =>
       useDashboardSummary({ getDashboardSummary, socket }),
     );
-    await waitFor(() => expect(result.current.data).toEqual(first));
-    const leaderboardRegistration = socket.on.mock.calls.find(
-      ([event]) => event === 'leaderboard:update',
-    );
 
-    act(() => result.current.setIsLeaderboardLive(false));
-
-    expect(socket.listenerCount('leaderboard:update')).toBe(0);
-    expect(socket.off).toHaveBeenCalledWith(
-      'leaderboard:update',
-      leaderboardRegistration?.[1],
-    );
-    expect(socket.listenerCount('loop:progress')).toBe(1);
-    act(() =>
-      socket.serverEmit('leaderboard:update', {
-        updatedAt: '2026-08-16T10:05:00.000Z',
-        topK: [{ id: 'must-not-appear' }],
-      }),
-    );
-    expect(getDashboardSummary).toHaveBeenCalledTimes(1);
-    expect(result.current.data?.leaderboard.entries).toEqual([
-      { id: 'frozen-row' },
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(
+      result.current.data?.leaderboard.entries.map(
+        (entry) => entry.strategyVersionId,
+      ),
+    ).toEqual([
+      "provider-1",
+      "provider-2",
+      "provider-3",
+      "provider-4",
+      "provider-5",
     ]);
-
-    act(() =>
-      socket.serverEmit('loop:progress', {
-        loopRunId: loopFixture().id,
-        iteration: 4,
-        testedCandidates: 3,
-        currentCandidate: {
-          strategyVersionId: 'version-4',
-          strategyName: 'Candidate 4',
-          status: 'EVALUATING',
-        },
-        bestScoreSoFar: 0.7,
-        bestStrategyVersionId: 'version-4',
-      }),
-    );
-    expect(result.current.data?.loop?.iteration).toBe(4);
-    unmount();
-    expect(socket.disconnect).not.toHaveBeenCalled();
+    expect(result.current.data?.loop?.status).toBe(LoopStatus.RUNNING);
+    expect(result.current.data?.queue.queued).toBe(1);
+    expect(socket.listenerCount("leaderboard:update")).toBe(0);
+    expect(result.current.isLeaderboardLive).toBe(true);
   });
 
-  it('re-enables subscribe-before-refetch and lets an event during catch-up start the winning generation', async () => {
-    const { useDashboardSummary } = await loadHook();
+  it("delegates Live state/refetch while retaining independent loop listeners", async () => {
+    const { useDashboardSummary } = await import("./use-dashboard-summary");
     const socket = new FakeSocket();
-    const catchUp = deferred<DashboardSummary>();
-    const eventRefresh = deferred<DashboardSummary>();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValueOnce(summaryFixture('2026-08-16T10:00:00.000Z'))
-      .mockReturnValueOnce(catchUp.promise)
-      .mockReturnValueOnce(eventRefresh.promise);
+    const getDashboardSummary = vi.fn().mockResolvedValue(summaryFixture());
     const { result } = renderHook(() =>
       useDashboardSummary({ getDashboardSummary, socket }),
     );
     await waitFor(() => expect(result.current.data).not.toBeNull());
+
     act(() => result.current.setIsLeaderboardLive(false));
-    expect(socket.listenerCount('leaderboard:update')).toBe(0);
-
-    act(() => result.current.setIsLeaderboardLive(true));
-    expect(socket.listenerCount('leaderboard:update')).toBe(1);
-    expect(getDashboardSummary).toHaveBeenCalledTimes(2);
-    expect(
-      socket.on.mock.invocationCallOrder[
-        socket.on.mock.calls.findLastIndex(
-          ([event]) => event === 'leaderboard:update',
-        )
-      ],
-    ).toBeLessThan(getDashboardSummary.mock.invocationCallOrder[1]);
-
-    act(() =>
-      socket.serverEmit('leaderboard:update', {
-        updatedAt: '2026-08-16T10:02:00.000Z',
-        triggeredByBacktestResultId: null,
-        rankingCriterion: 'score',
-        topK: [],
-      }),
-    );
-    expect(getDashboardSummary).toHaveBeenCalledTimes(3);
-    const newest = summaryFixture('2026-08-16T10:03:00.000Z');
-    newest.leaderboard.entries = [{ id: 'newest' }];
-    await act(async () => eventRefresh.resolve(newest));
-    await waitFor(() =>
-      expect(result.current.data?.leaderboard.entries).toEqual([
-        { id: 'newest' },
-      ]),
-    );
-
-    const older = summaryFixture('2026-08-16T10:02:30.000Z');
-    older.leaderboard.entries = [{ id: 'obsolete-catch-up' }];
-    await act(async () => catchUp.resolve(older));
-    expect(result.current.data?.leaderboard.entries).toEqual([{ id: 'newest' }]);
-    expect(socket.listenerCount('leaderboard:update')).toBe(1);
-  });
-
-  it('reconciles on reconnect only when ON and cleans up exact owned handlers on unmount', async () => {
-    const { useDashboardSummary } = await loadHook();
-    const socket = new FakeSocket();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValue(summaryFixture('2026-08-16T10:00:00.000Z'));
-    const { result, unmount } = renderHook(() =>
-      useDashboardSummary({ getDashboardSummary, socket }),
-    );
-    await waitFor(() => expect(getDashboardSummary).toHaveBeenCalledTimes(1));
-
-    act(() => socket.serverEmit('connect'));
-    await waitFor(() => expect(getDashboardSummary).toHaveBeenCalledTimes(2));
-    act(() => result.current.setIsLeaderboardLive(false));
-    act(() => socket.serverEmit('connect'));
-    expect(getDashboardSummary).toHaveBeenCalledTimes(2);
-
-    const registrations = socket.on.mock.calls.map(
-      ([event, handler]) => [event, handler] as const,
-    );
-    unmount();
-    for (const [event, handler] of registrations) {
-      expect(socket.off).toHaveBeenCalledWith(event, handler);
-    }
-    expect(socket.disconnect).not.toHaveBeenCalled();
-  });
-
-  it('retains the last successful snapshot and timestamp on disconnect and refresh failure', async () => {
-    const { useDashboardSummary } = await loadHook();
-    const socket = new FakeSocket();
-    const first = summaryFixture('2026-08-16T10:00:00.000Z');
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValueOnce(first)
-      .mockRejectedValueOnce(new Error('Queue service is unavailable'));
-    const { result } = renderHook(() =>
-      useDashboardSummary({ getDashboardSummary, socket }),
-    );
-
-    await waitFor(() => expect(result.current.data).toEqual(first));
-    const successfulAt = result.current.lastSuccessfulAt;
-
-    act(() => socket.serverEmit('disconnect', 'transport close'));
-    expect(result.current.data).toEqual(first);
-    expect(result.current.lastSuccessfulAt).toEqual(successfulAt);
-    expect(result.current.isStale).toBe(true);
+    expect(liveState.setIsLive).toHaveBeenCalledWith(false);
+    expect(socket.listenerCount("leaderboard:update")).toBe(0);
+    expect(socket.listenerCount("loop:progress")).toBe(1);
 
     await act(async () => result.current.refetch());
-    expect(result.current.data).toEqual(first);
-    expect(result.current.lastSuccessfulAt).toEqual(successfulAt);
-    expect(result.current.error?.message).toBe('Queue service is unavailable');
-  });
-
-  it('refetches the authoritative Dashboard snapshot on reconnect and stays stale until it resolves', async () => {
-    const { useDashboardSummary } = await loadHook();
-    const socket = new FakeSocket();
-    const reconnect = deferred<DashboardSummary>();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValueOnce(summaryFixture('2026-08-16T10:00:00.000Z'))
-      .mockReturnValueOnce(reconnect.promise);
-    const { result } = renderHook(() =>
-      useDashboardSummary({ getDashboardSummary, socket }),
-    );
-    await waitFor(() => expect(getDashboardSummary).toHaveBeenCalledTimes(1));
-
-    act(() => socket.serverEmit('disconnect', 'transport close'));
-    act(() => socket.serverEmit('connect'));
-
     expect(getDashboardSummary).toHaveBeenCalledTimes(2);
-    expect(result.current.isStale).toBe(true);
-
-    const refreshed = summaryFixture('2026-08-16T10:01:00.000Z');
-    await act(async () => reconnect.resolve(refreshed));
-    await waitFor(() => expect(result.current.data).toEqual(refreshed));
-    expect(result.current.isStale).toBe(false);
+    expect(liveState.refetch).toHaveBeenCalledWith(RankingCriterion.SCORE);
+    expect(socket.disconnect).not.toHaveBeenCalled();
   });
 
-  it('rejects an older request generation that resolves after a newer refetch', async () => {
-    const { useDashboardSummary } = await loadHook();
+  it("keeps loop progress independent from the frozen provider leaderboard", async () => {
+    const { useDashboardSummary } = await import("./use-dashboard-summary");
     const socket = new FakeSocket();
-    const olderRequest = deferred<DashboardSummary>();
-    const newerRequest = deferred<DashboardSummary>();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockReturnValueOnce(olderRequest.promise)
-      .mockReturnValueOnce(newerRequest.promise);
+    const getDashboardSummary = vi.fn().mockResolvedValue(summaryFixture());
     const { result } = renderHook(() =>
-      useDashboardSummary({ getDashboardSummary, socket }),
-    );
-
-    await waitFor(() => expect(getDashboardSummary).toHaveBeenCalledTimes(1));
-    let refetchPromise!: Promise<void>;
-    act(() => {
-      refetchPromise = result.current.refetch();
-    });
-    const newer = summaryFixture('2026-08-16T10:02:00.000Z');
-    await act(async () => newerRequest.resolve(newer));
-    await refetchPromise;
-    expect(result.current.data).toEqual(newer);
-
-    await act(async () =>
-      olderRequest.resolve(summaryFixture('2026-08-16T09:59:00.000Z')),
-    );
-    expect(result.current.data).toEqual(newer);
-  });
-
-  it('does not let an in-flight REST snapshot overwrite newer Loop progress', async () => {
-    const { useDashboardSummary } = await loadHook();
-    const socket = new FakeSocket();
-    const staleRequest = deferred<DashboardSummary>();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValueOnce(summaryFixture('2026-08-16T10:00:00.000Z'))
-      .mockReturnValueOnce(staleRequest.promise);
-    const { result } = renderHook(() =>
-      useDashboardSummary({ getDashboardSummary, socket }),
-    );
-    await waitFor(() => expect(result.current.data).not.toBeNull());
-
-    let refetchPromise!: Promise<void>;
-    act(() => {
-      refetchPromise = result.current.refetch();
-    });
-    act(() =>
-      socket.serverEmit('loop:progress', {
-        loopRunId: loopFixture().id,
-        iteration: 4,
-        testedCandidates: 3,
-        currentCandidate: {
-          strategyVersionId: 'version-4',
-          strategyName: 'Candidate 4',
-          status: 'EVALUATING',
-        },
-        bestScoreSoFar: 0.7,
-        bestStrategyVersionId: 'version-3',
+      useDashboardSummary({
+        getDashboardSummary,
+        socket,
       }),
     );
-
-    expect(result.current.data?.loop).toMatchObject({
-      iteration: 4,
-      testedCandidates: 3,
-      bestScore: 0.7,
-    });
-
-    await act(async () =>
-      staleRequest.resolve(
-        summaryFixture(
-          '2026-08-16T10:00:30.000Z',
-          loopFixture({ iteration: 2, testedCandidates: 1 }),
-        ),
-      ),
-    );
-    await refetchPromise;
-    expect(result.current.data?.loop).toMatchObject({
-      iteration: 4,
-      testedCandidates: 3,
-      bestScore: 0.7,
-    });
-  });
-
-  it('never regresses Loop counters or resurrects a terminal run', async () => {
-    const { useDashboardSummary } = await loadHook();
-    const socket = new FakeSocket();
-    const getDashboardSummary = vi
-      .fn<() => Promise<DashboardSummary>>()
-      .mockResolvedValue(summaryFixture('2026-08-16T10:00:00.000Z'));
-    const { result } = renderHook(() =>
-      useDashboardSummary({ getDashboardSummary, socket }),
-    );
     await waitFor(() => expect(result.current.data).not.toBeNull());
 
     act(() =>
-      socket.serverEmit('loop:progress', {
-        loopRunId: loopFixture().id,
-        iteration: 5,
+      socket.emitFromServer("loop:progress", {
+        loopRunId: "11111111-1111-4111-8111-111111111111",
+        iteration: 4,
         testedCandidates: 4,
         currentCandidate: {
-          strategyVersionId: 'version-5',
-          strategyName: 'Candidate 5',
-          status: 'EVALUATING',
+          strategyVersionId: "candidate-4",
+          strategyName: "Candidate 4",
+          status: "EVALUATING",
         },
         bestScoreSoFar: 0.8,
-        bestStrategyVersionId: 'version-5',
+        bestStrategyVersionId: "candidate-4",
       }),
     );
-    act(() =>
-      socket.serverEmit('loop:progress', {
-        loopRunId: loopFixture().id,
-        iteration: 3,
-        testedCandidates: 2,
-        currentCandidate: {
-          strategyVersionId: 'version-3',
-          strategyName: 'Candidate 3',
-          status: 'EVALUATING',
-        },
-        bestScoreSoFar: 0.6,
-        bestStrategyVersionId: 'version-3',
-      }),
-    );
-    expect(result.current.data?.loop).toMatchObject({
-      iteration: 5,
-      testedCandidates: 4,
-      bestScore: 0.8,
-    });
 
-    act(() =>
-      socket.serverEmit('loop:stopped', {
-        loopRunId: loopFixture().id,
-        status: 'COMPLETED',
-        stopReason: 'max_candidates_reached',
-        testedCandidates: 5,
-        bestStrategyVersionId: 'version-5',
-        bestScore: 0.8,
-        startedAt: '2026-08-16T09:00:00.000Z',
-        stoppedAt: '2026-08-16T10:05:00.000Z',
-      }),
+    expect(result.current.data?.loop?.iteration).toBe(4);
+    expect(result.current.data?.leaderboard.entries[0]?.strategyVersionId).toBe(
+      "provider-1",
     );
-    act(() =>
-      socket.serverEmit('loop:progress', {
-        loopRunId: loopFixture().id,
-        iteration: 6,
-        testedCandidates: 6,
-        currentCandidate: {
-          strategyVersionId: 'late-version',
-          strategyName: 'Late candidate',
-          status: 'EVALUATING',
-        },
-        bestScoreSoFar: 0.9,
-        bestStrategyVersionId: 'late-version',
-      }),
-    );
-    expect(result.current.data?.loop).toMatchObject({
-      status: 'COMPLETED',
-      testedCandidates: 5,
-      stopReason: 'max_candidates_reached',
-    });
+    expect(socket.listenerCount("leaderboard:update")).toBe(0);
   });
 });

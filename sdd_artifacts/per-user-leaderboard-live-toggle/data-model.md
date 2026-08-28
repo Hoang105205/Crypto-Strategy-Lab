@@ -1,160 +1,173 @@
 # Data Model: Per-User Leaderboard Live Toggle
 
-## Entity Relationship and Identity Flow
+## Entity and State Flow
 
 ```mermaid
 flowchart LR
-    U[Authenticated user ID or null] --> R[BacktestRequested.userId]
-    R --> BR[BacktestResult.userId]
-    R --> C[BacktestCompleted.userId]
-    C --> L[LeaderboardEntry.userId]
+    U[Resolved viewer: anonymous / A / B] --> REST[Current-session Leaderboard REST]
+    REST --> S[Viewer-scoped accepted snapshots by criterion]
+    S --> D[Dashboard SCORE Top-5]
+    S --> L[/leaderboard active criterion]
+    S --> P[Current-viewer browser cache envelope]
 
-    LR[Leaderboard REST viewer ID] --> F{Visibility predicate}
-    L --> F
-    F --> B[Best result per strategy version]
-    B --> S[Sort and Top-K]
-    S --> P[Viewer-local ranks 1..N and scoped updatedAt]
+    WS[system-only leaderboard:update] --> I[Provider invalidation]
+    I --> REST
 
-    L --> G[System-only realtime projection]
-    G --> WS[leaderboard:update invalidation]
-    WS --> LR
+    U --> G[Identity generation]
+    G --> S
+    G --> R[Request generation + AbortController]
+
+    PREF[Persisted ON/OFF preference] --> H[Exactly one handler while ON]
+    H --> I
 ```
 
-`SearchLoopRun` and `SearchLoopCandidate` are intentionally absent from the ownership relationship. They remain global system entities.
+Backend ownership entities and wire payloads are unchanged. `SearchLoopRun` and `SearchLoopCandidate` remain global system entities and are intentionally absent from viewer ownership.
 
-## Entities
+## Existing Backend Entities and Contracts
 
-### StrategyVersion (existing, Strategy Engine owned)
+### BacktestRequested / BacktestResult / BacktestCompleted / LeaderboardEntry
 
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `id` | UUID/string | Primary key | Existing immutable strategy version identity. |
-| `userId` | UUID/string or null | Nullable | Null = system/shared; non-null = user-created/private. Already present. |
-
-No change is required by this feature. Strategy ownership is not used to infer backtest-result ownership.
-
-### BacktestRequested payload (existing event contract)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `jobId` | UUID/string | Required, producer-generated | Queue identity. |
-| `userId` | UUID/string or null | Required | USER producer supplies current user; SEARCH_LOOP producer supplies null. |
-| `source` | `USER` or `SEARCH_LOOP` | Required discriminant | Existing contract. |
-| `loopRunId` | UUID/string or null | USER=null; SEARCH_LOOP=required | Does not replace `userId`. |
-| Other backtest fields | Existing contract types | Required as defined | Unchanged. |
-
-### BacktestResult (existing Prisma model)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `id` | UUID/string | Primary key | Persisted result identity. |
-| `jobId` | UUID/string | Unique | Existing idempotency key. |
-| `userId` | UUID/string or null | Nullable | Copied unchanged from request; already present in Prisma schema. |
-| `strategyVersionId` | UUID/string | Required | ID-only ownership boundary remains unchanged. |
-| Metrics/trades/timestamps | Existing types | Existing constraints | Unchanged. |
-
-### BacktestCompleted payload (existing event, shared type drift)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `userId` | UUID/string or null | Required | Add to shared TypeScript; YAML already requires it. |
-| `backtestResultId` | UUID/string | Required | Links leaderboard entry to persisted result. |
-| `strategyVersionId` | UUID/string | Required | Existing strategy identity. |
-| Metrics and metadata | Existing contract types | Required | Unchanged. |
-
-### LeaderboardEntry (existing Prisma model)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `id` | UUID/string | Primary key | Existing. |
-| `userId` | UUID/string or null | Nullable | Copied from BacktestCompleted; already present in Prisma schema. |
-| `backtestResultId` | UUID/string | Unique | Preserves idempotent observer behavior. |
-| `strategyVersionId` | UUID/string | Required | Best-per-version grouping key. |
-| `rank` | integer | Existing persisted field | Global stored value retained for compatibility; public projections recompute viewer-local rank. |
-| Metrics and timestamps | Existing types | Existing constraints | Used for ranking and scoped `updatedAt`. |
-
-### LeaderboardEntryPayload (shared API/event projection)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `rank` | integer | 1 through N in a returned view | Recomputed after visibility filter. |
-| `userId` | UUID/string or null | Required | Add to shared TypeScript to match YAML. |
-| Existing entry fields | Existing types | Required | Unchanged. |
-
-### LeaderboardSnapshot (existing response projection)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `rankingCriterion` | Existing enum | Required | Caller-selected criterion. |
-| `updatedAt` | DateTime | Required | Maximum `updatedAt` among caller-visible rows; epoch when none. |
-| `entries` | `LeaderboardEntryPayload[]` | Length 0..K | Visible, best-per-version, sorted, sliced, ranks `1..N`. |
-
-### LeaderboardUpdated (amended safe global event/wire payload)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `updatedAt` | DateTime | Required | Computed from system entries only. |
-| `triggeredByBacktestResultId` | UUID/string or null | Nullable | System result ID when the trigger is system-owned; null for private trigger. |
-| `rankingCriterion` | Existing enum | Required | SCORE for observer publication. |
-| `topK` | `LeaderboardEntryPayload[]` | System rows only | Every item must have `userId = null`; frontend treats it as invalidation, not user snapshot. |
-
-### Live Updates Preference (frontend state only)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| `liveUpdatesEnabled` | boolean | Default true | Controls only the leaderboard event listener. |
-
-This state is not persisted to PostgreSQL, Redis, local storage, or user profile data.
-
-### SearchLoopRun (existing global entity)
-
-| Field | Type | Constraints | Notes |
-|-------|------|-------------|-------|
-| Existing fields | Existing types | Existing constraints | No `userId` added; reads and lifecycle remain global. |
-
-## Visibility Predicate
+The delivered invariant remains:
 
 ```text
-anonymous (currentUserId = null):
-  userId IS NULL
-
-authenticated (currentUserId = A):
-  userId IS NULL OR userId = A
+USER:        request.userId = A -> result.userId = A -> completion.userId = A -> entry.userId = A
+SEARCH_LOOP: request.userId = null -> result.userId = null -> completion.userId = null -> entry.userId = null
 ```
 
-The predicate is applied before:
+No field, relation, index, or migration changes.
 
-1. best result per `strategyVersionId` selection;
-2. criterion sorting;
-3. Top-K slicing;
-4. response rank assignment;
-5. detail target selection;
-6. maximum `updatedAt` calculation.
+### LeaderboardSnapshot
 
-## Rank Projection
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `rankingCriterion` | `RankingCriterion` | Required | Server-applied criterion. |
+| `updatedAt` | `Date` | Required | Computed only from caller-visible rows. |
+| `entries` | `LeaderboardEntryPayload[]` | 0..K | Anonymous = system; A = system + A; B = system + B. |
 
-For list/Top-K, after filtering, grouping, sorting, and slicing:
+The provider accepts this projection only from current-session REST. It never uses `LeaderboardUpdated.topK` as a viewer snapshot.
+
+### LeaderboardUpdated
+
+The existing wire payload remains unchanged:
+
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `updatedAt` | DateTime | Required | System-scoped event watermark. |
+| `triggeredByBacktestResultId` | UUID/string or null | Existing | Null for private trigger. |
+| `rankingCriterion` | Existing enum | Required | Existing wire field. |
+| `topK` | `LeaderboardEntryPayload[]` | System rows only | Safe invalidation metadata, never cached as the viewer view. |
+
+## Frontend State Entities
+
+### ViewerKey
+
+| Value | Meaning |
+|-------|---------|
+| `null` | Auth is unresolved; no cached leaderboard may render and no request may commit. |
+| `anonymous` | Resolved unauthenticated viewer; REST/cache may contain system rows only. |
+| Supabase user UUID | Resolved authenticated viewer; REST/cache may contain system plus that UUID only. |
+
+`ViewerKey` is an ownership stamp, not a client privacy filter. The provider discards a whole mismatched envelope instead of inspecting/removing individual rows.
+
+### LiveUpdatesPreference
+
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `isLive` | boolean | Explicit browser choice; missing/invalid = false | Controls only the provider's leaderboard handler and automatic reconciliation. |
+
+**Storage key**: `crypto-strategy-lab:leaderboard-live`
+
+The preference is browser-scoped, not user-scoped. It survives A->B/A->anonymous while cache/request ownership resets.
+
+### AcceptedSnapshot
+
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `viewerKey` | non-null `ViewerKey` | Required | Must equal the current resolved viewer to render/commit. |
+| `criterion` | `RankingCriterion` | Required | Key in `snapshotsByCriterion`. |
+| `snapshot` | `LeaderboardSnapshot` | Required | Decoded current-session REST result. |
+| `identityGeneration` | non-negative integer | Required | Captured at request start. |
+| `requestGeneration` | positive integer | Monotonic within identity | Only latest applicable request may commit. |
+| `acceptedAt` | Date | Required | Client acceptance time for stale UX, not ranking metadata. |
+
+SCORE is always retained for Dashboard. One `activeCriterion` is retained for `/leaderboard`; when different from SCORE, both snapshots may coexist.
+
+### PersistedLeaderboardCacheEnvelopeV1
+
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `version` | `1` | Exact literal | Reject unknown schema versions. |
+| `viewerKey` | `anonymous` or UUID | Required | Exact-match hydration gate. |
+| `activeCriterion` | `RankingCriterion` | Required | Restores route view state. |
+| `selectedStrategyVersionId` | string or null | Optional view state | Cleared if not visible after a new accepted snapshot. |
+| `snapshots` | partial map criterion -> serialized snapshot | SCORE plus active criterion at most | Only accepted REST snapshots. Dates are ISO strings. |
+| `persistedAt` | ISO DateTime | Required | Cache bookkeeping only. |
+
+**Storage key**: `crypto-strategy-lab:leaderboard-cache:v1`
+
+Rules:
+
+1. Wait for Auth resolution before reading or exposing the envelope.
+2. Exact viewer match restores the whole envelope; mismatch/malformed/version failure discards the whole envelope.
+3. Identity transition removes the old envelope before the next viewer paints.
+4. Storage unavailability falls back to in-memory state; it never enables Live or reuses a prior viewer.
+5. No event payload, access token, session token, or SearchLoopRun is stored in this envelope.
+
+### ProviderRuntimeState
+
+| Field | Type | Constraints | Notes |
+|-------|------|-------------|-------|
+| `viewerKey` | `ViewerKey` | Derived from AuthContext | Current render boundary. |
+| `identityGeneration` | integer | Monotonic | Advanced on anonymous/authenticated identity changes. |
+| `nextRequestGeneration` | integer | Monotonic | Advanced per reconciliation request. |
+| `snapshotsByCriterion` | map | Viewer-stamped | App-lifetime cache. |
+| `activeCriterion` | `RankingCriterion` | Default SCORE | Shared by `/leaderboard`. |
+| `selectedStrategyVersionId` | string or null | Current viewer only | Preserved across live updates/navigation; cleared on identity transition or loss of visibility. |
+| `leaderboardWatermarks` | map criterion -> epoch ms | Monotonic per viewer | Rejects older snapshots. |
+| `inFlightControllers` | map request generation -> `AbortController` | Provider-owned | Aborted on identity/provider cleanup and supersession where safe. |
+| `isStale`, `loading`, `error`, `lastSuccessfulAt` | UI state | Viewer-scoped | Never carried from A to B/anonymous. |
+
+## Identity Transition State Machine
 
 ```text
-visibleEntries.map((entry, index) => ({ ...entry, rank: index + 1 }))
+A resolved
+  -> Auth reports B or anonymous
+  -> render selectors reject every A-stamped snapshot
+  -> layout effect advances identityGeneration
+  -> abort A controllers
+  -> clear A memory, watermarks, error, selection, and persisted envelope
+  -> initialize B/anonymous empty/loading state
+  -> if ON: existing one handler remains and current-session catch-up runs
+  -> if OFF: restore matching cache or perform one bootstrap when none exists
 ```
 
-For detail, derive the visible SCORE-sorted best-per-version list, locate the requested version, and assign its one-based index. An invisible or missing target produces null at the service boundary and stable 404 at REST.
+A delayed response can commit only when all are true:
 
-## Indexes
+```text
+mounted
+AND capturedViewerKey == currentViewerKey
+AND capturedIdentityGeneration == currentIdentityGeneration
+AND capturedRequestGeneration is current for its criterion
+AND snapshot.updatedAt >= accepted criterion watermark
+```
 
-Existing indexes remain unchanged:
+## OFF and ON Transitions
 
-- `LeaderboardEntry(rank)`
-- `LeaderboardEntry(strategyVersionId)`
-- unique `LeaderboardEntry(backtestResultId)`
+```text
+No stored preference -> OFF
+OFF + event/reconnect -> no listener-driven request, cache unchanged
+OFF + explicit sort/retry/bootstrap -> current-session REST, accept then freeze
+OFF -> ON -> attach exact handler -> catch-up REST
+ON + invalidation -> current-session SCORE (+ active criterion if different) REST
+ON + reconnect -> current-session reconciliation
+ON -> OFF -> remove exact handler, keep accepted cache
+provider unmount -> remove exact handler + abort requests; never disconnect socket
+```
 
-No new index or migration is part of this feature. A future measured optimization may consider `(userId, updatedAt)` without changing the visibility contract.
+## Database and Migration Notes
 
-## Migration Notes
-
-- No Prisma migration is created.
-- Nullable `userId` already exists on `StrategyVersion`, `BacktestResult`, and `LeaderboardEntry` in `workspace/apps/backend/prisma/schema.prisma`.
-- Existing null rows remain system/shared.
-- No backfill is required.
+- No Prisma model or migration is created.
+- Existing nullable `userId` columns remain unchanged.
+- No new PostgreSQL/Redis index or cache is added.
 - No field is added to `SearchLoopRun` or `SearchLoopCandidate`.
+- Browser cache persistence is a frontend implementation detail and changes no wire/auth semantics.
