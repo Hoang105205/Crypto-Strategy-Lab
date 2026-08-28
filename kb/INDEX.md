@@ -2,6 +2,8 @@
 
 > **Last Updated**: 2026-08-24
 > **Status**: Active — Cross-route live leaderboard synchronized; explicit ON/OFF persists and defaults OFF
+> **Last Updated**: 2026-08-25
+> **Status**: Active — Updated News & Sentiment with on-demand crawl API (POST /api/news/crawl with 120s cooldown), 5-minute cron schedule, and 24h sentiment breakdown ratios
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

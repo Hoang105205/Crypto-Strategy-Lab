@@ -81,30 +81,40 @@ export class RSSProvider implements INewsProvider {
     const liveArticles: RawArticle[] = [];
     const feeds = this.getRssFeeds();
 
-    for (const feedConfig of feeds) {
-      try {
-        const response = await axios.get<string>(feedConfig.url, {
-          timeout: 5000,
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: 'application/rss+xml, application/xml, text/xml, */*',
-          },
-        });
+    // Parallel multi-feed fetching with fault isolation
+    const results = await Promise.allSettled(
+      feeds.map(async (feedConfig) => {
+        try {
+          const response = await axios.get<string>(feedConfig.url, {
+            timeout: 3000,
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              Accept: 'application/rss+xml, application/xml, text/xml, */*',
+            },
+          });
 
-        const parsed = this.parseRssXml(
-          response.data,
-          feedConfig.name,
-          activeCoins,
-        );
-        liveArticles.push(...parsed);
-        this.logger.log(
-          `Successfully fetched ${parsed.length} live articles from [${feedConfig.name}]`,
-        );
-      } catch (err) {
-        this.logger.warn(
-          `Failed to fetch live RSS from [${feedConfig.name}]: ${err.message}. Fault isolation active.`,
-        );
+          const parsed = this.parseRssXml(
+            response.data,
+            feedConfig.name,
+            activeCoins,
+          );
+          this.logger.log(
+            `Successfully fetched ${parsed.length} live articles from [${feedConfig.name}]`,
+          );
+          return parsed;
+        } catch (err) {
+          this.logger.warn(
+            `Failed to fetch live RSS from [${feedConfig.name}]: ${err.message}. Fault isolation active.`,
+          );
+          return [];
+        }
+      }),
+    );
+
+    for (const res of results) {
+      if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+        liveArticles.push(...res.value);
       }
     }
 

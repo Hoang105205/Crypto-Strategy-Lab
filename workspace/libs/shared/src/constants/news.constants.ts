@@ -26,7 +26,8 @@ export const DEFAULT_SENTIMENT_SELL_THRESHOLD = -0.5;  // Score < -0.5 triggers 
 export const DEFAULT_SENTIMENT_SERVICE_URL = 'http://localhost:8000';
 export const SENTIMENT_CLIENT_TIMEOUT_MS = 500;       // 500ms strict SLA timeout per ADR-0009
 export const DEFAULT_NEWS_FETCH_LIMIT = 10;
-export const NEWS_COLLECTION_CRON_SCHEDULE = '*/15 * * * *'; // Every 15 minutes
+export const NEWS_COLLECTION_CRON_SCHEDULE = '*/5 * * * *'; // Every 5 minutes
+export const MANUAL_CRAWL_COOLDOWN_MS = 120_000;      // 2 minutes (120 seconds) anti-spam cooldown
 
 /**
  * Default Seed RSS Feeds (ADR-0010)

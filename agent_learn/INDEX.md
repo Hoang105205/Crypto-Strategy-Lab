@@ -19,6 +19,7 @@
 - [Per-user Leaderboard Live Toggle Phase 3 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-3-2026-08-23.md): optional-auth controller boundary, three-actor global-loop evidence, persistence-argument audit, and isolated Auth test-harness alignment.
 
 - [Per-user Leaderboard Live Toggle Phase 2 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-2-2026-08-23.md): filter-before-project privacy, view-local ranks and timestamps, symmetric detail anti-enumeration, optional-auth integration fakes, and dashboard/global-loop boundary evidence.
+- [News Manual Crawl Breakdown - 2026-08-25](lessons/news-manual-crawl-breakdown-2026-08-25.md): on-demand crawler trigger, 120s cooldown anti-spam rate limiting with HTTP 429, mutex lock concurrency protection with HTTP 409, 3-color sentiment distribution breakdown bar, and 5-minute background cron schedule.
 
 - [Per-user Leaderboard Live Toggle Phase 1 - 2026-08-23](lessons/per-user-leaderboard-live-toggle-phase-1-2026-08-23.md): runtime source contract gates, nullable ownership propagation, idempotent owner identity, stale Prisma Client recovery, and real-Redis phase validation.
 

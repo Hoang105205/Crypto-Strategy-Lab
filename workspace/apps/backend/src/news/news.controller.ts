@@ -1,12 +1,24 @@
 // NewsController — REST API endpoints for News Feed and Aggregate Sentiment
 // Owner: Thuan | See: contracts/news-api.md & kb/contracts/news.yaml
 
-import { Controller, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { NewsService } from './services/news.service';
-import { DEFAULT_NEWS_FETCH_LIMIT } from '@crypto-strategy-lab/shared';
+import {
+  DEFAULT_NEWS_FETCH_LIMIT,
+  MANUAL_CRAWL_COOLDOWN_MS,
+} from '@crypto-strategy-lab/shared';
 
 @Controller('api')
 export class NewsController {
+  private lastManualCrawlTimestamp: number = 0;
+
   constructor(private readonly newsService: NewsService) {}
 
   /**
@@ -86,4 +98,60 @@ export class NewsController {
     );
     return result;
   }
+
+  /**
+   * POST /api/news/crawl
+   * Manually trigger on-demand news collection across registered providers.
+   * Rate limiting: 120s cooldown. Returns HTTP 429 if called during cooldown.
+   * Concurrency: Mutex lock. Returns HTTP 409 if a crawl is currently active.
+   */
+  @Post('news/crawl')
+  async triggerManualCrawl() {
+    const now = Date.now();
+    const elapsed = now - this.lastManualCrawlTimestamp;
+
+    // 1. Rate-limiting Cooldown Check (120 seconds)
+    if (this.lastManualCrawlTimestamp > 0 && elapsed < MANUAL_CRAWL_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil(
+        (MANUAL_CRAWL_COOLDOWN_MS - elapsed) / 1000,
+      );
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          error: 'Rate limit exceeded. Please wait before crawling again.',
+          retryAfterSeconds: remainingSeconds,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // 2. Mutex Lock Check
+    if (this.newsService.isCrawlInProgress()) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.CONFLICT,
+          error: 'Crawl in progress. Please wait for current execution to finish.',
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    // 3. Mark timestamp and execute crawl
+    this.lastManualCrawlTimestamp = now;
+    try {
+      const result = await this.newsService.triggerManualCrawl();
+      return result;
+    } catch (error) {
+      // If error occurred before or during execution, reset timestamp to allow immediate retry
+      this.lastManualCrawlTimestamp = 0;
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          error: `News collection failed: ${error.message}`,
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }
+

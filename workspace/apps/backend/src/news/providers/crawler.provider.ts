@@ -21,7 +21,7 @@ export class WebCrawlerProvider implements INewsProvider {
   constructor(
     private readonly prisma: PrismaService,
     private readonly discoveryService: CrawlerDiscoveryService,
-  ) {}
+  ) { }
 
   getName(): string {
     return 'Adaptive Web Crawler Provider';
@@ -54,19 +54,31 @@ export class WebCrawlerProvider implements INewsProvider {
         rules = await this.seedDefaultRules();
       }
 
-      // 2. Crawl each web portal using cached rules
-      for (const rule of rules) {
-        try {
-          const articles = await this.crawlDomain(rule, activeCoins);
-          allCrawledArticles.push(...articles);
-          this.logger.log(
-            `Successfully crawled ${articles.length} articles from [${rule.domain}]`,
-          );
-        } catch (domainErr) {
-          const message = domainErr instanceof Error ? domainErr.message : String(domainErr);
-          this.logger.warn(
-            `Failed to crawl domain ${rule.domain}: ${message}. Fault isolation active.`,
-          );
+      // 2. Crawl all web portals concurrently using cached rules
+      const crawlResults = await Promise.allSettled(
+        rules.map(async (rule) => {
+          try {
+            const articles = await this.crawlDomain(rule, activeCoins);
+            this.logger.log(
+              `Successfully crawled ${articles.length} articles from [${rule.domain}]`,
+            );
+            return articles;
+          } catch (domainErr) {
+            const message =
+              domainErr instanceof Error
+                ? domainErr.message
+                : String(domainErr);
+            this.logger.warn(
+              `Failed to crawl domain ${rule.domain}: ${message}. Fault isolation active.`,
+            );
+            return [];
+          }
+        }),
+      );
+
+      for (const res of crawlResults) {
+        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+          allCrawledArticles.push(...res.value);
         }
       }
     } catch (err) {
