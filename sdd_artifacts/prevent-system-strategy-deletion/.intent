@@ -1,0 +1,17 @@
+feature: prevent-system-strategy-deletion
+description: |
+  Prevent users from deleting system-generated strategies (where userId is null), both via UI DELETE button and API endpoints.
+created: 2026-08-31T17:59:00Z
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - strategy-engine
