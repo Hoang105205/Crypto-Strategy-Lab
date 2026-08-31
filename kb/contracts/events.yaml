@@ -4,9 +4,10 @@
 # subscribers, and complete payload shapes on the bus. Module contracts reference these
 # definitions and must not duplicate reduced payload schemas.
 # See also: kb/modules/event-infrastructure.md, kb/flows/leaderboard-update.md,
-# kb/flows/strategy-search-loop.md, ADR-0005, ADR-0006, ADR-0011, ADR-0013
-# Reviewed 2026-08-28 for cross-route live leaderboard/global-loop and ID-only reference consistency:
-# event names and payload fields remain unchanged; no room/handshake/namespace semantics were added.
+# kb/flows/strategy-search-loop.md, ADR-0005, ADR-0006, ADR-0011, ADR-0013, ADR-0017,
+# ADR-0018, ADR-0019
+# Reviewed 2026-08-31 for read-time leaderboard ranking, disconnected Live reconciliation,
+# database-authoritative Search Loop bootstrap, and operator authorization consistency.
 
 # ---------------------------------------------------------------------------
 # Shared envelope — every event published on IEventBus is wrapped in this
@@ -58,7 +59,7 @@ entities:
       logical cross-module references, not Prisma relations or database foreign keys. The
       persisted leaderboard projection is reconciled through IBacktestResultPort.
     fields:
-      rank: number
+      rank: number                # Computed in the bounded read projection; persisted rows store non-authoritative 0
       userId: UUID?              # null = system entry (shared), non-null = user entry (private). See ADR-0016
       strategyVersionId: UUID
       strategyName: string
@@ -74,9 +75,11 @@ entities:
 
   SearchLoopControl:
     description: >
-      Singleton persisted desired state for ADR-0017. enabled=true survives backend restart and
-      instructs the leased supervisor to create successive bounded SearchLoopRun records. This is
-      global system state and has no userId ownership.
+      Singleton persisted desired state for ADR-0017/ADR-0018. On a missing row only, bootstrap
+      seeds enabled from SEARCH_LOOP_DEFAULT_ENABLED; an existing row is never overwritten by the
+      environment. enabled=true survives backend restart and instructs the leased supervisor to
+      create successive bounded SearchLoopRun records. This is global system state and has no
+      userId ownership.
     fields:
       id: string                       # always "system"
       enabled: boolean
@@ -315,9 +318,10 @@ events:
     description: >
       Published when a job is moved to the dead-letter queue after exhausting retry_policy.maxAttempts
       or immediately after a non-retriable error.
-      Kept distinct from BacktestFailed so the Dashboard can surface a "needs operator attention"
-      indicator (via DashboardService.getQueueStats) even for future job types that don't otherwise
-      notify Strategy Engine.
+      Kept distinct from BacktestFailed so backend diagnostics or future operator tooling can
+      surface a "needs operator attention" indicator via queue statistics, even for future job
+      types that do not otherwise notify Strategy Engine. The end-user Dashboard does not render
+      Queue Health telemetry.
     payload:
       jobId: UUID
       correlationId: UUID
@@ -330,7 +334,9 @@ events:
     publisher: "Event Infrastructure (Leaderboard)"
     subscribersOnBus: ["WebSocket Gateway"]
     description: >
-      Published after the Leaderboard recomputes Top-K ranking in reaction to BacktestCompleted.
+      Published after the Leaderboard inserts one projection and reads the bounded system Top-K in
+      reaction to BacktestCompleted. Stored rows are not reranked; rank is assigned in the read
+      projection.
       The WebSocket Gateway relays this to all connected frontend clients on the
       `leaderboard:update` channel (see kb/modules/event-infrastructure.md Section 7). Because this
       event is namespace-wide, topK contains system-owned rows only (every entry has userId=null),
@@ -339,7 +345,7 @@ events:
     payload:
       updatedAt: DateTime
       triggeredByBacktestResultId: UUID? # system result UUID, or null when revealing the trigger would leak private ownership
-      rankingCriterion: string          # "score" | "totalReturn" | "winRate" | "sharpeRatio"
+      rankingCriterion: string          # "score" | "totalReturn" | "winRate" | "maxDrawdown" | "sharpeRatio"
       topK: LeaderboardEntryPayload[]    # system-only projection; every entry has userId=null
     contractNote: >
       The safe namespace-wide wire shape and frontend refresh behavior are defined by
@@ -364,8 +370,9 @@ events:
     publisher: "Event Infrastructure (Loop Controller)"
     subscribersOnBus: ["WebSocket Gateway"]
     description: >
-      Published after each candidate finishes evaluation, so the Loop Status Panel updates without
-      the frontend polling.
+      Published after each candidate finishes evaluation so subscribed infrastructure consumers
+      can maintain global loop state without polling. The current end-user Loop Status Panel shows
+      compact lifecycle status only and intentionally omits candidate-level metrics.
     payload:
       loopRunId: UUID
       iteration: number

@@ -17,7 +17,7 @@ third reactive consumer later without touching the worker again.
 ## Decision Drivers
 - Ranking logic must be able to change (a new scoring formula) without touching the Backtester, Evaluator, or Job Queue (spec Section 32.6, extensibility scenario)
 - Multiple independent consumers need the same `BacktestCompleted` signal: the Leaderboard (ranking) and the Loop Controller (deciding whether to continue searching) — spec Section 34
-- The Leaderboard must update in real time on the frontend without polling (spec Section 3, 33)
+- The Leaderboard must update in real time through WebSocket invalidation as the primary path; a bounded REST fallback may reconcile while the socket is disconnected (spec Section 3, 33)
 - Idempotency matters: a duplicate or redelivered event must not corrupt the ranking
 
 ## Considered Options
@@ -35,8 +35,10 @@ to the worker.
 
 `LeaderboardService.onModuleInit()` subscribes to `BacktestCompleted` on `IEventBus`. On delivery,
 it checks idempotency (an entry already exists for this `backtestResultId`? no-op), computes
-`score`, upserts a `LeaderboardEntry`, re-sorts and trims to Top-K, and publishes
-`LeaderboardUpdated` — which `PushGateway` relays to the frontend over WebSocket. `LoopController`
+`score`, inserts one `LeaderboardEntry` with a non-authoritative stored `rank`, reads the bounded
+system Top-K, and publishes `LeaderboardUpdated` — which `PushGateway` relays to the frontend over
+WebSocket. Rank is assigned only when a projection is read, after visibility filtering, best-result-
+per-version selection, deterministic sorting, and Top-K limiting. `LoopController`
 subscribes to the same `BacktestCompleted` event independently, for its own unrelated purpose
 (deciding the next search iteration) — see `kb/flows/strategy-search-loop.md`.
 
@@ -44,8 +46,9 @@ subscribes to the same `BacktestCompleted` event independently, for its own unre
 `strategyVersionId` and `backtestResultId` are logical cross-module references, not Prisma
 relations or database foreign keys. To handle manual/out-of-band source deletion without breaking
 module boundaries, `LeaderboardService` validates references through `IBacktestResultPort` at
-startup and every five minutes. It removes only confirmed missing/mismatched projections, reranks
-survivors, and retains entries when validation fails transiently.
+startup and every five minutes. It removes only confirmed missing/mismatched projections and
+retains entries when validation fails transiently. It never updates every survivor after cleanup;
+the next bounded read computes contiguous ranks naturally.
 
 ### Consequences
 - Positive: the Backtester, Evaluator, and Job Queue worker have zero knowledge of the Leaderboard
@@ -53,8 +56,10 @@ survivors, and retains entries when validation fails transiently.
   touching the Backtester" (spec Section 41/42).
 - Positive: adding a new observer of `BacktestCompleted` in the future is a one-line `subscribe()`
   call with no change to the publisher.
-- Positive: real-time frontend updates fall out naturally — `LeaderboardUpdated` → WebSocket push,
-  no polling required.
+- Positive: real-time frontend updates use `LeaderboardUpdated` → WebSocket invalidation as the
+  normal path. While Live updates is ON and the socket is disconnected, the frontend performs a
+  bounded 15-second REST reconciliation until reconnection; this is a reliability fallback, not
+  the primary update mechanism.
 - Negative: multiple independent observers processing the same event means there is no shared
   transaction across their side effects — if `LeaderboardService`'s handler succeeds but
   `LoopController`'s throws (or vice versa), their views of the world can diverge for that one
