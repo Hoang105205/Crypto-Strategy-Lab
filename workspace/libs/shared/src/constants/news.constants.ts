@@ -30,6 +30,12 @@ export const NEWS_COLLECTION_CRON_SCHEDULE = '*/5 * * * *'; // Every 5 minutes
 export const MANUAL_CRAWL_COOLDOWN_MS = 120_000;      // 2 minutes (120 seconds) anti-spam cooldown
 
 /**
+ * Gemini LLM Selector Discovery Defaults (ADR-0014)
+ */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+export const GEMINI_DISCOVERY_TIMEOUT_MS = 10_000;    // 10s SLA timeout for LLM discovery
+
+/**
  * Default Seed RSS Feeds (ADR-0010)
  */
 export const DEFAULT_RSS_FEEDS = [

@@ -11,6 +11,7 @@ import { RSSProvider } from './providers/rss.provider';
 import { WebCrawlerProvider } from './providers/crawler.provider';
 import { NewsService } from './services/news.service';
 import { CrawlerDiscoveryService } from './services/crawler-discovery.service';
+import { GeminiDiscoveryClient } from './services/gemini-discovery.client';
 import { SentimentClient } from './services/sentiment.client';
 import { NewsCollectorCron } from './cron/news-collector.cron';
 import { NewsController } from './news.controller';
@@ -21,6 +22,7 @@ import { StrategyRuntimeModule } from '../strategy/strategy-runtime.module';
 @Module({
   imports: [DatabaseModule, ScheduleModule.forRoot(), StrategyRuntimeModule],
   providers: [
+    GeminiDiscoveryClient,
     CrawlerDiscoveryService,
     RSSProvider,
     WebCrawlerProvider,
@@ -41,6 +43,7 @@ import { StrategyRuntimeModule } from '../strategy/strategy-runtime.module';
   exports: [
     NewsService,
     CrawlerDiscoveryService,
+    GeminiDiscoveryClient,
     SentimentClient,
     NewsSentimentStrategy,
   ],
