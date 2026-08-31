@@ -19,13 +19,19 @@ import type { StrategyGeneratorType } from "../types/enums";
 export interface IStrategy {
   analyze(candles: Candle[]): Signal;
   analyzeAsync?(candles: Candle[]): Promise<Signal>;
+  /** Creates isolated O(1)-per-candle state for a single backtest run. */
+  createAnalysisSession?(): IStrategyAnalysisSession;
   getName(): string;
   getType(): StrategyType;
   getParameters(): Record<string, unknown>;
 }
 
 export interface IBacktester {
-  run(strategy: IStrategy, candles: Candle[], config: BacktestConfig): Promise<Trade[]>;
+  run(
+    strategy: IStrategy,
+    candles: Candle[],
+    config: BacktestConfig,
+  ): Promise<Trade[]>;
 }
 
 export interface IEvaluator {
@@ -51,6 +57,10 @@ export interface IStrategyExecutionPort {
     strategyVersionId: string,
     userId?: string | null,
   ): Promise<StrategyExecutionResult<IStrategy> | null>;
+}
+
+export interface IStrategyAnalysisSession {
+  next(candle: Candle): Signal | Promise<Signal>;
 }
 
 export interface IBacktestResultPort {

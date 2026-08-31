@@ -10,6 +10,8 @@ export interface ValidatedEnvironment extends Record<string, unknown> {
   BACKTEST_JOB_RETENTION_AGE_SECONDS: number;
   BACKTEST_JOB_RETENTION_COUNT: number;
   LEADERBOARD_TOP_K: number;
+  SEARCH_LOOP_DEFAULT_ENABLED: boolean;
+  SEARCH_LOOP_OPERATOR_USER_IDS: readonly string[];
 }
 
 function nonEmpty(value: unknown, fallback: string, name: string): string {
@@ -49,6 +51,44 @@ function integer(
     );
   }
   return resolved;
+}
+
+function booleanValue(
+  value: unknown,
+  fallback: boolean,
+  name: string,
+): boolean {
+  if (value === undefined || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+  }
+
+  throw new Error(`${name} must be true, false, 1, or 0`);
+}
+
+function uuidList(value: unknown, name: string): readonly string[] {
+  if (value === undefined || value === '') return [];
+
+  const values = [
+    ...new Set(
+      primitiveString(value, name)
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (values.some((entry) => !uuidPattern.test(entry))) {
+    throw new Error(`${name} must be a comma-separated list of UUIDs`);
+  }
+
+  return values;
 }
 
 export function validateEnvironment(
@@ -104,6 +144,15 @@ export function validateEnvironment(
       'LEADERBOARD_TOP_K',
       1,
       100,
+    ),
+    SEARCH_LOOP_DEFAULT_ENABLED: booleanValue(
+      input.SEARCH_LOOP_DEFAULT_ENABLED,
+      false,
+      'SEARCH_LOOP_DEFAULT_ENABLED',
+    ),
+    SEARCH_LOOP_OPERATOR_USER_IDS: uuidList(
+      input.SEARCH_LOOP_OPERATOR_USER_IDS,
+      'SEARCH_LOOP_OPERATOR_USER_IDS',
     ),
   };
 }

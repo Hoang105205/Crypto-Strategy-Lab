@@ -98,7 +98,7 @@ crypto-strategy-lab/
 - **Client → Server**: REST API (JSON) + WebSocket for real-time charts
 - **Module → Module**: EventEmitter2 events (typed events, see `contracts/events`)
 - **Job dispatch**: BullMQ stores `BACKTEST` jobs in Redis; workers consume with configurable concurrency
-- **24/7 loop control**: PostgreSQL stores the singleton Search Loop desired state and lease; an in-process supervisor creates successive bounded runs with rolling data windows and persisted retry backoff (ADR-0017)
+- **24/7 loop control**: PostgreSQL stores the authoritative singleton Search Loop desired state and lease. On a new database only, bootstrap seeds it from `SEARCH_LOOP_DEFAULT_ENABLED`; an in-process supervisor then creates successive bounded runs with rolling data windows and persisted retry backoff (ADR-0017, ADR-0018)
 - **External**: Binance REST + WebSocket adapters; news providers via adapters; NestJS → Python sentiment via HTTP
 
 ## Data Flow
@@ -138,7 +138,8 @@ crypto-strategy-lab/
 ## Security Model
 - **Authentication**: Supabase Auth (ADR-0015) — email/password. Frontend uses `@supabase/ssr` for cookie-based sessions. Backend verifies Supabase JWTs via `SupabaseJwtGuard`.
 - **Authorization**: App-level userId filtering (ADR-0016). Each module owner adds `@CurrentUser()` to their controllers and filters queries: `WHERE userId IS NULL OR userId = :currentUserId`. null = system/shared data (loop-discovered), non-null = user-private data.
-- **Data scoping**: Market Data (candles, pairs) and News are global (no userId). StrategyVersion, BacktestResult, and LeaderboardEntry have nullable `userId`. SearchLoopRun and the singleton SearchLoopControl are global system data. `enabled=true` persists the 24/7 desired state while each run remains bounded. LeaderboardEntry is a separate denormalized read model: its Strategy Engine IDs are logical references without cross-module database FKs and are reconciled through the public result port.
+- **Global operation authorization**: Search Loop state is shared by the whole system, so all start/pause/resume/stop and control enable/disable/config mutations require an authenticated Supabase user whose UUID is listed in `SEARCH_LOOP_OPERATOR_USER_IDS`. An empty list denies every mutation; read-only status remains available (ADR-0019).
+- **Data scoping**: Market Data (candles, pairs) and News are global (no userId). StrategyVersion, BacktestResult, and LeaderboardEntry have nullable `userId`. SearchLoopRun and the singleton SearchLoopControl are global system data. `enabled=true` persists the 24/7 desired state while each run remains bounded; the environment supplies only the value used when that singleton is first created. LeaderboardEntry is a separate denormalized read model: its Strategy Engine IDs are logical references without cross-module database FKs and are reconciled through the public result port.
 - **Data protection**: External API keys in `.env` (never committed); rate-limit handling in adapters. Supabase service keys in `.env` (never committed).
 
 ## Deployment Topology

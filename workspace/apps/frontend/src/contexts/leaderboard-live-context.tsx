@@ -26,6 +26,7 @@ export const LEADERBOARD_CACHE_STORAGE_KEY =
 const LEGACY_CACHE_STORAGE_KEY = "crypto-strategy-lab:leaderboard-cache:v1";
 const ANONYMOUS_VIEWER_KEY = "anonymous";
 const CACHE_VERSION = 2;
+const DISCONNECTED_LIVE_POLL_MS = 15_000;
 
 type ViewerKey = string | null;
 type ProjectionKey = `${LeaderboardScope}:${RankingCriterion}`;
@@ -144,9 +145,7 @@ function parseProjectionKey(
   if (separator < 0) return null;
   const scope = value.slice(0, separator);
   const criterion = value.slice(separator + 1);
-  return isScope(scope) && isCriterion(criterion)
-    ? { scope, criterion }
-    : null;
+  return isScope(scope) && isCriterion(criterion) ? { scope, criterion } : null;
 }
 
 function emptyRecord(isStale = true): ProjectionRecord {
@@ -313,8 +312,7 @@ export function LeaderboardLiveProvider({ children }: { children: ReactNode }) {
   const watermarksRef = useRef(new Map<ProjectionKey, number>());
   const projectionsRef = useRef<ProjectionMap>({});
   const activeCriterionRef = useRef(activeCriterion);
-  const selectedStrategyRef =
-    useRef<SelectedLeaderboardStrategy | null>(null);
+  const selectedStrategyRef = useRef<SelectedLeaderboardStrategy | null>(null);
   const scopedMaintainedRef = useRef(false);
   const isLiveRef = useRef(isLive);
   const reconcileMaintainedRef = useRef<(force: boolean) => Promise<void>>(
@@ -423,7 +421,9 @@ export function LeaderboardLiveProvider({ children }: { children: ReactNode }) {
             signal: controller.signal,
           });
           if (!snapshotMatchesViewer(snapshot, scope, capturedViewerKey)) {
-            throw new Error("Leaderboard response contains entries outside the requested scope");
+            throw new Error(
+              "Leaderboard response contains entries outside the requested scope",
+            );
           }
           const eligible =
             mountedRef.current &&
@@ -685,6 +685,16 @@ export function LeaderboardLiveProvider({ children }: { children: ReactNode }) {
     }
   }, [status]);
 
+  useEffect(() => {
+    if (viewerKey === null || !isLive || status === "connected") return;
+
+    const intervalId = window.setInterval(() => {
+      void reconcileMaintainedRef.current(true);
+    }, DISCONNECTED_LIVE_POLL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isLive, status, viewerKey]);
+
   const updateIsLive = useCallback(
     (value: boolean) => {
       if (!value && isLiveRef.current) {
@@ -836,8 +846,7 @@ export function LeaderboardLiveProvider({ children }: { children: ReactNode }) {
     }),
     [refetchSystem, status, systemAccepted, systemRecord, viewerKey],
   );
-  const mineNeutral =
-    viewerKey === null || viewerKey === ANONYMOUS_VIEWER_KEY;
+  const mineNeutral = viewerKey === null || viewerKey === ANONYMOUS_VIEWER_KEY;
   const mineRecord =
     projections[projectionKey(LeaderboardScope.MINE, activeCriterion)];
   const mineAccepted =
@@ -853,8 +862,9 @@ export function LeaderboardLiveProvider({ children }: { children: ReactNode }) {
         !mineNeutral &&
         ((mineRecord?.isStale ?? mineAccepted === undefined) ||
           status !== "connected"),
-      lastSuccessfulAt:
-        mineNeutral ? null : (mineRecord?.lastSuccessfulAt ?? null),
+      lastSuccessfulAt: mineNeutral
+        ? null
+        : (mineRecord?.lastSuccessfulAt ?? null),
       refetch: refetchMine,
     }),
     [mineAccepted, mineNeutral, mineRecord, refetchMine, status],
@@ -903,8 +913,7 @@ export function LeaderboardLiveProvider({ children }: { children: ReactNode }) {
       maintainScopedProjections,
       scoreSnapshot: combinedScore.snapshot,
       activeSnapshot: system.snapshot,
-      selectedStrategyVersionId:
-        selectedStrategy?.strategyVersionId ?? null,
+      selectedStrategyVersionId: selectedStrategy?.strategyVersionId ?? null,
       setSelectedStrategyVersionId,
       loading: combinedScore.loading,
       error: combinedScore.error,

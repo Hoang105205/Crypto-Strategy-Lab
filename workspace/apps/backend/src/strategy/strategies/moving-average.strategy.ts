@@ -1,5 +1,12 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Candle, Signal, IStrategy, StrategyType, SignalAction } from '@crypto-strategy-lab/shared';
+import {
+  Candle,
+  Signal,
+  IStrategy,
+  IStrategyAnalysisSession,
+  StrategyType,
+  SignalAction,
+} from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 import { SMA } from 'technicalindicators';
 
@@ -27,6 +34,54 @@ export class MovingAverageStrategy implements IStrategy, OnModuleInit {
     };
   }
 
+  createAnalysisSession(): IStrategyAnalysisSession {
+    const sma = new SMA({ period: this.period, values: [] });
+    let count = 0;
+    let previousPrice: number | undefined;
+    let previousSma: number | undefined;
+    return {
+      next: (candle) => {
+        count += 1;
+        const latestPrice = candle.close;
+        const latestSma = sma.nextValue(latestPrice);
+        const priorPrice = previousPrice;
+        const priorSma = previousSma ?? latestSma;
+        previousPrice = latestPrice;
+        if (latestSma !== undefined) previousSma = latestSma;
+        if (
+          count < this.period ||
+          latestSma === undefined ||
+          priorPrice === undefined
+        ) {
+          return {
+            action: SignalAction.HOLD,
+            confidence: 0,
+            metadata: { reason: 'Not enough candles' },
+          };
+        }
+        if (priorPrice <= (priorSma ?? latestSma) && latestPrice > latestSma) {
+          return {
+            action: SignalAction.BUY,
+            confidence: 0.8,
+            metadata: { price: latestPrice, sma: latestSma },
+          };
+        }
+        if (priorPrice >= (priorSma ?? latestSma) && latestPrice < latestSma) {
+          return {
+            action: SignalAction.SELL,
+            confidence: 0.8,
+            metadata: { price: latestPrice, sma: latestSma },
+          };
+        }
+        return {
+          action: SignalAction.HOLD,
+          confidence: 0,
+          metadata: { price: latestPrice, sma: latestSma },
+        };
+      },
+    };
+  }
+
   analyze(candles: Candle[]): Signal {
     if (!candles || candles.length < this.period) {
       return {
@@ -37,8 +92,11 @@ export class MovingAverageStrategy implements IStrategy, OnModuleInit {
     }
 
     const closePrices = candles.map((c) => c.close);
-    const smaValues = SMA.calculate({ period: this.period, values: closePrices });
-    
+    const smaValues = SMA.calculate({
+      period: this.period,
+      values: closePrices,
+    });
+
     if (smaValues.length === 0) {
       return { action: SignalAction.HOLD, confidence: 0 };
     }
@@ -46,7 +104,8 @@ export class MovingAverageStrategy implements IStrategy, OnModuleInit {
     const latestPrice = closePrices[closePrices.length - 1];
     const latestSMA = smaValues[smaValues.length - 1];
     const previousPrice = closePrices[closePrices.length - 2];
-    const previousSMA = smaValues.length > 1 ? smaValues[smaValues.length - 2] : latestSMA;
+    const previousSMA =
+      smaValues.length > 1 ? smaValues[smaValues.length - 2] : latestSMA;
 
     // Cross Above SMA -> BUY
     if (previousPrice <= previousSMA && latestPrice > latestSMA) {

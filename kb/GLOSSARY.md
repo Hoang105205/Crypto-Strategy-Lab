@@ -17,7 +17,8 @@ in code, documentation, and communication.
 | Orphaned Leaderboard Entry | A leaderboard projection whose source result is missing or whose strategy/owner IDs no longer match; confirmed orphans are deleted by the startup/five-minute reconciler and survivors are reranked | Event Infrastructure |
 | Search Loop | One global system process continuously cycling through generate → backtest → evaluate → rank; browser navigation and Live updates do not control it | Event Infrastructure |
 | Search Loop Supervisor | In-process scheduler that reads persistent desired state, owns a PostgreSQL lease, and creates successive bounded Search Loop Runs while automation is enabled (ADR-0017) | Event Infrastructure |
-| Search Loop Control | Singleton PostgreSQL record containing the global loop ON/OFF desired state, rolling backtest configuration, retry schedule, and supervisor lease; it survives backend restart and has no user ownership | Event Infrastructure |
+| Search Loop Control | Singleton PostgreSQL record containing the global loop ON/OFF desired state, rolling backtest configuration, retry schedule, and supervisor lease. It is seeded from `SEARCH_LOOP_DEFAULT_ENABLED` only when absent; once present, the database is authoritative across restart and environment changes | Event Infrastructure |
+| Search Loop Operator | Authenticated Supabase user whose UUID is listed in `SEARCH_LOOP_OPERATOR_USER_IDS`; only these users may mutate the singleton global Search Loop. An empty list denies every mutation | Event Infrastructure |
 | Strategy Generator | Algorithm producing candidate strategies (Random, Domain-Guided) | Strategy Engine |
 | Sentiment Score | Numeric sentiment of a news article (VADER) | News & Sentiment |
 | Adapter | Class implementing a provider interface (Binance, RSS, CryptoPanic) | Market Data, News & Sentiment |

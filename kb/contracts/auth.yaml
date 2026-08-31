@@ -60,6 +60,16 @@ guards:
       Use after SupabaseJwtGuard for routes that require a logged-in user.
     usage: "@UseGuards(SupabaseJwtGuard, RequireAuth)"
 
+  SearchLoopOperatorGuard:
+    description: >
+      Event Infrastructure guard for mutations of the singleton global Search Loop.
+      Requires a verified request.user.id and exact membership in the comma-separated
+      SEARCH_LOOP_OPERATOR_USER_IDS environment allowlist. An empty list denies all mutations.
+    usage: "@UseGuards(SupabaseJwtGuard, SearchLoopOperatorGuard)"
+    errors:
+      - "401 UNAUTHORIZED — no authenticated user"
+      - "403 FORBIDDEN — authenticated user is not an allowlisted Search Loop operator"
+
 endpoints:
   - method: POST
     path: /api/auth/register

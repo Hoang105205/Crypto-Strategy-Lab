@@ -1,5 +1,12 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Candle, Signal, IStrategy, StrategyType, SignalAction } from '@crypto-strategy-lab/shared';
+import {
+  Candle,
+  Signal,
+  IStrategy,
+  IStrategyAnalysisSession,
+  StrategyType,
+  SignalAction,
+} from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 import { MACD } from 'technicalindicators';
 
@@ -31,6 +38,58 @@ export class MacdStrategy implements IStrategy, OnModuleInit {
     };
   }
 
+  createAnalysisSession(): IStrategyAnalysisSession {
+    const macd = new MACD({
+      values: [],
+      fastPeriod: this.fastPeriod,
+      slowPeriod: this.slowPeriod,
+      signalPeriod: this.signalPeriod,
+      SimpleMAOscillator: false,
+      SimpleMASignal: false,
+    });
+    let count = 0;
+    let previous: ReturnType<MACD['nextValue']>;
+    return {
+      next: (candle) => {
+        count += 1;
+        const latest = macd.nextValue(candle.close);
+        if (count < this.slowPeriod + this.signalPeriod) {
+          if (latest) previous = latest;
+          return {
+            action: SignalAction.HOLD,
+            confidence: 0,
+            metadata: { reason: 'Not enough candles' },
+          };
+        }
+        if (
+          !latest ||
+          !previous ||
+          latest.MACD === undefined ||
+          latest.signal === undefined ||
+          previous.MACD === undefined ||
+          previous.signal === undefined
+        ) {
+          if (latest) previous = latest;
+          return { action: SignalAction.HOLD, confidence: 0 };
+        }
+        const prior = previous;
+        previous = latest;
+        const metadata = {
+          macd: latest.MACD,
+          signal: latest.signal,
+          histogram: latest.histogram,
+        };
+        if (prior.MACD! <= prior.signal! && latest.MACD > latest.signal) {
+          return { action: SignalAction.BUY, confidence: 0.8, metadata };
+        }
+        if (prior.MACD! >= prior.signal! && latest.MACD < latest.signal) {
+          return { action: SignalAction.SELL, confidence: 0.8, metadata };
+        }
+        return { action: SignalAction.HOLD, confidence: 0, metadata };
+      },
+    };
+  }
+
   analyze(candles: Candle[]): Signal {
     if (!candles || candles.length < this.slowPeriod + this.signalPeriod) {
       return {
@@ -49,15 +108,20 @@ export class MacdStrategy implements IStrategy, OnModuleInit {
       SimpleMAOscillator: false,
       SimpleMASignal: false,
     });
-    
+
     if (macdResult.length < 2) {
       return { action: SignalAction.HOLD, confidence: 0 };
     }
 
     const latest = macdResult[macdResult.length - 1];
     const previous = macdResult[macdResult.length - 2];
-    
-    if (latest.MACD === undefined || latest.signal === undefined || previous.MACD === undefined || previous.signal === undefined) {
+
+    if (
+      latest.MACD === undefined ||
+      latest.signal === undefined ||
+      previous.MACD === undefined ||
+      previous.signal === undefined
+    ) {
       return { action: SignalAction.HOLD, confidence: 0 };
     }
 
@@ -66,7 +130,11 @@ export class MacdStrategy implements IStrategy, OnModuleInit {
       return {
         action: SignalAction.BUY,
         confidence: 0.8,
-        metadata: { macd: latest.MACD, signal: latest.signal, histogram: latest.histogram },
+        metadata: {
+          macd: latest.MACD,
+          signal: latest.signal,
+          histogram: latest.histogram,
+        },
       };
     }
 
@@ -75,14 +143,22 @@ export class MacdStrategy implements IStrategy, OnModuleInit {
       return {
         action: SignalAction.SELL,
         confidence: 0.8,
-        metadata: { macd: latest.MACD, signal: latest.signal, histogram: latest.histogram },
+        metadata: {
+          macd: latest.MACD,
+          signal: latest.signal,
+          histogram: latest.histogram,
+        },
       };
     }
 
     return {
       action: SignalAction.HOLD,
       confidence: 0,
-      metadata: { macd: latest.MACD, signal: latest.signal, histogram: latest.histogram },
+      metadata: {
+        macd: latest.MACD,
+        signal: latest.signal,
+        histogram: latest.histogram,
+      },
     };
   }
 }

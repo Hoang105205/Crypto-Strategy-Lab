@@ -113,7 +113,6 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
     if (orphanIds.length === 0) return 0;
     const deleted = await this.repository.deleteByIds(orphanIds);
     if (deleted > 0) {
-      await this.repository.rerank();
       this.logger.warn(`Removed ${deleted} orphaned leaderboard entries`);
     }
     return deleted;
@@ -153,7 +152,6 @@ export class LeaderboardService implements OnModuleInit, OnModuleDestroy {
     });
     if (!created) return;
 
-    await this.repository.rerank();
     const topK = await this.repository.getTopK(
       RankingCriterion.SCORE,
       null,

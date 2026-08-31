@@ -21,7 +21,7 @@ import {
 import request from 'supertest';
 import { GUARDS_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
-import { RequireAuth } from '../auth/require-auth.guard';
+import { SearchLoopOperatorGuard } from './search-loop-operator.guard';
 
 const CONTROLLER_FILE = join(__dirname, 'loop.controller.ts');
 const CONTROLLER_MODULE = join(__dirname, 'loop.controller');
@@ -276,7 +276,7 @@ describeWithTarget('LoopController stable REST contract', () => {
     })
       .overrideGuard(SupabaseJwtGuard)
       .useValue({ canActivate: () => true })
-      .overrideGuard(RequireAuth)
+      .overrideGuard(SearchLoopOperatorGuard)
       .useValue({ canActivate: () => true })
       .compile();
     app = module.createNestApplication();
@@ -346,7 +346,7 @@ describeWithTarget('LoopController stable REST contract', () => {
         .send(validAutomationBody())
         .expect(200)
         .expect((response) => {
-          expect(response.body.enabled).toBe(true);
+          expect((response.body as { enabled: boolean }).enabled).toBe(true);
         });
       expect(loopControl.enable).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -355,9 +355,7 @@ describeWithTarget('LoopController stable REST contract', () => {
         }),
       );
 
-      await request(app.getHttpServer())
-        .get('/api/loop/control')
-        .expect(200);
+      await request(app.getHttpServer()).get('/api/loop/control').expect(200);
       expect(loopControl.get).toHaveBeenCalledTimes(1);
 
       await request(app.getHttpServer())
@@ -370,7 +368,7 @@ describeWithTarget('LoopController stable REST contract', () => {
         .post('/api/loop/control/disable')
         .expect(200)
         .expect((response) => {
-          expect(response.body.enabled).toBe(false);
+          expect((response.body as { enabled: boolean }).enabled).toBe(false);
         });
       expect(loopControl.disable).toHaveBeenCalledTimes(1);
     });
@@ -520,8 +518,8 @@ describeWithTarget('LoopController stable REST contract', () => {
   });
 });
 
-describe('T018 optional-auth boundary with global loop semantics', () => {
-  const routeMethods = [
+describe('operator boundary with global loop semantics', () => {
+  const currentUserRouteMethods = [
     'start',
     'pause',
     'resume',
@@ -530,7 +528,17 @@ describe('T018 optional-auth boundary with global loop semantics', () => {
     'detail',
   ] as const;
 
-  it('uses SupabaseJwtGuard and CurrentUser on every loop route without RequireAuth', () => {
+  const mutationMethods = [
+    'start',
+    'pause',
+    'resume',
+    'stop',
+    'enableControl',
+    'disableControl',
+    'configureControl',
+  ] as const;
+
+  it('operator-protects mutations while keeping status reads optional-auth', () => {
     const LoopController = loadExport<NestClass>(
       CONTROLLER_MODULE,
       'LoopController',
@@ -540,7 +548,7 @@ describe('T018 optional-auth boundary with global loop semantics', () => {
       SupabaseJwtGuard,
     ]);
 
-    for (const method of routeMethods) {
+    for (const method of currentUserRouteMethods) {
       const routeArgs = Reflect.getMetadata(
         ROUTE_ARGS_METADATA,
         LoopController,
@@ -552,8 +560,22 @@ describe('T018 optional-auth boundary with global loop semantics', () => {
     }
 
     const source = readFileSync(CONTROLLER_FILE, 'utf8');
-    expect(source.match(/@CurrentUser\(\)/g)).toHaveLength(routeMethods.length);
-    for (const method of routeMethods) {
+    expect(source.match(/@CurrentUser\(\)/g)).toHaveLength(
+      currentUserRouteMethods.length,
+    );
+
+    for (const method of mutationMethods) {
+      expect(
+        Reflect.getMetadata(
+          GUARDS_METADATA,
+          (LoopController as unknown as Record<string, unknown>).prototype[
+            method
+          ],
+        ),
+      ).toEqual([SearchLoopOperatorGuard]);
+    }
+
+    for (const method of ['getControl', 'getCurrent', 'detail']) {
       expect(
         Reflect.getMetadata(
           GUARDS_METADATA,
@@ -562,21 +584,6 @@ describe('T018 optional-auth boundary with global loop semantics', () => {
           ],
         ),
       ).toBeUndefined();
-    }
-
-    for (const method of [
-      'enableControl',
-      'disableControl',
-      'configureControl',
-    ]) {
-      expect(
-        Reflect.getMetadata(
-          GUARDS_METADATA,
-          (LoopController as unknown as Record<string, unknown>).prototype[
-            method
-          ],
-        ),
-      ).toEqual([RequireAuth]);
     }
   });
 });

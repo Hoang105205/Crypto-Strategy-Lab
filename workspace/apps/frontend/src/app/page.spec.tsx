@@ -19,16 +19,13 @@ vi.mock("../components/auth/protected-route", () => ({
 vi.mock("../components/dashboard/dashboard-grid", () => ({
   DashboardGrid: ({
     loopStatusPanel,
-    queueCard,
     leaderboardPreview,
   }: {
     loopStatusPanel: ReactNode;
-    queueCard: ReactNode;
     leaderboardPreview: ReactNode;
   }) => (
     <div data-testid="dashboard-grid">
       {loopStatusPanel}
-      {queueCard}
       {leaderboardPreview}
     </div>
   ),
@@ -56,10 +53,6 @@ vi.mock("../components/dashboard/loop-status-panel", () => ({
       </section>
     );
   },
-}));
-
-vi.mock("../components/dashboard/queue-health-card", () => ({
-  QueueHealthCard: () => <p>Queue</p>,
 }));
 
 vi.mock("../components/dashboard/leaderboard-preview", () => ({

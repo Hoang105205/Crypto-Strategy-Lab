@@ -40,6 +40,8 @@ const row = (
 describe('SearchLoopControlRepository', () => {
   let prisma: {
     searchLoopControl: {
+      findUnique: jest.Mock<() => Promise<SearchLoopControl | null>>;
+      create: jest.Mock<() => Promise<SearchLoopControl>>;
       upsert: jest.Mock<() => Promise<SearchLoopControl>>;
       update: jest.Mock<() => Promise<SearchLoopControl>>;
       updateMany: jest.Mock<() => Promise<{ count: number }>>;
@@ -51,6 +53,8 @@ describe('SearchLoopControlRepository', () => {
   beforeEach(() => {
     prisma = {
       searchLoopControl: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
         upsert: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
@@ -61,6 +65,66 @@ describe('SearchLoopControlRepository', () => {
     repository = new SearchLoopControlRepository(
       prisma as unknown as PrismaService,
     );
+  });
+
+  it.each([
+    [true, NOW],
+    [false, null],
+  ])(
+    'seeds a missing singleton from defaultEnabled=%s',
+    async (defaultEnabled, nextRunAt) => {
+      prisma.searchLoopControl.findUnique.mockResolvedValue(null);
+      prisma.searchLoopControl.create.mockResolvedValue(
+        row({ enabled: defaultEnabled, nextRunAt }),
+      );
+
+      const result = await repository.seedIfAbsent(defaultEnabled, NOW);
+
+      expect(result).toMatchObject({
+        seeded: true,
+        state: { enabled: defaultEnabled, nextRunAt },
+      });
+      expect(prisma.searchLoopControl.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: 'system',
+          enabled: defaultEnabled,
+          nextRunAt,
+        }),
+      });
+    },
+  );
+
+  it.each([
+    [false, true],
+    [true, false],
+  ])(
+    'keeps the database desired state %s when the environment default is %s',
+    async (databaseEnabled, environmentEnabled) => {
+      prisma.searchLoopControl.findUnique.mockResolvedValue(
+        row({ enabled: databaseEnabled }),
+      );
+
+      const result = await repository.seedIfAbsent(environmentEnabled, NOW);
+
+      expect(result).toMatchObject({
+        seeded: false,
+        state: { enabled: databaseEnabled },
+      });
+      expect(prisma.searchLoopControl.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts the row created by another backend during a seed race', async () => {
+    prisma.searchLoopControl.findUnique.mockResolvedValue(null);
+    prisma.searchLoopControl.create.mockRejectedValue({ code: 'P2002' });
+    prisma.searchLoopControl.findUniqueOrThrow.mockResolvedValue(
+      row({ enabled: true, nextRunAt: NOW }),
+    );
+
+    await expect(repository.seedIfAbsent(false, NOW)).resolves.toMatchObject({
+      seeded: false,
+      state: { enabled: true },
+    });
   });
 
   it('creates a disabled singleton with safe defaults on first read', async () => {

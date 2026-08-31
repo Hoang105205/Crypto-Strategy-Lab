@@ -1,6 +1,6 @@
 # Module Boundaries
 
-> **Last Updated**: 2026-08-28
+> **Last Updated**: 2026-08-31
 
 ## Module Overview
 
@@ -46,18 +46,19 @@
 - **Related ADRs**: `kb/ADR/0009-sentiment-service-as-separate-process.md`, `kb/ADR/0010-news-provider-adapter-pattern.md`, `kb/ADR/0014-llm-assisted-crawler-selector-caching.md`
 
 ### Event Infrastructure (Phương)
-- **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (bounded run orchestration plus persistent 24/7 supervisor/DB lease), dashboard/ (BFF composition)
-- **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs, authenticated persistent Search Loop enable/disable/config APIs
-- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, PostgreSQL lease/control state, **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry reads; `RequireAuth` on loop-control mutations). `SearchLoopRun` remains one global system process and is not user-scoped.
+- **Scope**: events/ (EventEmitter2, typed events), queue/ (BullMQ adapter, Redis-backed job state, BacktestWorker, retry, dead-letter), leaderboard/ (Observer of BacktestCompleted, Top-K), loop/ (bounded run orchestration plus persistent 24/7 supervisor/DB lease and database-authoritative bootstrap default), dashboard/ (BFF composition)
+- **Exposes**: `IEventBus`, `IJobQueue`, leaderboard + loop REST/WebSocket APIs, operator-authorized Search Loop lifecycle and persistent control APIs
+- **Dependencies**: `IBacktester`, `IStrategyGenerator`, `IMarketDataService` interfaces, Redis, PostgreSQL lease/control state, Nest `ConfigModule`, and **Auth module** (`@CurrentUser()` + userId filter on LeaderboardEntry reads; verified identity consumed by `SearchLoopOperatorGuard`). `SearchLoopRun` remains one global system process and is not user-scoped.
 - **Module doc**: `kb/modules/event-infrastructure.md`
 - **Contracts**: `kb/contracts/events.yaml`
-- **Related ADRs**: ADR-0005, ADR-0006, ADR-0011, ADR-0013, ADR-0017
+- **Related ADRs**: ADR-0005, ADR-0006, ADR-0011, ADR-0013, ADR-0017, ADR-0018, ADR-0019
 
 ## Cross-Module Communication
 - Market Data → Event Infrastructure: publishes `MarketDataUpdated` (reserved; not yet consumed — see `kb/contracts/events.yaml`)
 - Strategy Engine → Event Infrastructure: awaits `IJobQueue.enqueue` for USER work, then publishes observational `BacktestRequested`
 - Event Infrastructure Loop Controller → Job Queue: awaits `IJobQueue.enqueue` for SEARCH_LOOP work, then publishes observational `BacktestRequested`
-- Event Infrastructure Search Loop Supervisor → PostgreSQL: persists desired state and atomically acquires/renews the singleton coordination lease before starting bounded runs
+- Event Infrastructure Search Loop Supervisor → PostgreSQL: materializes a missing desired-state row from the environment once, then treats PostgreSQL as authoritative and atomically acquires/renews the singleton coordination lease before starting bounded runs
+- Event Infrastructure Loop Controller → Config: authorizes every global mutation against the deny-by-default `SEARCH_LOOP_OPERATOR_USER_IDS` allowlist
 - Event Infrastructure → Frontend: broadcasts system-safe `leaderboard:update`; the app-level provider refetches caller-scoped REST while ON and never filters private broadcast rows client-side
 - Event Infrastructure → Redis: BullMQ persists queue state, priorities, delays, locks, and bounded job history
 - Event Infrastructure → Strategy Engine: publishes `BacktestCompleted` / `BacktestFailed`

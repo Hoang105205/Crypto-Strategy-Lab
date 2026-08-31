@@ -3,7 +3,10 @@ import {
   StrategyGeneratorType,
   type BacktestConfig,
 } from '@crypto-strategy-lab/shared';
-import type { SearchLoopControl as PrismaSearchLoopControl } from '@prisma/client';
+import {
+  Prisma,
+  type SearchLoopControl as PrismaSearchLoopControl,
+} from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 export const SYSTEM_SEARCH_LOOP_CONTROL_ID = 'system';
@@ -33,6 +36,11 @@ export interface SearchLoopControlState extends SearchLoopAutomationConfig {
   updatedAt: Date;
 }
 
+export interface SearchLoopControlSeedResult {
+  seeded: boolean;
+  state: SearchLoopControlState;
+}
+
 const DEFAULT_CONTROL: SearchLoopAutomationConfig = {
   generatorType: StrategyGeneratorType.RANDOM,
   pair: 'BTCUSDT',
@@ -51,6 +59,37 @@ const DEFAULT_CONTROL: SearchLoopAutomationConfig = {
 @Injectable()
 export class SearchLoopControlRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  async seedIfAbsent(
+    defaultEnabled: boolean,
+    now = new Date(),
+  ): Promise<SearchLoopControlSeedResult> {
+    const existing = await this.prisma.searchLoopControl.findUnique({
+      where: { id: SYSTEM_SEARCH_LOOP_CONTROL_ID },
+    });
+    if (existing) {
+      return { seeded: false, state: mapControl(existing) };
+    }
+
+    try {
+      const created = await this.prisma.searchLoopControl.create({
+        data: {
+          id: SYSTEM_SEARCH_LOOP_CONTROL_ID,
+          enabled: defaultEnabled,
+          nextRunAt: defaultEnabled ? now : null,
+          ...toPersistenceConfig(DEFAULT_CONTROL),
+        },
+      });
+      return { seeded: true, state: mapControl(created) };
+    } catch (error: unknown) {
+      if (!isUniqueConstraintViolation(error)) throw error;
+
+      const winner = await this.prisma.searchLoopControl.findUniqueOrThrow({
+        where: { id: SYSTEM_SEARCH_LOOP_CONTROL_ID },
+      });
+      return { seeded: false, state: mapControl(winner) };
+    }
+  }
 
   async get(): Promise<SearchLoopControlState> {
     const row = await this.prisma.searchLoopControl.upsert({
@@ -272,4 +311,14 @@ function mapControl(row: PrismaSearchLoopControl): SearchLoopControlState {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002')
+  );
 }

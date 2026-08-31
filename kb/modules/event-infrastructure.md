@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-28
+> **Last Updated**: 2026-08-31
 
 ## 1. Overview
 - **Responsibility**: The system's nervous system — event bus, Redis-backed BullMQ job queue, leaderboard, search loop orchestration, and dashboard BFF
@@ -11,7 +11,7 @@
 - **Depended by**: All modules (publish/subscribe via `IEventBus`), Frontend (dashboard BFF, WebSocket)
 - **Contracts**: `kb/contracts/events.yaml`
 - **Source files**: `apps/backend/src/events/`, `queue/`, `leaderboard/`, `loop/`, `dashboard/`
-- **Related ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0011 (Leaderboard as Observer), ADR-0013 (BullMQ/Redis Queue; supersedes ADR-0012), ADR-0017 (Persistent Supervisor for 24/7 Search Loop)
+- **Related ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0011 (Leaderboard as Observer), ADR-0013 (BullMQ/Redis Queue; supersedes ADR-0012), ADR-0017 (Persistent Supervisor for 24/7 Search Loop), ADR-0018 (Database-authoritative desired-state bootstrap), ADR-0019 (Search Loop operator allowlist)
 
 ## 2. Component Architecture
 
@@ -28,8 +28,8 @@
 | LeaderboardRepository | Persists/queries `LeaderboardEntry` rows | Repository | `apps/backend/src/leaderboard/leaderboard.repository.ts` |
 | StrategyLoopService | Orchestrates the one global system search loop: generate → enqueue → collect → decide next step, entirely through events/interfaces and independently of browser lifecycle | Orchestrator / State Machine | `apps/backend/src/loop/strategy-loop.service.ts` |
 | LoopStatusService | Tracks global `SearchLoopRun` state and exposes read-only progress for REST + WebSocket viewers | State Store | `apps/backend/src/loop/loop-status.service.ts` |
-| SearchLoopSupervisorService | Maintains the persisted 24/7 desired state by creating successive bounded runs, renewing the singleton DB lease, replacing restart orphans, and applying retry backoff | Supervisor / Scheduler | `apps/backend/src/loop/search-loop-supervisor.service.ts` |
-| SearchLoopControlRepository | Persists the singleton automation configuration, ON/OFF state, retry schedule, and cross-instance lease | Repository / Lease | `apps/backend/src/loop/search-loop-control.repository.ts` |
+| SearchLoopSupervisorService | Seeds a missing control row before its first tick, logs ON/OFF transitions, then maintains 24/7 desired state by creating bounded runs, renewing the DB lease, replacing restart orphans, and applying retry backoff | Supervisor / Scheduler | `workspace/apps/backend/src/loop/search-loop-supervisor.service.ts` |
+| SearchLoopControlRepository | Persists the singleton automation configuration, ON/OFF state, retry schedule, and cross-instance lease; `seedIfAbsent()` tolerates concurrent bootstrap and never overwrites an existing row | Repository / Lease | `workspace/apps/backend/src/loop/search-loop-control.repository.ts` |
 | DashboardController / DashboardService | REST API composition for the frontend; leaderboard projections use current-user scope while loop/queue status remains global | BFF | `apps/backend/src/dashboard/dashboard.controller.ts`, `apps/backend/src/dashboard/dashboard.service.ts` |
 | PushGateway | Relays privacy-safe `LeaderboardUpdated` invalidations and global loop progress on the existing infrastructure socket; it does not establish user rooms or socket auth | Gateway / Observer | `apps/backend/src/dashboard/push.gateway.ts` |
 | App-level Leaderboard Live Provider (Frontend dependency) | Mounted below `AuthProvider` and `InfrastructureProvider`; owns cross-route Live updates preference/cache, current-session REST reconciliation, identity-generation invalidation, and exactly one `leaderboard:update` handler | Provider / Safe Invalidation Consumer | Frontend app root/provider layer |
@@ -287,7 +287,7 @@ Navigation, Dashboard mount/unmount, authentication transitions, and leaderboard
 | LeaderboardEntry | `id (UUID, PK)`, `userId (UUID, nullable; null = system)`, `strategyVersionId (UUID, logical reference)`, `backtestResultId (UUID, UNIQUE, logical reference)`, `rank (int)`, `score (float)`, `totalReturn (float)`, `winRate (float)`, `maxDrawdown (float)`, `sharpeRatio (float)`, `totalTrades (int)`, `createdAt`, `updatedAt` | Denormalized Event Infrastructure read model. Both source IDs refer logically to Strategy Engine records but intentionally have no database FK/relation. Source validity is reconciled through `IBacktestResultPort`; confirmed orphans are deleted and remaining entries reranked. |
 | SearchLoopRun | `id (UUID, PK)`, `status (enum: RUNNING\|PAUSED\|COMPLETED\|STOPPED_BY_USER\|FAILED)`, `generatorType (enum: RANDOM\|DOMAIN_GUIDED)`, `iteration (int)`, `testedCandidates (int)`, `maxCandidates (int, nullable)`, `maxDurationMs (int, nullable)`, `stopOnNoImprovementIterations (int, default 50)`, `currentCandidateStrategyVersionId (UUID, nullable)`, `bestStrategyVersionId (UUID, nullable)`, `bestScore (float, nullable)`, `stopReason (string, nullable)`, `startedAt`, `pausedAt (nullable)`, `stoppedAt (nullable)` | One-to-many → `SearchLoopCandidate` |
 | SearchLoopCandidate | `id (UUID, PK)`, `loopRunId (FK)`, `strategyVersionId (UUID, logical reference)`, `backtestResultId (UUID, nullable logical reference)`, `iteration (int)`, `score (float, nullable)`, `status (enum: GENERATING\|BACKTESTING\|EVALUATED\|FAILED)`, `createdAt` | Database FK/many-to-one only to Event Infrastructure-owned `SearchLoopRun`; Strategy Engine source IDs are logical references with no Prisma relation. |
-| SearchLoopControl | Singleton `id="system"`, `enabled`, generator/pair/timeframe, rolling `backtestWindowDays`, backtest config, per-run bounds, `cooldownMs`, `failureCount`, `nextRunAt`, `lastStartedRunId`, `lastError`, `leaseOwner`, `leaseUntil`, timestamps | Persistent desired state for ADR-0017. It owns no candidate/result data and has no user ownership. |
+| SearchLoopControl | Singleton `id="system"`, `enabled`, generator/pair/timeframe, rolling `backtestWindowDays`, backtest config, per-run bounds, `cooldownMs`, `failureCount`, `nextRunAt`, `lastStartedRunId`, `lastError`, `leaseOwner`, `leaseUntil`, timestamps | Persistent desired state for ADR-0017/ADR-0018. It is seeded from the environment only when absent, owns no candidate/result data, and has no user ownership. |
 | DeadLetterJob | `id (UUID, PK)`, `jobId (UUID)`, `jobType (string)`, `payload (JSONB)`, `attempts (int)`, `lastError (string)`, `deadLetteredAt`, `resolvedAt (nullable)` | Standalone — inspected via `GET /api/queue/dead-letter` |
 
 > `LeaderboardEntry` and `SearchLoopRun`/`SearchLoopCandidate` live in tables owned by Event Infrastructure. `LeaderboardEntry.userId` implements the existing nullable ownership model; no migration or new ownership field is introduced by this KB update. `SearchLoopRun` and `SearchLoopCandidate` remain global system data and never gain per-user ownership. Cross-module references remain by ID only per `kb/MODULES.md` Rule 2; application-level reconciliation, not a cross-module database FK, owns orphan cleanup.
@@ -301,16 +301,16 @@ See `kb/contracts/events.yaml` for event payloads. REST + WebSocket surface owne
 | GET | `/api/leaderboard` | Caller-scoped Top-K, sortable; scope/rank/`updatedAt` are computed before projection | `{ rankingCriterion, updatedAt, entries: LeaderboardEntryPayload[] }` |
 | GET | `/api/leaderboard?sortBy=sharpeRatio` | Re-rank the caller-visible system + current-user dataset; no backtest rerun | same shape as above |
 | GET | `/api/leaderboard/:strategyVersionId` | Caller-scoped detail; out-of-scope private data is indistinguishable from not found | `LeaderboardEntryPayload & { trades: Trade[] }` |
-| POST | `/api/loop/start` | Existing operational compatibility surface for the global loop; not called by Live updates or route UI | `{ loopRunId, status: "RUNNING" }` |
-| POST | `/api/loop/:loopRunId/pause` | Existing operational compatibility surface; not an end-user/per-viewer control | `{ loopRunId, status: "PAUSED" }` |
-| POST | `/api/loop/:loopRunId/resume` | Existing operational compatibility surface; not an end-user/per-viewer control | `{ loopRunId, status: "RUNNING" }` |
-| POST | `/api/loop/:loopRunId/stop` | Existing operational compatibility surface for the one global run | `{ loopRunId, status: "STOPPED_BY_USER" }` |
+| POST | `/api/loop/start` | Operator-only global lifecycle mutation; not called by Live updates or route UI | `{ loopRunId, status: "RUNNING" }` |
+| POST | `/api/loop/:loopRunId/pause` | Operator-only global lifecycle mutation | `{ loopRunId, status: "PAUSED" }` |
+| POST | `/api/loop/:loopRunId/resume` | Operator-only global lifecycle mutation | `{ loopRunId, status: "RUNNING" }` |
+| POST | `/api/loop/:loopRunId/stop` | Operator-only global lifecycle mutation | `{ loopRunId, status: "STOPPED_BY_USER" }` |
 | GET | `/api/loop/:loopRunId` | Current status/progress of a loop run | `SearchLoopRun` shape |
 | GET | `/api/loop/current` | Status of the currently active loop run, if any | `SearchLoopRun \| null` |
 | GET | `/api/loop/control` | Read persisted global automation desired state | `SearchLoopControl` |
-| POST | `/api/loop/control/enable` | Authenticated one-time enable/update; persists config and asks the supervisor to start when eligible | `SearchLoopControl` |
-| POST | `/api/loop/control/disable` | Authenticated persistent disable; stops the active run and prevents replacements after restart | `SearchLoopControl` |
-| PUT | `/api/loop/control/config` | Authenticated configuration update; the current run is unchanged and the next run uses the new config | `SearchLoopControl` |
+| POST | `/api/loop/control/enable` | Operator-only enable/update; persists config and asks the supervisor to start when eligible | `SearchLoopControl` |
+| POST | `/api/loop/control/disable` | Operator-only persistent disable; stops the active run and prevents replacements after restart | `SearchLoopControl` |
+| PUT | `/api/loop/control/config` | Operator-only configuration update; the current run is unchanged and the next run uses the new config | `SearchLoopControl` |
 | GET | `/api/queue/stats` | Queue depth, in-flight, dead-letter counts | `QueueStats` (see `kb/contracts/events.yaml`) |
 | GET | `/api/queue/dead-letter` | List dead-lettered jobs for operator inspection | `DeadLetterJob[]` |
 | POST | `/api/queue/dead-letter/:jobId/retry` | Re-enqueue a dead-lettered job | `{ jobId, status: "QUEUED" }` |
@@ -328,7 +328,7 @@ Namespace: `/infrastructure` by default, configurable at process/module bootstra
 | `connection:status` | `{ status: "connected" \| "reconnecting" }` | On connect/reconnect (client-side, mirrors DESIGN.md realtime UX rules) |
 
 ## 8. Quality Attributes
-- **Security**: Leaderboard REST uses `SupabaseJwtGuard`/`@CurrentUser()` semantics from `kb/contracts/auth.yaml`: anonymous sees system rows; A sees system + A. Filtering precedes Top-K, ranks, detail lookup, and timestamp calculation. Namespace-wide `leaderboard:update` never contains private rows; clients refetch instead of applying a privacy filter. Loop/queue status remains global.
+- **Security**: Leaderboard REST uses `SupabaseJwtGuard`/`@CurrentUser()` semantics from `kb/contracts/auth.yaml`: anonymous sees system rows; A sees system + A. Filtering precedes Top-K, ranks, detail lookup, and timestamp calculation. Namespace-wide `leaderboard:update` never contains private rows; clients refetch instead of applying a privacy filter. Loop/queue status remains global and read-only. Every global Search Loop mutation requires a verified user ID in the comma-separated `SEARCH_LOOP_OPERATOR_USER_IDS` allowlist; the empty default denies all mutations.
 - **Performance**: BullMQ worker concurrency is configurable (default 3). USER priority prevents the global search loop from indefinitely delaying interactive work. Scoped leaderboard indexes/queries bound work before Top-K projection; an event causes at most one app-provider reconciliation path rather than one handler per mounted route.
 - **Reliability**: Redis AOF plus BullMQ durable job state, three total attempts with 1s/4s retry delays, stalled-job recovery, graceful worker shutdown, and PostgreSQL dead-letter audit (`kb/contracts/events.yaml`). Worker side effects and subscribers are idempotent because stalled/redelivered jobs can execute at least once. The Search Loop desired state survives restart in `SearchLoopControl`; a 15-second supervisor renews a 60-second PostgreSQL lease, replaces lost runtime context with a fresh bounded run, and backs start failures off up to 30 minutes. Leaderboard source references are checked on startup and every five minutes. EventEmitter2 remains process-local and is not claimed as a durable cross-process event log.
 - **Observability**: `correlationId` propagates through `BacktestRequested → BacktestCompleted/Failed → LeaderboardUpdated` and through `SearchLoopStarted → BacktestRequested → SearchLoopProgress → SearchLoopStopped`, enabling full request tracing in logs. `GET /api/queue/stats` and `GET /api/dashboard/summary` expose live counts (queued, processing, dead-lettered, current loop iteration) so the demo can show "Loop is running: 125 candidates tested" without inspecting logs.

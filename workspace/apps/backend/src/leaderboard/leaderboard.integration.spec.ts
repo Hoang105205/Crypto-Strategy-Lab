@@ -298,11 +298,7 @@ async function publishAndWait(
     payload,
     CORRELATION_ID,
   );
-  await eventually(
-    () =>
-      harness.prisma.rows.length === expectedRows &&
-      harness.prisma.rows.every((row) => row.rank > 0),
-  );
+  await eventually(() => harness.prisma.rows.length === expectedRows);
 }
 
 async function eventually(assertion: () => boolean): Promise<void> {
@@ -338,7 +334,7 @@ describe('Leaderboard production wiring integration (T027)', () => {
 
       expect(harness.prisma.rows[0]).toMatchObject({
         backtestResultId: RESULT_A1,
-        rank: 1,
+        rank: 0,
       });
       expect(harness.prisma.rows[0]?.score).toBeCloseTo(0.46);
       expect(updates).toHaveLength(1);
@@ -395,7 +391,7 @@ describe('Leaderboard production wiring integration (T027)', () => {
     }
   });
 
-  it('removes confirmed orphan projections and reranks surviving entries', async () => {
+  it('removes confirmed orphan projections while ranks remain read-time projections', async () => {
     const harness = await createHarness();
 
     try {
@@ -419,8 +415,14 @@ describe('Leaderboard production wiring integration (T027)', () => {
       expect(harness.prisma.rows).toHaveLength(1);
       expect(harness.prisma.rows[0]).toMatchObject({
         backtestResultId: RESULT_B,
-        rank: 1,
+        rank: 0,
       });
+      const response = await request(harness.app.getHttpServer())
+        .get('/api/leaderboard')
+        .expect(200);
+      expect(response.body.entries).toMatchObject([
+        { backtestResultId: RESULT_B, rank: 1 },
+      ]);
     } finally {
       await close(harness);
     }
@@ -514,12 +516,6 @@ describe('Leaderboard production wiring integration (T027)', () => {
       }
 
       expect(harness.prisma.rows).toHaveLength(4);
-      expect(
-        [...harness.prisma.rows]
-          .sort((left, right) => left.rank - right.rank)
-          .map((row) => row.backtestResultId),
-      ).toEqual([RESULT_C, RESULT_A2, RESULT_B, RESULT_A1]);
-
       const expected: Record<RankingCriterion, string[]> = {
         [RankingCriterion.SCORE]: [RESULT_C, RESULT_A2],
         [RankingCriterion.TOTAL_RETURN]: [RESULT_C, RESULT_A2],
@@ -599,11 +595,15 @@ describe('Leaderboard production wiring integration (T027)', () => {
         await publishAndWait(harness, tie, index + 1);
       }
 
+      const response = await request(harness.app.getHttpServer())
+        .get('/api/leaderboard')
+        .query({ sortBy: RankingCriterion.SCORE })
+        .expect(200);
       expect(
-        [...harness.prisma.rows]
-          .sort((left, right) => left.rank - right.rank)
-          .map((row) => row.backtestResultId),
-      ).toEqual([RESULT_B, RESULT_D, RESULT_A1, RESULT_A2, RESULT_E]);
+        (
+          response.body as { entries: Array<{ backtestResultId: string }> }
+        ).entries.map((entry) => entry.backtestResultId),
+      ).toEqual([RESULT_B, RESULT_D]);
     } finally {
       await close(harness);
     }

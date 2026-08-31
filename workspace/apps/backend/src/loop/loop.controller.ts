@@ -13,7 +13,6 @@ import {
 import type { SearchLoopRun } from '@crypto-strategy-lab/shared';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { RequireAuth } from '../auth/require-auth.guard';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
 import {
   LoopApiErrorCode,
@@ -31,6 +30,7 @@ import {
 import type { LoopRunDetail } from './loop.repository';
 import { SearchLoopAutomationConfigPipe } from './search-loop-control.dto';
 import { SearchLoopControlService } from './search-loop-control.service';
+import { SearchLoopOperatorGuard } from './search-loop-operator.guard';
 import type {
   SearchLoopAutomationConfig,
   SearchLoopControlState,
@@ -51,7 +51,7 @@ export class LoopController {
   }
 
   @Post('control/enable')
-  @UseGuards(RequireAuth)
+  @UseGuards(SearchLoopOperatorGuard)
   @HttpCode(HttpStatus.OK)
   enableControl(
     @Body(SearchLoopAutomationConfigPipe) config: SearchLoopAutomationConfig,
@@ -60,14 +60,14 @@ export class LoopController {
   }
 
   @Post('control/disable')
-  @UseGuards(RequireAuth)
+  @UseGuards(SearchLoopOperatorGuard)
   @HttpCode(HttpStatus.OK)
   disableControl(): Promise<SearchLoopControlState> {
     return this.control.disable();
   }
 
   @Put('control/config')
-  @UseGuards(RequireAuth)
+  @UseGuards(SearchLoopOperatorGuard)
   configureControl(
     @Body(SearchLoopAutomationConfigPipe) config: SearchLoopAutomationConfig,
   ): Promise<SearchLoopControlState> {
@@ -75,6 +75,7 @@ export class LoopController {
   }
 
   @Post('start')
+  @UseGuards(SearchLoopOperatorGuard)
   @HttpCode(HttpStatus.CREATED)
   async start(
     @Body(StartLoopDtoPipe) input: StartLoopInput,
@@ -86,6 +87,7 @@ export class LoopController {
   }
 
   @Post(':loopRunId/pause')
+  @UseGuards(SearchLoopOperatorGuard)
   @HttpCode(HttpStatus.OK)
   async pause(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
@@ -97,6 +99,7 @@ export class LoopController {
   }
 
   @Post(':loopRunId/resume')
+  @UseGuards(SearchLoopOperatorGuard)
   @HttpCode(HttpStatus.OK)
   async resume(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,
@@ -108,6 +111,7 @@ export class LoopController {
   }
 
   @Post(':loopRunId/stop')
+  @UseGuards(SearchLoopOperatorGuard)
   @HttpCode(HttpStatus.OK)
   async stop(
     @Param('loopRunId', LoopRunIdPipe) loopRunId: string,

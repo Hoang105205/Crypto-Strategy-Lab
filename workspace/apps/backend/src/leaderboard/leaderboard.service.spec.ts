@@ -56,7 +56,6 @@ interface LeaderboardRepositoryApi {
   create(
     input: LeaderboardCreateInput,
   ): Promise<LeaderboardEntryPayload | null>;
-  rerank(): Promise<void>;
   getTopK(
     criterion: RankingCriterion,
     viewerUserId?: string | null,
@@ -270,12 +269,6 @@ const makeRepository = (
       trace.push('persist');
       return Promise.resolve(leaderboardEntry(input));
     }),
-  rerank: jest
-    .fn<LeaderboardRepositoryApi['rerank']>()
-    .mockImplementation(() => {
-      trace.push('rerank');
-      return Promise.resolve();
-    }),
   getTopK: jest
     .fn<LeaderboardRepositoryApi['getTopK']>()
     .mockImplementation(() => {
@@ -412,14 +405,13 @@ describe('LeaderboardService Observer contract (T021)', () => {
       );
     });
 
-    it('validates, scores, persists, reranks, reads Top-K, then publishes', async () => {
+    it('validates, scores, persists, reads Top-K, then publishes', async () => {
       await service.handleBacktestCompleted(envelope());
 
       expect(trace).toEqual([
         'idempotency',
         'score',
         'persist',
-        'rerank',
         'topK',
         'publish',
       ]);
@@ -468,7 +460,6 @@ describe('LeaderboardService Observer contract (T021)', () => {
       await service.handleBacktestCompleted(envelope());
 
       expect(repository.create).toHaveBeenCalledTimes(1);
-      expect(repository.rerank).toHaveBeenCalledTimes(1);
       expect(repository.getTopK).toHaveBeenCalledWith(
         RankingCriterion.SCORE,
         null,
@@ -545,18 +536,16 @@ describe('LeaderboardService Observer contract (T021)', () => {
 
       expect(scoringPolicy.calculateScore).not.toHaveBeenCalled();
       expect(repository.create).not.toHaveBeenCalled();
-      expect(repository.rerank).not.toHaveBeenCalled();
       expect(eventBus.published).toHaveLength(0);
     });
 
-    it('ignores a sequential duplicate without write, rerank, or broadcast', async () => {
+    it('ignores a sequential duplicate without write or broadcast', async () => {
       repository.findByBacktestResultId.mockResolvedValue(leaderboardEntry());
 
       await service.handleBacktestCompleted(envelope());
 
       expect(scoringPolicy.calculateScore).not.toHaveBeenCalled();
       expect(repository.create).not.toHaveBeenCalled();
-      expect(repository.rerank).not.toHaveBeenCalled();
       expect(eventBus.published).toHaveLength(0);
     });
 
@@ -565,7 +554,6 @@ describe('LeaderboardService Observer contract (T021)', () => {
 
       await service.handleBacktestCompleted(envelope());
 
-      expect(repository.rerank).not.toHaveBeenCalled();
       expect(repository.getTopK).not.toHaveBeenCalled();
       expect(eventBus.published).toHaveLength(0);
     });
@@ -576,17 +564,15 @@ describe('LeaderboardService Observer contract (T021)', () => {
       await expect(service.handleBacktestCompleted(envelope())).rejects.toThrow(
         'database unavailable',
       );
-      expect(repository.rerank).not.toHaveBeenCalled();
       expect(eventBus.published).toHaveLength(0);
     });
 
-    it('does not publish when global reranking fails', async () => {
-      repository.rerank.mockRejectedValue(new Error('rerank failed'));
+    it('does not publish when the Top-K query fails', async () => {
+      repository.getTopK.mockRejectedValue(new Error('top-k failed'));
 
       await expect(service.handleBacktestCompleted(envelope())).rejects.toThrow(
-        'rerank failed',
+        'top-k failed',
       );
-      expect(repository.getTopK).not.toHaveBeenCalled();
       expect(eventBus.published).toHaveLength(0);
     });
   });
@@ -831,7 +817,7 @@ describe('leaderboard source integrity', () => {
     expect(repository.getUpdatedAt).not.toHaveBeenCalled();
   });
 
-  it('deletes only confirmed missing or mismatched sources and reranks once', async () => {
+  it('deletes only confirmed missing or mismatched sources', async () => {
     const trace: string[] = [];
     const repository = makeRepository(trace);
     repository.findSourceReferences.mockResolvedValue([
@@ -871,7 +857,6 @@ describe('leaderboard source integrity', () => {
 
     await expect(service.cleanupOrphans()).resolves.toBe(1);
     expect(repository.deleteByIds).toHaveBeenCalledWith(['entry-missing']);
-    expect(repository.rerank).toHaveBeenCalledTimes(1);
   });
 
   it('deduplicates overlapping cleanup runs', async () => {

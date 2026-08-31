@@ -120,9 +120,11 @@ pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 ```
 
-## Enable the 24/7 System Search Loop
+## Search Loop chạy tự động 24/7
 
-Apply committed migrations and restart/deploy the backend before enabling automation:
+Search Loop là tiến trình chung của toàn hệ thống. Khi trạng thái mong muốn là `ON`, backend liên tục tạo các lượt tìm kiếm có giới hạn; sau khi một lượt kết thúc, supervisor sẽ tạo lượt tiếp theo. Trạng thái `ON/OFF` được lưu trong PostgreSQL nên không mất khi backend khởi động lại.
+
+### 1. Chạy migration
 
 ```bash
 cd apps/backend
@@ -130,10 +132,39 @@ npx prisma migrate deploy
 cd ../..
 ```
 
-Then call the authenticated enable endpoint once. The desired state is stored in PostgreSQL and remains enabled across later backend restarts/deploys:
+### 2. Cấu hình trạng thái khởi tạo và operator
+
+Thêm vào file `.env`:
+
+```ini
+# Chỉ dùng đúng một lần khi DB chưa có SearchLoopControl.
+# Đặt true nếu muốn hệ thống tự chạy ngay trên database mới.
+SEARCH_LOOP_DEFAULT_ENABLED=true
+
+# UUID của các Supabase user được phép điều khiển Search Loop.
+# Nhiều UUID được phân cách bằng dấu phẩy.
+SEARCH_LOOP_OPERATOR_USER_IDS=1d3f9f46-5f13-4c8f-9ae2-6c386fbf4b13
+```
+
+Có thể lấy UUID tại **Supabase Dashboard → Authentication → Users → User UID**. Sau khi thay đổi danh sách operator, cần khởi động lại backend.
+
+Quy tắc ưu tiên trạng thái:
+
+```text
+DB chưa có SearchLoopControl  → tạo row theo SEARCH_LOOP_DEFAULT_ENABLED
+DB đã có SearchLoopControl    → dùng trạng thái ON/OFF trong DB
+```
+
+Vì vậy, `SEARCH_LOOP_DEFAULT_ENABLED=true` không bật lại loop nếu operator đã chủ động tắt và DB đang lưu `enabled=false`. Muốn bật lại, operator phải gọi API `control/enable`.
+
+Nếu `SEARCH_LOOP_OPERATOR_USER_IDS` bị bỏ trống, các API đọc trạng thái vẫn hoạt động nhưng toàn bộ API thay đổi Search Loop sẽ bị chặn. Anonymous nhận `401 Unauthorized`; user đã đăng nhập nhưng không nằm trong danh sách nhận `403 Forbidden`.
+
+### 3. Bật Search Loop bằng API
+
+Bước này không cần thiết nếu database mới đã được seed với `SEARCH_LOOP_DEFAULT_ENABLED=true`. Với database đang lưu `OFF`, dùng access token của một operator để bật lại:
 
 ```powershell
-$token = "<Supabase access token>"
+$token = "<Supabase access token của operator>"
 $body = @{
   generatorType = "RANDOM"
   pair = "BTCUSDT"
@@ -146,6 +177,7 @@ $body = @{
     slippage = 0.001
   }
   maxCandidatesPerRun = 100
+  maxDurationMsPerRun = $null
   stopOnNoImprovementIterations = 50
   cooldownMs = 30000
 } | ConvertTo-Json -Depth 4
@@ -158,15 +190,21 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Operational endpoints:
+### API vận hành
 
-```text
-GET  /api/loop/control          # persisted desired state and retry/lease status
-GET  /api/loop/current          # current bounded run
-POST /api/loop/control/disable  # persist OFF and stop the active run
-```
+| Method | Endpoint | Quyền | Ý nghĩa |
+|--------|----------|-------|---------|
+| `GET` | `/api/loop/control` | Public | Xem desired state, retry và lease |
+| `GET` | `/api/loop/current` | Public | Xem lượt tìm kiếm đang chạy |
+| `POST` | `/api/loop/control/enable` | Operator | Lưu `ON` và cấu hình cho các lượt tiếp theo |
+| `POST` | `/api/loop/control/disable` | Operator | Lưu `OFF` và dừng lượt đang chạy |
+| `PUT` | `/api/loop/control/config` | Operator | Cập nhật cấu hình mà không đổi `ON/OFF` |
+| `POST` | `/api/loop/start` | Operator | Khởi động thủ công một lượt |
+| `POST` | `/api/loop/:loopRunId/pause` | Operator | Tạm dừng một lượt |
+| `POST` | `/api/loop/:loopRunId/resume` | Operator | Tiếp tục một lượt |
+| `POST` | `/api/loop/:loopRunId/stop` | Operator | Dừng một lượt |
 
-`Live updates` remains a frontend-only leaderboard preference and does not enable or disable the system Search Loop.
+> Nút **Live updates** trên frontend chỉ bật/tắt cập nhật realtime của leaderboard. Nó không bật, tắt hoặc khởi động lại Search Loop.
 
 ## Knowledge Base
 
