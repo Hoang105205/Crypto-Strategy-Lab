@@ -1,9 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-24
-> **Status**: Active — Cross-route live leaderboard synchronized; explicit ON/OFF persists and defaults OFF
-> **Last Updated**: 2026-08-28
-> **Status**: Active — Persistent leased 24/7 Search Loop supervisor added; leaderboard source reconciliation and News & Sentiment flows remain active
+> **Last Updated**: 2026-08-31
+> **Status**: Active — Persistent leased 24/7 Search Loop uses database-authoritative desired state and deny-by-default operator authorization
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's

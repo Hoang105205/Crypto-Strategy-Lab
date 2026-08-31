@@ -44,6 +44,9 @@ const prisma = {
     findFirst: jest.fn<() => Promise<null>>(),
   },
   searchLoopControl: {
+    findUnique: jest.fn<() => Promise<Record<string, unknown> | null>>(),
+    findUniqueOrThrow: jest.fn<() => Promise<Record<string, unknown>>>(),
+    create: jest.fn<() => Promise<Record<string, unknown>>>(),
     upsert: jest.fn<() => Promise<Record<string, unknown>>>(),
     updateMany: jest.fn<() => Promise<{ count: number }>>(),
   },
@@ -105,7 +108,7 @@ describe('LoopModule wiring and lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.searchLoopRun.findFirst.mockResolvedValue(null);
-    prisma.searchLoopControl.upsert.mockResolvedValue({
+    const control = {
       id: 'system',
       enabled: false,
       generatorType: StrategyGeneratorType.RANDOM,
@@ -128,7 +131,11 @@ describe('LoopModule wiring and lifecycle', () => {
       leaseUntil: null,
       createdAt: STARTED_AT,
       updatedAt: STARTED_AT,
-    });
+    };
+    prisma.searchLoopControl.findUnique.mockResolvedValue(control);
+    prisma.searchLoopControl.findUniqueOrThrow.mockResolvedValue(control);
+    prisma.searchLoopControl.create.mockResolvedValue(control);
+    prisma.searchLoopControl.upsert.mockResolvedValue(control);
     prisma.searchLoopControl.updateMany.mockResolvedValue({ count: 0 });
     eventBus.subscribe.mockImplementation(() => jest.fn());
     jobQueue.enqueue.mockImplementation((_type, payload) =>

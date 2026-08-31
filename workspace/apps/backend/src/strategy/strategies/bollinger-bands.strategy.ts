@@ -1,5 +1,12 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Candle, Signal, IStrategy, StrategyType, SignalAction } from '@crypto-strategy-lab/shared';
+import {
+  Candle,
+  Signal,
+  IStrategy,
+  IStrategyAnalysisSession,
+  StrategyType,
+  SignalAction,
+} from '@crypto-strategy-lab/shared';
 import { StrategyRegistry } from '../registry/strategy.registry';
 import { BollingerBands } from 'technicalindicators';
 
@@ -29,6 +36,39 @@ export class BollingerBandsStrategy implements IStrategy, OnModuleInit {
     };
   }
 
+  createAnalysisSession(): IStrategyAnalysisSession {
+    const bands = new BollingerBands({
+      period: this.period,
+      stdDev: this.stdDev,
+      values: [],
+    });
+    let count = 0;
+    return {
+      next: (candle) => {
+        count += 1;
+        const latest = bands.nextValue(candle.close);
+        if (count < this.period || latest === undefined) {
+          return {
+            action: SignalAction.HOLD,
+            confidence: 0,
+            metadata: { reason: 'Not enough candles' },
+          };
+        }
+        const metadata = {
+          price: candle.close,
+          lower: latest.lower,
+          middle: latest.middle,
+          upper: latest.upper,
+        };
+        if (candle.close <= latest.lower)
+          return { action: SignalAction.BUY, confidence: 0.8, metadata };
+        if (candle.close >= latest.upper)
+          return { action: SignalAction.SELL, confidence: 0.8, metadata };
+        return { action: SignalAction.HOLD, confidence: 0, metadata };
+      },
+    };
+  }
+
   analyze(candles: Candle[]): Signal {
     if (!candles || candles.length < this.period) {
       return {
@@ -44,21 +84,26 @@ export class BollingerBandsStrategy implements IStrategy, OnModuleInit {
       values: closePrices,
       stdDev: this.stdDev,
     });
-    
+
     if (bbValues.length === 0) {
       return { action: SignalAction.HOLD, confidence: 0 };
     }
 
     const latestBB = bbValues[bbValues.length - 1];
     const latestPrice = closePrices[closePrices.length - 1];
-    
+
     // Mean reversion logic
     // Price drops below or touches the lower band -> BUY
     if (latestPrice <= latestBB.lower) {
       return {
         action: SignalAction.BUY,
         confidence: 0.8,
-        metadata: { price: latestPrice, lower: latestBB.lower, middle: latestBB.middle, upper: latestBB.upper },
+        metadata: {
+          price: latestPrice,
+          lower: latestBB.lower,
+          middle: latestBB.middle,
+          upper: latestBB.upper,
+        },
       };
     }
 
@@ -67,14 +112,24 @@ export class BollingerBandsStrategy implements IStrategy, OnModuleInit {
       return {
         action: SignalAction.SELL,
         confidence: 0.8,
-        metadata: { price: latestPrice, lower: latestBB.lower, middle: latestBB.middle, upper: latestBB.upper },
+        metadata: {
+          price: latestPrice,
+          lower: latestBB.lower,
+          middle: latestBB.middle,
+          upper: latestBB.upper,
+        },
       };
     }
 
     return {
       action: SignalAction.HOLD,
       confidence: 0,
-      metadata: { price: latestPrice, lower: latestBB.lower, middle: latestBB.middle, upper: latestBB.upper },
+      metadata: {
+        price: latestPrice,
+        lower: latestBB.lower,
+        middle: latestBB.middle,
+        upper: latestBB.upper,
+      },
     };
   }
 }

@@ -17,7 +17,10 @@ describe('BacktesterService', () => {
       analyze: jest.fn().mockReturnValue({ action: SignalAction.HOLD }),
     };
 
-    const trades = await backtester.run(mockStrategy, [], { initialCapital: 10000, positionSizePercent: 100 });
+    const trades = await backtester.run(mockStrategy, [], {
+      initialCapital: 10000,
+      positionSizePercent: 100,
+    });
     expect(trades).toHaveLength(0);
   });
 
@@ -26,23 +29,62 @@ describe('BacktesterService', () => {
       getName: jest.fn().mockReturnValue('Mock'),
       getType: jest.fn().mockReturnValue(StrategyType.MA),
       getParameters: jest.fn().mockReturnValue({}),
-      analyze: jest.fn()
+      analyze: jest
+        .fn()
         .mockReturnValueOnce({ action: SignalAction.HOLD }) // Candle 0
-        .mockReturnValueOnce({ action: SignalAction.BUY })  // Candle 1 -> Open LONG at 100
+        .mockReturnValueOnce({ action: SignalAction.BUY }) // Candle 1 -> Open LONG at 100
         .mockReturnValueOnce({ action: SignalAction.HOLD }) // Candle 2
         .mockReturnValueOnce({ action: SignalAction.SELL }) // Candle 3 -> Close LONG at 120 (PnL +2000)
-        .mockReturnValueOnce({ action: SignalAction.BUY }),  // Candle 4 -> Open LONG at 130 (Force close on exit)
+        .mockReturnValueOnce({ action: SignalAction.BUY }), // Candle 4 -> Open LONG at 130 (Force close on exit)
     };
 
     const mockCandles = [
-      { timestamp: 1000, open: 100, high: 105, low: 95, close: 100, volume: 10 },
-      { timestamp: 2000, open: 100, high: 105, low: 95, close: 100, volume: 10 },
-      { timestamp: 3000, open: 110, high: 115, low: 105, close: 110, volume: 10 },
-      { timestamp: 4000, open: 120, high: 125, low: 115, close: 120, volume: 10 },
-      { timestamp: 5000, open: 130, high: 135, low: 125, close: 130, volume: 10 },
+      {
+        timestamp: 1000,
+        open: 100,
+        high: 105,
+        low: 95,
+        close: 100,
+        volume: 10,
+      },
+      {
+        timestamp: 2000,
+        open: 100,
+        high: 105,
+        low: 95,
+        close: 100,
+        volume: 10,
+      },
+      {
+        timestamp: 3000,
+        open: 110,
+        high: 115,
+        low: 105,
+        close: 110,
+        volume: 10,
+      },
+      {
+        timestamp: 4000,
+        open: 120,
+        high: 125,
+        low: 115,
+        close: 120,
+        volume: 10,
+      },
+      {
+        timestamp: 5000,
+        open: 130,
+        high: 135,
+        low: 125,
+        close: 130,
+        volume: 10,
+      },
     ] as any;
 
-    const trades = await backtester.run(mockStrategy, mockCandles, { initialCapital: 10000, positionSizePercent: 100 });
+    const trades = await backtester.run(mockStrategy, mockCandles, {
+      initialCapital: 10000,
+      positionSizePercent: 100,
+    });
 
     expect(trades).toHaveLength(2);
     expect(trades[0].entryPrice).toBe(100);
@@ -55,15 +97,30 @@ describe('BacktesterService', () => {
       getName: jest.fn().mockReturnValue('Mock'),
       getType: jest.fn().mockReturnValue(StrategyType.MA),
       getParameters: jest.fn().mockReturnValue({}),
-      analyze: jest.fn()
+      analyze: jest
+        .fn()
         .mockReturnValueOnce({ action: SignalAction.BUY })
         .mockReturnValueOnce({ action: SignalAction.SELL }),
       analyzeAsync: undefined,
     };
 
     const mockCandles = [
-      { timestamp: 1000, open: 100, high: 105, low: 95, close: 100, closeTime: 1000 },
-      { timestamp: 2000, open: 120, high: 125, low: 115, close: 120, closeTime: 2000 },
+      {
+        timestamp: 1000,
+        open: 100,
+        high: 105,
+        low: 95,
+        close: 100,
+        closeTime: 1000,
+      },
+      {
+        timestamp: 2000,
+        open: 120,
+        high: 125,
+        low: 115,
+        close: 120,
+        closeTime: 2000,
+      },
     ] as any;
 
     const config = {
@@ -78,7 +135,7 @@ describe('BacktesterService', () => {
     const trades = await backtester.run(mockStrategy, mockCandles, config);
 
     expect(trades).toHaveLength(1);
-    
+
     // Entry price with 0.2% slippage on 100 = 100.2
     const expectedQuantity = 999 / 100.2;
     expect(trades[0].quantity).toBeCloseTo(expectedQuantity);
@@ -90,12 +147,40 @@ describe('BacktesterService', () => {
     expect(trades[0].exitPrice).toBeCloseTo(119.76);
 
     expect(trades[0].volumeUsd).toBeCloseTo(999);
-    
+
     const exitValue = 119.76 * expectedQuantity;
     const exitCommission = exitValue * 0.001;
     expect(trades[0].transactionCost).toBeCloseTo(1 + exitCommission);
 
     const expectedSlippage = (0.2 + 0.24) * expectedQuantity;
     expect(trades[0].slippage).toBeCloseTo(expectedSlippage);
+  });
+
+  it('uses one isolated incremental analysis step per candle when available', async () => {
+    const next = jest.fn().mockReturnValue({ action: SignalAction.HOLD });
+    const analyze = jest.fn().mockReturnValue({ action: SignalAction.HOLD });
+    const strategy: IStrategy = {
+      getName: () => 'Incremental',
+      getType: () => StrategyType.MA,
+      getParameters: () => ({}),
+      analyze,
+      createAnalysisSession: () => ({ next }),
+    };
+    const candles = Array.from({ length: 100 }, (_, index) => ({
+      open: 100,
+      high: 101,
+      low: 99,
+      close: 100 + index / 10,
+      volume: 1,
+      closeTime: new Date(index * 60_000),
+    })) as any;
+
+    await backtester.run(strategy, candles, {
+      initialCapital: 10_000,
+      positionSizePercent: 100,
+    });
+
+    expect(next).toHaveBeenCalledTimes(candles.length);
+    expect(analyze).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
-import Link from 'next/link';
-import type { LeaderboardSnapshot } from '@crypto-strategy-lab/shared';
-import { LoadingState } from '../common/loading-state';
+import Link from "next/link";
+import type { LeaderboardSnapshot } from "@crypto-strategy-lab/shared";
+import { LoadingState } from "../common/loading-state";
 
 export interface LeaderboardPreviewProps {
   snapshot: LeaderboardSnapshot | null;
@@ -14,13 +14,12 @@ export interface LeaderboardPreviewProps {
 }
 
 const LINK_CLASS =
-  'rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark transition-all';
+  "rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-canvas-dark transition-all";
 
 export function LeaderboardPreview({
   snapshot,
   loading = false,
   error = null,
-  isStale = false,
   lastSuccessfulAt = null,
   selectedStrategyVersionId = null,
   onSelectStrategy,
@@ -80,18 +79,14 @@ export function LeaderboardPreview({
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-bold tracking-tight">Leaderboard</h2>
-        <Link href="/leaderboard" className={`text-xs font-semibold text-primary hover:underline ${LINK_CLASS}`}>
+        <Link
+          href="/leaderboard"
+          className={`text-xs font-semibold text-primary hover:underline ${LINK_CLASS}`}
+        >
           View full leaderboard
         </Link>
       </div>
 
-      {isStale && (
-        <div className="mt-3 rounded-lg border border-primary/30 bg-primary/10 p-2.5">
-          <p className="text-xs font-medium text-primary">
-            Reconnecting — showing the last successful ranking.
-          </p>
-        </div>
-      )}
       {lastSuccessfulAt && (
         <p className="mt-1.5 text-xs font-medium text-muted-strong">
           Last updated: {lastSuccessfulAt.toLocaleString()}
@@ -115,30 +110,31 @@ export function LeaderboardPreview({
       {snapshot ? (
         <ul aria-label="Leaderboard preview" className="mt-4 space-y-2">
           {snapshot.entries.slice(0, 5).map((entry) => {
-            const selected = entry.strategyVersionId === selectedStrategyVersionId;
+            const selected =
+              entry.strategyVersionId === selectedStrategyVersionId;
             const returnClass =
               entry.totalReturn > 0
-                ? 'text-trading-up font-semibold'
+                ? "text-trading-up font-semibold"
                 : entry.totalReturn < 0
-                  ? 'text-trading-down font-semibold'
-                  : 'text-body';
+                  ? "text-trading-down font-semibold"
+                  : "text-body";
 
             const rankBadgeClass =
               entry.rank === 1
-                ? 'text-yellow-400 font-bold bg-yellow-400/10 rounded px-1'
+                ? "text-yellow-400 font-bold bg-yellow-400/10 rounded px-1"
                 : entry.rank === 2
-                  ? 'text-slate-300 font-bold bg-slate-300/10 rounded px-1'
+                  ? "text-slate-300 font-bold bg-slate-300/10 rounded px-1"
                   : entry.rank === 3
-                    ? 'text-amber-500 font-bold bg-amber-500/10 rounded px-1'
-                    : 'text-muted-strong';
+                    ? "text-amber-500 font-bold bg-amber-500/10 rounded px-1"
+                    : "text-muted-strong";
 
             return (
               <li
                 key={entry.backtestResultId}
                 className={`grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-xl p-3 transition-colors border border-transparent ${
                   selected
-                    ? 'bg-surface-elevated border-l-4 border-l-primary'
-                    : 'hover:bg-surface-elevated/60 hover:border-hairline-dark/40'
+                    ? "bg-surface-elevated border-l-4 border-l-primary"
+                    : "hover:bg-surface-elevated/60 hover:border-hairline-dark/40"
                 }`}
               >
                 <span
@@ -148,7 +144,7 @@ export function LeaderboardPreview({
                 </span>
                 <Link
                   href={`/leaderboard?strategyVersionId=${encodeURIComponent(entry.strategyVersionId)}`}
-                  aria-current={selected ? 'true' : undefined}
+                  aria-current={selected ? "true" : undefined}
                   onClick={() => onSelectStrategy?.(entry.strategyVersionId)}
                   className={`min-w-0 ${LINK_CLASS}`}
                 >
@@ -160,9 +156,12 @@ export function LeaderboardPreview({
                   </span>
                 </Link>
                 <div className="text-right font-mono tabular-nums text-xs">
-                  <div className="text-body font-semibold">{entry.score.toFixed(4)}</div>
+                  <div className="text-body font-semibold">
+                    {entry.score.toFixed(4)}
+                  </div>
                   <div className={returnClass}>
-                    {entry.totalReturn > 0 ? '+' : ''}{entry.totalReturn.toFixed(2)}%
+                    {entry.totalReturn > 0 ? "+" : ""}
+                    {entry.totalReturn.toFixed(2)}%
                   </div>
                 </div>
               </li>
@@ -170,7 +169,9 @@ export function LeaderboardPreview({
           })}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-muted-strong">No leaderboard snapshot.</p>
+        <p className="mt-4 text-sm text-muted-strong">
+          No leaderboard snapshot.
+        </p>
       )}
     </section>
   );

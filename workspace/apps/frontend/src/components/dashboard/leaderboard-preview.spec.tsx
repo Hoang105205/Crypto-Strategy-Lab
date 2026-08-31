@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import type { ReactElement, ReactNode } from 'react';
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import type { ReactElement, ReactNode } from "react";
 
-vi.mock('next/link', () => ({
+vi.mock("next/link", () => ({
   default: ({
     href,
     children,
@@ -42,7 +42,7 @@ interface Entry {
 }
 
 interface Snapshot {
-  rankingCriterion: 'score';
+  rankingCriterion: "score";
   updatedAt: Date;
   entries: Entry[];
 }
@@ -67,7 +67,7 @@ function entry(rank: number, identity = rank): Entry {
     rank,
     strategyVersionId: `version-${identity}`,
     strategyName: `Strategy ${identity}`,
-    strategyType: 'MA',
+    strategyType: "MA",
     isComposite: false,
     backtestResultId: `result-${identity}`,
     score: 1 - rank / 10,
@@ -81,19 +81,21 @@ function entry(rank: number, identity = rank): Entry {
 
 function snapshot(entries: Entry[]): Snapshot {
   return {
-    rankingCriterion: 'score',
-    updatedAt: new Date('2026-08-16T10:00:00.000Z'),
+    rankingCriterion: "score",
+    updatedAt: new Date("2026-08-16T10:00:00.000Z"),
     entries,
   };
 }
 
 async function loadPreview(): Promise<LeaderboardPreviewModule> {
-  const modulePath = './leaderboard-preview';
-  return import(/* @vite-ignore */ modulePath) as Promise<LeaderboardPreviewModule>;
+  const modulePath = "./leaderboard-preview";
+  return import(
+    /* @vite-ignore */ modulePath
+  ) as Promise<LeaderboardPreviewModule>;
 }
 
-describe('LeaderboardPreview contract', () => {
-  it('remains one Combined Top-5 preview rather than rendering scoped cards', async () => {
+describe("LeaderboardPreview contract", () => {
+  it("remains one Combined Top-5 preview rather than rendering scoped cards", async () => {
     const { LeaderboardPreview } = await loadPreview();
     render(
       <LeaderboardPreview
@@ -109,13 +111,15 @@ describe('LeaderboardPreview contract', () => {
       />,
     );
 
-    expect(screen.getAllByRole('list', { name: /leaderboard preview/i })).toHaveLength(1);
-    expect(screen.getAllByRole('listitem')).toHaveLength(5);
+    expect(
+      screen.getAllByRole("list", { name: /leaderboard preview/i }),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
     expect(screen.queryByText(/my strategies/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/system leaderboard/i)).not.toBeInTheDocument();
   });
 
-  it('shows at most five entries with continuous view-local ranks and valid navigation', async () => {
+  it("shows at most five entries with continuous view-local ranks and valid navigation", async () => {
     const { LeaderboardPreview } = await loadPreview();
     const selectStrategy = vi.fn();
     render(
@@ -134,44 +138,44 @@ describe('LeaderboardPreview contract', () => {
       />,
     );
 
-    const list = screen.getByRole('list', { name: /leaderboard preview/i });
-    const items = within(list).getAllByRole('listitem');
+    const list = screen.getByRole("list", { name: /leaderboard preview/i });
+    const items = within(list).getAllByRole("listitem");
     expect(items).toHaveLength(5);
     expect(items.map((item) => item.textContent)).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('1'),
-        expect.stringContaining('2'),
-        expect.stringContaining('3'),
-        expect.stringContaining('4'),
-        expect.stringContaining('5'),
+        expect.stringContaining("1"),
+        expect.stringContaining("2"),
+        expect.stringContaining("3"),
+        expect.stringContaining("4"),
+        expect.stringContaining("5"),
       ]),
     );
     expect(items.map((item) => item.textContent?.match(/\d+/)?.[0])).toEqual([
-      '1',
-      '2',
-      '3',
-      '4',
-      '5',
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
     ]);
-    const fullLeaderboard = screen.getByRole('link', {
+    const fullLeaderboard = screen.getByRole("link", {
       name: /view full leaderboard/i,
     });
-    expect(fullLeaderboard).toHaveAttribute('href', '/leaderboard');
+    expect(fullLeaderboard).toHaveAttribute("href", "/leaderboard");
     expect(fullLeaderboard.className).toMatch(/focus-visible:/);
-    const detail = screen.getByRole('link', { name: /strategy 2/i });
+    const detail = screen.getByRole("link", { name: /strategy 2/i });
     expect(detail).toHaveAttribute(
-      'href',
-      '/leaderboard?strategyVersionId=version-2',
+      "href",
+      "/leaderboard?strategyVersionId=version-2",
     );
-    expect(detail).toHaveAttribute('aria-current', 'true');
+    expect(detail).toHaveAttribute("aria-current", "true");
     expect(detail.className).toMatch(/focus-visible:/);
     fireEvent.click(detail);
-    expect(selectStrategy).toHaveBeenCalledWith('version-2');
+    expect(selectStrategy).toHaveBeenCalledWith("version-2");
   });
 
-  it('freezes the supplied snapshot until a caught-up continuous-rank snapshot arrives', async () => {
+  it("freezes the supplied snapshot until a caught-up continuous-rank snapshot arrives", async () => {
     const { LeaderboardPreview } = await loadPreview();
-    const timestamp = new Date('2026-08-16T10:00:00.000Z');
+    const timestamp = new Date("2026-08-16T10:00:00.000Z");
     const { rerender } = render(
       <LeaderboardPreview
         snapshot={snapshot([entry(1, 1), entry(2, 2)])}
@@ -190,14 +194,14 @@ describe('LeaderboardPreview contract', () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(screen.getByText('Strategy 1')).toBeInTheDocument();
-    expect(screen.queryByText('Strategy 3')).not.toBeInTheDocument();
+    expect(screen.getByText("Strategy 1")).toBeInTheDocument();
+    expect(screen.queryByText("Strategy 3")).not.toBeInTheDocument();
 
     rerender(
       <LeaderboardPreview
         snapshot={{
           ...snapshot([entry(1, 3), entry(2, 2)]),
-          updatedAt: new Date('2026-08-16T10:01:00.000Z'),
+          updatedAt: new Date("2026-08-16T10:01:00.000Z"),
         }}
         selectedStrategyVersionId="version-2"
         isStale
@@ -206,49 +210,53 @@ describe('LeaderboardPreview contract', () => {
       />,
     );
 
-    expect(screen.queryByText('Strategy 1')).not.toBeInTheDocument();
-    expect(screen.getByText('Strategy 3')).toBeInTheDocument();
+    expect(screen.queryByText("Strategy 1")).not.toBeInTheDocument();
+    expect(screen.getByText("Strategy 3")).toBeInTheDocument();
     expect(
-      within(screen.getByRole('list', { name: /leaderboard preview/i }))
-        .getAllByRole('listitem')
+      within(screen.getByRole("list", { name: /leaderboard preview/i }))
+        .getAllByRole("listitem")
         .map((item) => item.textContent?.match(/^\d+/)?.[0]),
-    ).toEqual(['1', '2']);
-    expect(screen.getByRole('link', { name: /strategy 2/i })).toHaveAttribute(
-      'aria-current',
-      'true',
+    ).toEqual(["1", "2"]);
+    expect(screen.getByRole("link", { name: /strategy 2/i })).toHaveAttribute(
+      "aria-current",
+      "true",
     );
-    expect(screen.getByText(/stale|disconnected|reconnecting/i)).toBeInTheDocument();
-    expect(screen.getByText(/last updated/i)).toHaveTextContent(timestamp.toLocaleString());
+    expect(
+      screen.queryByText(/stale|disconnected|reconnecting/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/last updated/i)).toHaveTextContent(
+      timestamp.toLocaleString(),
+    );
   });
 
-  it('provides stable loading, one empty next action, and a sanitized retry error', async () => {
+  it("provides stable loading, one empty next action, and a sanitized retry error", async () => {
     const { LeaderboardPreview } = await loadPreview();
     const retry = vi.fn();
     const { rerender } = render(
       <LeaderboardPreview snapshot={null} loading onRetry={retry} />,
     );
     expect(
-      screen.getByRole('status', { name: /loading leaderboard preview/i }).style
+      screen.getByRole("status", { name: /loading leaderboard preview/i }).style
         .minHeight,
     ).toMatch(/px$/);
 
-    rerender(
-      <LeaderboardPreview snapshot={snapshot([])} onRetry={retry} />,
-    );
+    rerender(<LeaderboardPreview snapshot={snapshot([])} onRetry={retry} />);
     expect(screen.getByText(/no leaderboard entries/i)).toBeInTheDocument();
-    const emptyActions = screen.getAllByRole('link');
+    const emptyActions = screen.getAllByRole("link");
     expect(emptyActions).toHaveLength(1);
-    expect(emptyActions[0]).toHaveAttribute('href', '/strategy');
+    expect(emptyActions[0]).toHaveAttribute("href", "/strategy");
 
     rerender(
       <LeaderboardPreview
         snapshot={null}
-        error={new Error('strategy-provider.internal raw stack')}
+        error={new Error("strategy-provider.internal raw stack")}
         onRetry={retry}
       />,
     );
-    expect(screen.queryByText(/strategy-provider\.internal|raw stack/i)).not.toBeInTheDocument();
-    const retryActions = screen.getAllByRole('button', { name: /retry/i });
+    expect(
+      screen.queryByText(/strategy-provider\.internal|raw stack/i),
+    ).not.toBeInTheDocument();
+    const retryActions = screen.getAllByRole("button", { name: /retry/i });
     expect(retryActions).toHaveLength(1);
     expect(retryActions[0].className).toMatch(/focus-visible:/);
     fireEvent.click(retryActions[0]);

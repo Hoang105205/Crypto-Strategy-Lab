@@ -23,20 +23,24 @@ Chosen option: "Persistent desired state plus leased supervisor", because it pre
 
 `SearchLoopControl(id="system")` stores the enabled flag, rolling-window configuration, per-run bounds, retry state, next-run time, and lease. `SearchLoopSupervisorService` checks this state every 15 seconds. The lease lasts 60 seconds and is atomically acquired/renewed in PostgreSQL, preventing two supervisors from starting a run concurrently. Completed runs are replaced after a configurable cooldown. Start failures use exponential backoff capped at 30 minutes.
 
+ADR-0018 defines how the singleton is first materialized: the environment provides a bootstrap default only, while an existing database row always wins.
+
 On process replacement, an active run without local runtime context is marked `FAILED` with `orphaned_after_restart`; the supervisor then starts a fresh bounded run. BullMQ may still finish an already accepted candidate idempotently, but the new run does not depend on reconstructing volatile orchestration context.
 
 ### Consequences
-- Positive: one authenticated enable call persists across restart/deploy until an authenticated disable call changes desired state.
+- Positive: one operator-authorized enable call persists across restart/deploy until an operator-authorized disable call changes desired state.
 - Positive: each run retains existing limits, events, queue behavior, and system ownership (`userId = null`).
 - Positive: database leasing prevents duplicate supervisors from creating concurrent global runs.
 - Positive: rolling backtest dates use the latest closed timeframe boundary rather than repeating a fixed historical range forever.
 - Negative: PostgreSQL is now required for supervisor coordination as well as result persistence.
 - Negative: a restart can terminate the prior run record and create a replacement instead of resuming the exact in-memory iteration.
 - Risk: EventEmitter2 remains process-local. The supported topology is still one NestJS application process with in-process workers; horizontally distributed workers require a cross-process event bus before end-to-end loop continuation can be claimed.
-- Risk: the project currently has authentication but no admin role model; control mutations require `RequireAuth`, and role-based operator authorization remains a follow-up.
+- Risk: operator membership is deployment configuration rather than application-managed RBAC; changing the allowlist requires an environment update and backend restart (ADR-0019).
 
 ## Links
 - [Relates to ADR-0005](./0005-event-driven-communication.md)
 - [Relates to ADR-0013](./0013-adopt-bullmq-redis-for-backtest-jobs.md)
 - [Strategy Search Loop flow](../flows/strategy-search-loop.md)
 - [Event Infrastructure module](../modules/event-infrastructure.md)
+- [Refined by ADR-0018](./0018-database-authoritative-search-loop-bootstrap.md)
+- [Secured by ADR-0019](./0019-search-loop-operator-allowlist.md)

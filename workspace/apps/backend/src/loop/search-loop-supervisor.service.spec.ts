@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { ConfigService } from '@nestjs/config';
 import {
   LoopStatus,
   StrategyGeneratorType,
   type SearchLoopRun,
 } from '@crypto-strategy-lab/shared';
+import type { ValidatedEnvironment } from '../config/environment';
 import { LoopStatusService } from './loop-status.service';
 import {
   SearchLoopControlRepository,
@@ -70,10 +72,13 @@ describe('SearchLoopSupervisorService', () => {
   let controls: jest.Mocked<SearchLoopControlRepository>;
   let loop: jest.Mocked<StrategyLoopService>;
   let status: jest.Mocked<LoopStatusService>;
+  let config: ConfigService<ValidatedEnvironment, true>;
   let supervisor: SearchLoopSupervisorService;
 
   beforeEach(() => {
     controls = {
+      seedIfAbsent: jest.fn(),
+      get: jest.fn(),
       tryAcquireLease: jest.fn(),
       recordHealthy: jest.fn(),
       renewLease: jest.fn(),
@@ -90,8 +95,52 @@ describe('SearchLoopSupervisorService', () => {
       getCurrent: jest.fn(),
       fail: jest.fn(),
     } as unknown as jest.Mocked<LoopStatusService>;
+    config = {
+      get: jest.fn().mockReturnValue(true),
+    } as unknown as ConfigService<ValidatedEnvironment, true>;
+    controls.seedIfAbsent.mockResolvedValue({
+      seeded: false,
+      state: control(),
+    });
+    controls.get.mockResolvedValue(control());
     controls.recordRunStarted.mockResolvedValue(true);
-    supervisor = new SearchLoopSupervisorService(controls, loop, status);
+    supervisor = new SearchLoopSupervisorService(
+      controls,
+      loop,
+      status,
+      config,
+    );
+  });
+
+  it('seeds desired state before the first supervisor tick', async () => {
+    controls.tryAcquireLease.mockResolvedValue(null);
+
+    await supervisor.onApplicationBootstrap();
+
+    expect(controls.seedIfAbsent.mock.calls).toEqual([[true]]);
+    expect(controls.seedIfAbsent.mock.invocationCallOrder[0]).toBeLessThan(
+      controls.get.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('logs OFF once until the desired state changes', async () => {
+    controls.get.mockResolvedValue(control({ enabled: false }));
+    controls.tryAcquireLease.mockResolvedValue(null);
+    const logger = (
+      supervisor as unknown as {
+        logger: { warn: jest.Mock; log: jest.Mock };
+      }
+    ).logger;
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(logger, 'log').mockImplementation(() => undefined);
+
+    await supervisor.runOnce(NOW);
+    await supervisor.runOnce(new Date(NOW.getTime() + 15_000));
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Search Loop automation desired state is OFF',
+    );
   });
 
   it('does nothing when automation is disabled or another instance owns the lease', async () => {

@@ -9,6 +9,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import {
   EventType,
   type EventSubscription,
@@ -28,10 +29,12 @@ import { StrategyLoopService } from './strategy-loop.service';
 import { SearchLoopControlRepository } from './search-loop-control.repository';
 import { SearchLoopControlService } from './search-loop-control.service';
 import { SearchLoopSupervisorService } from './search-loop-supervisor.service';
+import { SearchLoopOperatorGuard } from './search-loop-operator.guard';
 
 @Module({
   imports: [
     AuthModule,
+    ConfigModule,
     DatabaseModule,
     EventsModule,
     QueueModule,
@@ -46,12 +49,9 @@ import { SearchLoopSupervisorService } from './search-loop-supervisor.service';
     SearchLoopControlRepository,
     SearchLoopControlService,
     SearchLoopSupervisorService,
+    SearchLoopOperatorGuard,
   ],
-  exports: [
-    LoopStatusService,
-    StrategyLoopService,
-    SearchLoopControlService,
-  ],
+  exports: [LoopStatusService, StrategyLoopService, SearchLoopControlService],
 })
 export class LoopModule implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LoopModule.name);

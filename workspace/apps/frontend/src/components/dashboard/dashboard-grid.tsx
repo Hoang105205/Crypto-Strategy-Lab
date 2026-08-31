@@ -1,15 +1,14 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import { MultiTimeframeGrid } from '../chart/multi-timeframe-grid';
-import { PairSelector } from '../pair-selector';
-import { StatusIndicator } from '../status-indicator';
+import type { ReactNode } from "react";
+import { MultiTimeframeGrid } from "../chart/multi-timeframe-grid";
+import { PairSelector } from "../pair-selector";
+import { StatusIndicator } from "../status-indicator";
 
 export interface DashboardGridProps {
   pair: string;
   onPairChange(value: string): void;
   loopStatusPanel: ReactNode;
-  queueCard: ReactNode;
   leaderboardPreview: ReactNode;
 }
 
@@ -17,7 +16,6 @@ export function DashboardGrid({
   pair,
   onPairChange,
   loopStatusPanel,
-  queueCard,
   leaderboardPreview,
 }: DashboardGridProps) {
   return (
@@ -43,10 +41,7 @@ export function DashboardGrid({
         </div>
       </header>
 
-      <section
-        aria-label="Market Data"
-        className="min-w-0 md:col-span-8"
-      >
+      <section aria-label="Market Data" className="min-w-0 md:col-span-8">
         <MultiTimeframeGrid pair={pair} />
       </section>
 
@@ -55,7 +50,6 @@ export function DashboardGrid({
         className="flex min-w-0 flex-col gap-6 md:col-span-4"
       >
         {loopStatusPanel}
-        {queueCard}
         {leaderboardPreview}
       </aside>
     </div>

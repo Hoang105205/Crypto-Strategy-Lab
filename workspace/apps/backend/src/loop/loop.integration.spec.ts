@@ -747,26 +747,32 @@ class InMemoryLoopPrisma {
   private control = controlRow();
 
   readonly searchLoopControl = {
-    upsert: jest.fn(
-      ({ update }: { update: Partial<PrismaControl> }) => {
-        this.control = {
-          ...this.control,
-          ...update,
-          updatedAt: new Date(),
-        };
-        return Promise.resolve({ ...this.control });
-      },
-    ),
-    update: jest.fn(
-      ({ data }: { data: Partial<PrismaControl> }) => {
-        this.control = {
-          ...this.control,
-          ...data,
-          updatedAt: new Date(),
-        };
-        return Promise.resolve({ ...this.control });
-      },
-    ),
+    findUnique: jest.fn(() => Promise.resolve({ ...this.control })),
+    create: jest.fn(({ data }: { data: Partial<PrismaControl> }) => {
+      this.control = {
+        ...this.control,
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      return Promise.resolve({ ...this.control });
+    }),
+    upsert: jest.fn(({ update }: { update: Partial<PrismaControl> }) => {
+      this.control = {
+        ...this.control,
+        ...update,
+        updatedAt: new Date(),
+      };
+      return Promise.resolve({ ...this.control });
+    }),
+    update: jest.fn(({ data }: { data: Partial<PrismaControl> }) => {
+      this.control = {
+        ...this.control,
+        ...data,
+        updatedAt: new Date(),
+      };
+      return Promise.resolve({ ...this.control });
+    }),
     updateMany: jest.fn(
       ({
         where,

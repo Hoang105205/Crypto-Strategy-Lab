@@ -2,6 +2,7 @@ import type {
   Candle,
   Signal,
   IStrategy,
+  IStrategyAnalysisSession,
   ICombiner,
 } from '@crypto-strategy-lab/shared';
 import { StrategyType, SignalAction } from '@crypto-strategy-lab/shared';
@@ -59,6 +60,52 @@ export class CompositeStrategy implements IStrategy {
     this.children.push(strategy);
   }
 
+  createAnalysisSession(): IStrategyAnalysisSession {
+    const childSessions = this.children.map((child) => ({
+      child,
+      session: child.createAnalysisSession?.(),
+      candles: [] as Candle[],
+    }));
+    return {
+      next: async (candle) => {
+        if (childSessions.length === 0) {
+          return {
+            action: SignalAction.HOLD,
+            confidence: 0,
+            metadata: { reason: 'No child strategies configured in composite' },
+          };
+        }
+        const childSignals = await Promise.all(
+          childSessions.map(async ({ child, session, candles }) => {
+            candles.push(candle);
+            const signal = session
+              ? await session.next(candle)
+              : typeof child.analyzeAsync === 'function'
+                ? await child.analyzeAsync(candles)
+                : child.analyze(candles);
+            return {
+              ...signal,
+              metadata: {
+                ...signal.metadata,
+                strategyName: child.getName(),
+                strategyType: child.getType(),
+              },
+            };
+          }),
+        );
+        const combinedSignal = this.combiner.combine(childSignals);
+        return {
+          ...combinedSignal,
+          metadata: {
+            ...combinedSignal.metadata,
+            compositeName: this.name,
+            childSignals,
+          },
+        };
+      },
+    };
+  }
+
   analyze(candles: Candle[]): Signal {
     if (!this.children || this.children.length === 0) {
       return {
@@ -102,9 +149,10 @@ export class CompositeStrategy implements IStrategy {
     }
 
     const childSignalPromises = this.children.map(async (child) => {
-      const sig = typeof child.analyzeAsync === 'function'
-        ? await child.analyzeAsync(candles)
-        : child.analyze(candles);
+      const sig =
+        typeof child.analyzeAsync === 'function'
+          ? await child.analyzeAsync(candles)
+          : child.analyze(candles);
 
       return {
         ...sig,

@@ -6,7 +6,9 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import { LoopStatus, type SearchLoopConfig } from '@crypto-strategy-lab/shared';
+import type { ValidatedEnvironment } from '../config/environment';
 import { LoopStatusService } from './loop-status.service';
 import {
   SearchLoopControlRepository,
@@ -25,14 +27,24 @@ export class SearchLoopSupervisorService
   private readonly logger = new Logger(SearchLoopSupervisorService.name);
   private readonly ownerId = randomUUID();
   private running = false;
+  private lastObservedEnabled: boolean | null = null;
 
   constructor(
     private readonly controls: SearchLoopControlRepository,
     private readonly loop: StrategyLoopService,
     private readonly status: LoopStatusService,
+    private readonly config: ConfigService<ValidatedEnvironment, true>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    const seed = await this.controls.seedIfAbsent(
+      this.config.get('SEARCH_LOOP_DEFAULT_ENABLED'),
+    );
+    if (seed.seeded) {
+      this.logger.log(
+        `Seeded Search Loop automation desired state as ${seed.state.enabled ? 'ON' : 'OFF'}`,
+      );
+    }
     await this.runOnce();
   }
 
@@ -66,6 +78,9 @@ export class SearchLoopSupervisorService
   }
 
   private async ensureDesiredState(now: Date): Promise<void> {
+    const desiredState = await this.controls.get();
+    this.logDesiredStateTransition(desiredState.enabled);
+
     const leaseUntil = addMilliseconds(now, SEARCH_LOOP_SUPERVISOR_LEASE_MS);
     const control = await this.controls.tryAcquireLease(
       this.ownerId,
@@ -140,6 +155,18 @@ export class SearchLoopSupervisorService
       this.logger.warn(
         `Could not start automated Search Loop; retrying in ${backoffMs}ms`,
       );
+    }
+  }
+
+  private logDesiredStateTransition(enabled: boolean): void {
+    if (this.lastObservedEnabled === enabled) return;
+    this.lastObservedEnabled = enabled;
+
+    const message = `Search Loop automation desired state is ${enabled ? 'ON' : 'OFF'}`;
+    if (enabled) {
+      this.logger.log(message);
+    } else {
+      this.logger.warn(message);
     }
   }
 }

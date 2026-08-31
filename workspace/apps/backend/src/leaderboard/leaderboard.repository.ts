@@ -97,22 +97,6 @@ export class LeaderboardRepository {
     return result.count;
   }
 
-  async rerank(): Promise<void> {
-    await this.prisma.$transaction(async (transaction) => {
-      const entries = await transaction.leaderboardEntry.findMany();
-      const ranked = [...entries].sort((left, right) =>
-        this.scoringPolicy.compare(left, right),
-      );
-
-      for (const [index, entry] of ranked.entries()) {
-        await transaction.leaderboardEntry.update({
-          where: { id: entry.id },
-          data: { rank: index + 1 },
-        });
-      }
-    });
-  }
-
   async getTopK(
     criterion: RankingCriterion,
     viewerUserId: string | null = null,
@@ -120,6 +104,18 @@ export class LeaderboardRepository {
   ): Promise<LeaderboardEntryPayload[]> {
     const visibility = resolveVisibility(scope, viewerUserId);
     if (visibility.kind === 'empty') return [];
+    if (
+      '$queryRaw' in this.prisma &&
+      typeof this.prisma.$queryRaw === 'function'
+    ) {
+      const entries = await this.prisma.$queryRaw<PrismaLeaderboardEntry[]>(
+        buildTopKQuery(criterion, visibility, this.topK),
+      );
+      return entries.map((entry, index) => this.map(entry, index + 1));
+    }
+
+    // Unit-test and lightweight adapter fallback. Production Prisma always exposes
+    // $queryRaw and therefore uses the bounded PostgreSQL query above.
     const entries = await this.prisma.leaderboardEntry.findMany({
       where: visibility.where,
     });
@@ -232,7 +228,11 @@ export class LeaderboardRepository {
 }
 
 type LeaderboardVisibility =
-  | { kind: 'query'; where: Prisma.LeaderboardEntryWhereInput }
+  | {
+      kind: 'query';
+      where: Prisma.LeaderboardEntryWhereInput;
+      sql: Prisma.Sql;
+    }
   | { kind: 'empty' };
 
 function resolveVisibility(
@@ -241,11 +241,19 @@ function resolveVisibility(
 ): LeaderboardVisibility {
   switch (scope) {
     case LeaderboardScope.SYSTEM:
-      return { kind: 'query', where: { userId: null } };
+      return {
+        kind: 'query',
+        where: { userId: null },
+        sql: Prisma.sql`"userId" IS NULL`,
+      };
     case LeaderboardScope.MINE:
       return viewerUserId === null
         ? { kind: 'empty' }
-        : { kind: 'query', where: { userId: viewerUserId } };
+        : {
+            kind: 'query',
+            where: { userId: viewerUserId },
+            sql: Prisma.sql`"userId" = ${viewerUserId}`,
+          };
     case LeaderboardScope.COMBINED:
       return {
         kind: 'query',
@@ -253,9 +261,64 @@ function resolveVisibility(
           viewerUserId === null
             ? { userId: null }
             : { OR: [{ userId: null }, { userId: viewerUserId }] },
+        sql:
+          viewerUserId === null
+            ? Prisma.sql`"userId" IS NULL`
+            : Prisma.sql`("userId" IS NULL OR "userId" = ${viewerUserId})`,
       };
     default:
       return assertNever(scope);
+  }
+}
+
+function buildTopKQuery(
+  criterion: RankingCriterion,
+  visibility: Extract<LeaderboardVisibility, { kind: 'query' }>,
+  topK: number,
+): Prisma.Sql {
+  const order = rankingOrderSql(criterion);
+  return Prisma.sql`
+    WITH "bestPerVersion" AS (
+      SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY "strategyVersionId"
+        ORDER BY ${order}
+      ) AS "versionRank"
+      FROM "LeaderboardEntry"
+      WHERE ${visibility.sql}
+    )
+    SELECT
+      "id", "userId", "rank", "strategyVersionId", "strategyName",
+      "strategyType", "isComposite", "backtestResultId", "score",
+      "totalReturn", "winRate", "maxDrawdown", "sharpeRatio",
+      "totalTrades", "executedAt", "createdAt", "updatedAt"
+    FROM "bestPerVersion"
+    WHERE "versionRank" = 1
+    ORDER BY ${order}
+    LIMIT ${topK}
+  `;
+}
+
+function rankingOrderSql(criterion: RankingCriterion): Prisma.Sql {
+  const scoreTieBreak = Prisma.sql`
+    ROUND("score"::numeric, 4) DESC,
+    "sharpeRatio" DESC,
+    ABS("maxDrawdown") ASC,
+    "executedAt" ASC,
+    "backtestResultId" ASC
+  `;
+  switch (criterion) {
+    case RankingCriterion.SCORE:
+      return scoreTieBreak;
+    case RankingCriterion.TOTAL_RETURN:
+      return Prisma.sql`"totalReturn" DESC, ${scoreTieBreak}`;
+    case RankingCriterion.WIN_RATE:
+      return Prisma.sql`"winRate" DESC, ${scoreTieBreak}`;
+    case RankingCriterion.MAX_DRAWDOWN:
+      return Prisma.sql`ABS("maxDrawdown") ASC, ${scoreTieBreak}`;
+    case RankingCriterion.SHARPE_RATIO:
+      return Prisma.sql`"sharpeRatio" DESC, ${scoreTieBreak}`;
+    default:
+      return assertNever(criterion);
   }
 }
 

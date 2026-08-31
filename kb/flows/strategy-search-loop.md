@@ -2,7 +2,7 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-28
+> **Last Updated**: 2026-08-31
 
 ## 1. Overview
 - **Description**: Continuous global system search — generate candidate strategies, backtest them via the queue, evaluate them, and feed the best result into the next iteration. This flow records the 2026-08-18 decision that the loop is a system process, not a route- or user-owned process.
@@ -14,12 +14,13 @@
 - At least one `IStrategyGenerator` implementation is registered (`RandomGenerator` at minimum; `DomainGuidedGenerator` optional for MVP).
 - `IBacktester` and `IEvaluator` are available through the Strategy Engine module.
 - Redis is reachable, the BullMQ backtest worker is running, and historical market data is available for the configured pair and timeframe.
-- `SearchLoopControl(id="system")` persists `enabled=true` plus bounded run/restart configuration. The loop lifecycle is not derived from the current browser route, authenticated viewer, or leaderboard Live updates preference.
+- `SearchLoopControl(id="system")` persists the ON/OFF desired state plus bounded run/restart configuration. If the row is missing at bootstrap, it is created once from `SEARCH_LOOP_DEFAULT_ENABLED`; after that, the database is authoritative.
+- Global mutations require a verified Supabase user whose UUID is in `SEARCH_LOOP_OPERATOR_USER_IDS`; an absent or empty allowlist denies all mutations.
 - At most one global `SearchLoopRun` is active. It has no `userId` ownership and is not partitioned per user.
 
 ## 3. Flow Steps
-1. **Operator enables automation once** — authenticated `POST /api/loop/control/enable` persists `enabled=true`, the rolling-window configuration, per-run bounds, and cooldown in PostgreSQL.
-2. **Supervisor maintains desired state** — at bootstrap and every 15 seconds, one instance atomically acquires/renews the singleton lease. If there is no active run and `nextRunAt` is due, it computes dates ending at the latest closed timeframe boundary and calls `StrategyLoopService.start`.
+1. **Backend materializes initial desired state** — before its first supervisor tick, the backend creates the singleton row only if absent. A new database uses `SEARCH_LOOP_DEFAULT_ENABLED`; an existing row is never overwritten by the environment. Concurrent backends tolerate the unique-key race and adopt the winning row.
+2. **Supervisor maintains desired state** — at bootstrap and every 15 seconds, one instance atomically acquires/renews the singleton lease. If desired state is ON, there is no active run, and `nextRunAt` is due, it computes dates ending at the latest closed timeframe boundary and calls `StrategyLoopService.start`. Allowlisted operators may persist later ON/OFF changes through the control API.
 3. **The service requests a candidate** — it calls the Strategy Engine `SearchEngine` facade and treats generator implementations as interchangeable behind `IStrategyGenerator`.
 4. **Candidate is durably submitted** — the service generates `jobId` and `correlationId`, awaits `IJobQueue.enqueue` with `source: "SEARCH_LOOP"`, `userId: null`, and the global `loopRunId`, then publishes observational `BacktestRequested` after Redis acceptance.
 5. **Worker executes the standard pipeline** — Job Queue Worker calls Market Data, `IBacktester`, and `IEvaluator`, then publishes `BacktestCompleted` or terminal `BacktestFailed`.
@@ -43,7 +44,7 @@
 - Neither state sends `POST /api/loop/*`, changes `SearchLoopRun`, disconnects the shared socket, or changes loop event delivery used by other consumers.
 
 ### System/operator lifecycle intervention
-- Deployment, recovery, or an authorized operational action may start, stop, or replace a global run according to system policy. Any retained lifecycle endpoints/status values are operational compatibility surfaces, not end-user controls and not ownership boundaries.
+- Deployment, recovery, or an authorized operational action may start, pause, resume, stop, or replace a global run according to system policy. Every lifecycle and desired-state mutation endpoint uses `SearchLoopOperatorGuard`; anonymous callers receive 401 and authenticated non-operators receive 403. Read-only status endpoints remain optional-auth operational views.
 
 ### Domain-Guided generation
 - The service may use `DomainGuidedGenerator` instead of `RandomGenerator`; the swap is opaque behind `IStrategyGenerator` and does not change global ownership.
@@ -67,6 +68,7 @@
 ### NestJS restarts mid-loop
 - Waiting/delayed jobs remain in Redis and stalled jobs recover through BullMQ.
 - The persisted ON state remains unchanged. After the 60-second lease expires (or immediately after graceful lease release), the new supervisor closes a `RUNNING` record that has no local runtime context with `orphaned_after_restart`, waits the configured cooldown, and starts a fresh bounded run.
+- Graceful NestJS shutdown hooks release the owned lease immediately. Restart does not reapply the environment default when the control row already exists.
 - At-least-once BullMQ recovery still requires idempotent result persistence. The current process-local EventEmitter2 topology supports one NestJS application process; multi-process completion delivery requires a future cross-process event bus.
 
 ### Infrastructure temporarily prevents a new run
@@ -85,12 +87,15 @@
 - **BR-6**: At most one global run is active in MVP. This is a system-wide concurrency constraint, not a per-user quota.
 - **BR-7**: Continuation is bounded by configured candidate, duration, no-improvement, failure, and operational policies; the service never relies on a browser session to make progress or stop safely.
 - **BR-8**: A candidate counts as tested only after terminal completion/failure. Persisted immutable strategy versions preserve reproducibility across loop iterations.
-- **BR-9**: `enabled=true` is persistent desired state, not the status of one run. It survives restart and causes successive bounded runs until an authenticated disable call persists `enabled=false`.
+- **BR-9**: `enabled=true` is persistent desired state, not the status of one run. It survives restart and causes successive bounded runs until an operator-authorized disable call persists `enabled=false`.
 - **BR-10**: At most one supervisor owns the PostgreSQL lease. A run created concurrently with disable is immediately stopped if the enable claim can no longer be committed.
+- **BR-11**: `SEARCH_LOOP_DEFAULT_ENABLED` is a bootstrap default only. Missing row → environment value; existing row → database value. Environment changes never reactivate an operator-disabled loop.
+- **BR-12**: The supervisor logs desired state only on the initial observation or an ON/OFF transition, not on every 15-second tick.
+- **BR-13**: Every global loop mutation requires an authenticated user ID in `SEARCH_LOOP_OPERATOR_USER_IDS`. The list is comma-separated UUIDs; empty means deny all. Authentication alone is insufficient.
 
 ## 8. Related
 - **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`, `kb/contracts/auth.yaml` (`SearchLoopRun` explicitly excluded from user data scoping)
-- **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0013 (BullMQ/Redis), ADR-0016 (app-level user data filtering; loop excluded), ADR-0017 (Persistent Supervisor for 24/7 Search Loop)
+- **ADRs**: ADR-0005 (Event-Driven Communication), ADR-0006 (Job Queue + Worker), ADR-0013 (BullMQ/Redis), ADR-0016 (app-level user data filtering; loop excluded), ADR-0017 (Persistent Supervisor for 24/7 Search Loop), ADR-0018 (Database-authoritative desired-state bootstrap), ADR-0019 (deny-by-default Search Loop operator allowlist)
 - **Module files**: `kb/modules/event-infrastructure.md`, `kb/modules/strategy-engine.md`
 - **Related flows**: `kb/flows/strategy-backtest.md` (single-backtest pipeline), `kb/flows/leaderboard-update.md` (system result ranking and cross-route client reconciliation), `kb/flows/composite-with-sentiment.md` (sentiment-based search candidates)
 - **Decision source**: `plans/new-requirements-summary.md` (2026-08-18 global system-loop decision)

@@ -37,7 +37,6 @@ interface LeaderboardRepositoryApi {
   findByBacktestResultId(
     backtestResultId: string,
   ): Promise<LeaderboardEntryPayload | null>;
-  rerank(): Promise<void>;
   getTopK(
     criterion: RankingCriterion,
     viewerUserId?: string | null,
@@ -275,7 +274,7 @@ describe('LeaderboardRepository contract (T022)', () => {
       }) as unknown as jest.Mocked<PrismaService>;
     });
 
-    it('inserts a unique backtestResultId as a rank-zero projection pending rerank', async () => {
+    it('inserts a unique backtestResultId as a rank-zero stored projection', async () => {
       const input = createInput();
       const stored = row({ ...input, rank: 0, winRate: input.winRate });
       createMock.mockResolvedValue(stored);
@@ -321,7 +320,7 @@ describe('LeaderboardRepository contract (T022)', () => {
       expect(outcomes.filter((outcome) => outcome !== null)).toHaveLength(1);
     });
 
-    it('assigns complete deterministic global ranks with all tie-breaks and identity fallback', async () => {
+    it('assigns deterministic read-time ranks with all tie-breaks and identity fallback', async () => {
       const earliest = row({
         id: 'entry-b',
         backtestResultId: 'result-b',
@@ -365,28 +364,17 @@ describe('LeaderboardRepository contract (T022)', () => {
         earliest,
         identityFirst,
       ]);
-      updateMock.mockImplementation(({ where, data }) => {
-        const current = [
-          earliest,
-          identityFirst,
-          later,
-          lowerSharpe,
-          lowerScore,
-        ].find(({ id }) => id === where.id);
-        return Promise.resolve({ ...current!, rank: data.rank });
-      });
       const repository = new Repository(prisma);
 
-      await repository.rerank();
-
-      expect(updateMock.mock.calls.map(([call]) => call)).toEqual([
-        { where: { id: identityFirst.id }, data: { rank: 1 } },
-        { where: { id: earliest.id }, data: { rank: 2 } },
-        { where: { id: later.id }, data: { rank: 3 } },
-        { where: { id: lowerSharpe.id }, data: { rank: 4 } },
-        { where: { id: lowerScore.id }, data: { rank: 5 } },
-      ]);
-      expect(transactionMock).toHaveBeenCalledTimes(1);
+      await expect(repository.getTopK(RankingCriterion.SCORE)).resolves.toEqual(
+        [
+          { ...payload(identityFirst), rank: 1 },
+          { ...payload(earliest), rank: 2 },
+          { ...payload(later), rank: 3 },
+          { ...payload(lowerSharpe), rank: 4 },
+          { ...payload(lowerScore), rank: 5 },
+        ],
+      );
     });
 
     it('keeps a valid non-Top-K row persisted and addressable by result identity', async () => {
@@ -486,6 +474,28 @@ describe('LeaderboardRepository contract (T022)', () => {
       ).resolves.toHaveLength(3);
     });
 
+    it('uses a bounded PostgreSQL window query in production Prisma', async () => {
+      const stored = row({ rank: 99, strategyVersionId: 'version-a' });
+      const queryRaw = jest.fn().mockResolvedValue([stored]);
+      const broadFindMany = jest.fn();
+      const repository = new Repository({
+        $queryRaw: queryRaw,
+        leaderboardEntry: { findMany: broadFindMany },
+      } as unknown as PrismaService);
+
+      await expect(repository.getTopK(RankingCriterion.SCORE)).resolves.toEqual(
+        [{ ...payload(stored), rank: 1 }],
+      );
+
+      expect(broadFindMany).not.toHaveBeenCalled();
+      const query = queryRaw.mock.calls[0]?.[0] as Prisma.Sql;
+      const sql = query.strings.join(' ');
+      expect(sql).toContain('ROW_NUMBER() OVER');
+      expect(sql).toContain('PARTITION BY "strategyVersionId"');
+      expect(sql).toContain('WHERE "versionRank" = 1');
+      expect(sql).toContain('LIMIT');
+    });
+
     it('looks up the best local projection for detail composition by strategyVersionId', async () => {
       const strategyVersionId = randomUUID();
       const worse = row({
@@ -522,7 +532,6 @@ describe('LeaderboardRepository contract (T022)', () => {
         createInput({ backtestResultId: stored.backtestResultId }),
       );
       await repository.findByBacktestResultId(stored.backtestResultId);
-      await repository.rerank();
       await repository.getTopK(RankingCriterion.SCORE);
       await repository.findBestByStrategyVersionId(stored.strategyVersionId);
       await repository.getUpdatedAt();
