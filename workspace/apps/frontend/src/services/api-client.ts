@@ -218,6 +218,9 @@ export interface StrategyCatalogItem {
   name: string;
   type: string;
   parameters: Record<string, unknown>;
+  userId?: string | null;
+  isSystem?: boolean;
+  canDelete?: boolean;
 }
 
 export interface CreateCompositeStrategyRequest {

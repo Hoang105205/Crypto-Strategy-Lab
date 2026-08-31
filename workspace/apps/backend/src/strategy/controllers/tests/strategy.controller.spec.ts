@@ -140,15 +140,38 @@ describe('StrategyController', () => {
     );
   });
 
-  it('GET /api/strategies returns all registered strategies', async () => {
+  it('GET /api/strategies returns all registered strategies marked with isSystem and canDelete', async () => {
     const result = await controller.getAllStrategies(null);
 
     expect(result.length).toBeGreaterThanOrEqual(2);
-    expect(
-      (result as Array<{ name: string }>).some(
-        (strategy) => strategy.name === 'MovingAverage',
-      ),
-    ).toBe(true);
+    const ma = (result as Array<{ name: string; isSystem: boolean; canDelete: boolean }>).find(
+      (strategy) => strategy.name === 'MovingAverage',
+    );
+    expect(ma).toBeDefined();
+    expect(ma?.isSystem).toBe(true);
+    expect(ma?.canDelete).toBe(false);
+  });
+
+  it('DELETE /api/strategies/:name throws 403 for system strategies in DB or registry', async () => {
+    await expect(controller.deleteStrategy('MovingAverage', USER_ID)).rejects.toThrow(
+      "Cannot delete system strategy 'MovingAverage'",
+    );
+
+    versions.push({
+      id: randomUUID(),
+      userId: null,
+      strategyType: StrategyType.COMPOSITE,
+      name: 'SystemComposite',
+      version: 1,
+      parameters: {},
+      isComposite: true,
+      childVersionIds: [],
+      createdAt: new Date(),
+    });
+
+    await expect(controller.deleteStrategy('SystemComposite', USER_ID)).rejects.toThrow(
+      "Cannot delete system strategy 'SystemComposite'",
+    );
   });
 
   it('POST /api/strategies/composite registers and versions a composite', async () => {

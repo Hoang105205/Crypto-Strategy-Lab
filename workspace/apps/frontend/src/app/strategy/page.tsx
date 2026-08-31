@@ -233,12 +233,20 @@ export default function StrategyBuilderPage() {
   };
 
   const handleDeleteStrategy = async (strategyName: string) => {
+    const target = strategies.find((s) => s.name === strategyName);
+    if (target?.isSystem || target?.canDelete === false) {
+      alert(`Không thể xóa chiến lược hệ thống '${strategyName}'.`);
+      return;
+    }
+
     if (!confirm(`Bạn có chắc chắn muốn xóa chiến lược '${strategyName}' không?`)) return;
 
     try {
       await apiClient.deleteUserStrategy(strategyName);
-    } catch {
-      // Local fallback
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Không thể xóa chiến lược';
+      alert(message);
+      return;
     }
 
     setStrategies((prev) => prev.filter((s) => s.name !== strategyName));
@@ -324,10 +332,12 @@ export default function StrategyBuilderPage() {
                     name={strat.name}
                     type={strat.type}
                     parameters={strat.parameters}
+                    isSystem={strat.isSystem}
+                    canDelete={strat.canDelete}
                     isSelected={selectedStrategy?.name === strat.name}
                     onSelect={() => handleSelectStrategy(strat)}
                     onDelete={
-                      strat.type.toUpperCase() === 'COMPOSITE'
+                      strat.type.toUpperCase() === 'COMPOSITE' && !strat.isSystem && strat.canDelete !== false
                         ? () => handleDeleteStrategy(strat.name)
                         : undefined
                     }

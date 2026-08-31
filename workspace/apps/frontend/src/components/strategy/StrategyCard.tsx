@@ -6,6 +6,8 @@ export interface StrategyCardProps {
   name: string;
   type: string;
   parameters: Record<string, unknown>;
+  isSystem?: boolean;
+  canDelete?: boolean;
   isSelected?: boolean;
   onSelect?: () => void;
   onDelete?: () => void;
@@ -15,10 +17,13 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   name,
   type,
   parameters,
+  isSystem = false,
+  canDelete,
   isSelected = false,
   onSelect,
   onDelete,
 }) => {
+  const showDelete = Boolean(onDelete) && !isSystem && canDelete !== false;
   const getTypeBadgeColor = (t: string) => {
     switch (t.toUpperCase()) {
       case 'MA':
@@ -87,7 +92,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           >
             {type}
           </span>
-          {onDelete && (
+          {showDelete && (
             <button
               type="button"
               onClick={(e) => {

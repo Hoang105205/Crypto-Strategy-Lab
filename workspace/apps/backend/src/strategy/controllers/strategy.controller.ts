@@ -47,17 +47,25 @@ export class StrategyController {
       name: s.getName(),
       type: s.getType(),
       parameters: s.getParameters(),
+      userId: null as string | null,
+      isSystem: true,
+      canDelete: false,
     }));
 
     // 2. Get user strategies from DB (latest version per name)
     const dbVersions = await this.versioning.getAllVersions(userId);
     const latestVersions = new Map<string, any>();
     for (const v of dbVersions) {
+      const isSystem = v.userId === null;
+      const canDelete = !isSystem && Boolean(userId) && v.userId === userId;
       if (!latestVersions.has(v.name) || latestVersions.get(v.name).version < v.version) {
         latestVersions.set(v.name, {
           name: v.name,
           type: v.strategyType,
           parameters: v.parameters,
+          userId: v.userId ?? null,
+          isSystem,
+          canDelete,
         });
       }
     }
@@ -79,6 +87,20 @@ export class StrategyController {
     if (this.registry.has(name)) {
       throw new HttpException(`Cannot delete system strategy '${name}'`, HttpStatus.FORBIDDEN);
     }
+
+    const dbVersions = await this.versioning.getVersionsByName(name, userId);
+    if (dbVersions.length > 0) {
+      const isSystem = dbVersions.some((v) => v.userId === null);
+      if (isSystem) {
+        throw new HttpException(`Cannot delete system strategy '${name}'`, HttpStatus.FORBIDDEN);
+      }
+
+      const userOwned = dbVersions.every((v) => v.userId === userId);
+      if (!userOwned || !userId) {
+        throw new HttpException(`Cannot delete strategy belonging to another user`, HttpStatus.FORBIDDEN);
+      }
+    }
+
     // Note: User strategies in DB are immutable snapshots (ADR-0008).
     throw new HttpException(`Strategy deletion is not permitted`, HttpStatus.FORBIDDEN);
   }
