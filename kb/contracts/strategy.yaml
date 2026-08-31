@@ -2,6 +2,7 @@
 # Owner: Huy | Status: Active
 # This file is the Single Source of Truth for the Strategy Engine module's API.
 # See also: kb/modules/strategy-engine.md, ADR-0003, ADR-0008
+# Reviewed 2026-08-31 for authenticated user backtests and incremental analysis sessions.
 
 entities:
   BacktestConfig:
@@ -91,7 +92,17 @@ interfaces:
       - name: analyze
         args: "(candles: Candle[])"
         returns: "Signal"
-        description: "Analyze candle data and produce a BUY/SELL/HOLD signal"
+        description: "Compatibility/direct API: analyze accumulated candle data and produce a BUY/SELL/HOLD signal"
+      - name: analyzeAsync
+        args: "(candles: Candle[])"
+        returns: "Promise<Signal>"
+        optional: true
+        description: "Optional asynchronous compatibility analysis"
+      - name: createAnalysisSession
+        args: "()"
+        returns: "IStrategyAnalysisSession"
+        optional: true
+        description: "Preferred backtest path: create isolated per-run state advanced one candle at a time"
       - name: getName
         args: "()"
         returns: "string"
@@ -102,13 +113,21 @@ interfaces:
         args: "()"
         returns: "Record<string, any>"
 
+  IStrategyAnalysisSession:
+    description: "Isolated per-backtest incremental strategy state; sessions must not be shared across runs"
+    methods:
+      - name: next
+        args: "(candle: Candle)"
+        returns: "Signal | Promise<Signal>"
+        description: "Advance indicators with exactly one chronological candle and return the current signal"
+
   IBacktester:
     description: "Backtesting execution — simulates a strategy over historical candles"
     methods:
       - name: run
         args: "(strategy: IStrategy, candles: Candle[], config: BacktestConfig)"
-        returns: "Trade[]"
-        description: "Replay candles, simulate trades based on strategy signals"
+        returns: "Promise<Trade[]>"
+        description: "Replay candles chronologically; prefer an isolated incremental session and use the accumulated-prefix API only as a compatibility fallback"
 
   IEvaluator:
     description: "Computes evaluation metrics from raw backtest trades"
@@ -150,25 +169,28 @@ interfaces:
 endpoints:
   - method: GET
     path: /api/strategies
-    description: "List all registered strategies with their parameters"
+    auth: "Optional SupabaseJwtGuard; system strategies plus caller-visible user strategies"
+    description: "List the caller-visible strategy catalog with parameters"
     response:
-      type: "StrategyVersion[]"
-      example: '[{ id, strategyType, name, version, parameters, isComposite }]'
+      type: "{ name: string, type: StrategyType, parameters: JSONB, version?: number, isComposite?: boolean }[]"
 
   - method: DELETE
     path: /api/strategies/:name
-    description: "Delete a specific strategy from the registry"
+    auth: "Optional SupabaseJwtGuard"
+    description: "Compatibility endpoint; system registry entries and immutable user snapshots cannot be deleted"
     response:
-      type: "{ message: string }"
+      type: "403 Forbidden"
 
   - method: GET
     path: /api/strategies/:id
+    auth: "Optional SupabaseJwtGuard; lookup is scoped to system plus current user"
     description: "Get a specific strategy version by ID"
     response:
       type: "StrategyVersion"
 
   - method: POST
     path: /api/strategies/composite
+    auth: "SupabaseJwtGuard + RequireAuth; anonymous callers receive 401"
     description: "Create a composite strategy from child strategies + combiner"
     request:
       childStrategyNames: "string[]"
@@ -176,10 +198,11 @@ endpoints:
       combinerWeights: "number[]?    # Required for WeightedScore"
       name: "string"
     response:
-      type: "StrategyVersion"
+      type: "{ message: string, strategy: { name: string, type: StrategyType, version: number } }"
 
   - method: POST
     path: /api/strategies/backtest
+    auth: "SupabaseJwtGuard + RequireAuth; anonymous callers receive 401"
     description: "Submit a backtest request (enqueued via job queue)"
     request:
       strategyName: "string"
@@ -192,17 +215,20 @@ endpoints:
       type: "{ jobId: string, status: 'queued' }"
       semantics: "202 is returned only after IJobQueue/BullMQ confirms Redis acceptance"
     errors:
+      - "401 UNAUTHORIZED"
       - "409 DUPLICATE_JOB_ID"
       - "503 QUEUE_UNAVAILABLE"
 
   - method: GET
     path: /api/strategies/backtest/:id
-    description: "Get backtest result by ID"
+    auth: "SupabaseJwtGuard + RequireAuth; result is filtered by the verified userId"
+    description: "Get the caller-owned backtest result by producer job ID"
     response:
       type: "BacktestResult"
 
   - method: GET
     path: /api/strategies/:id/versions
+    auth: "Optional SupabaseJwtGuard; versions are scoped to system plus current user"
     description: "List all versions of a strategy type"
     response:
       type: "StrategyVersion[]"

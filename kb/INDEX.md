@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
 > **Last Updated**: 2026-08-31
-> **Status**: Active — Persistent leased 24/7 Search Loop uses database-authoritative desired state and deny-by-default operator authorization
+> **Status**: Active — Database-authoritative 24/7 Search Loop, read-time bounded Leaderboard ranking, and incremental built-in backtesting are aligned with current implementation
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
@@ -37,4 +37,4 @@ read from here before generating any artifacts or code.
 - **Domain**: Crypto trading strategy analysis, composition, and evaluation
 - **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, CrawlerRule, SearchLoopRun, SearchLoopControl
 - **Modules**: Market Data (Hoàng), Strategy Engine (Huy), News & Sentiment (Thuận), Event Infrastructure (Phương — Event Bus + Job Queue + Leaderboard + Loop + Dashboard)
-- **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop (persistent 24/7 global process), News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update (cross-route safe invalidation + scoped REST reconciliation)
+- **Business Flows**: Realtime Market Data, Strategy Backtest (authenticated user path + incremental built-in analysis), Strategy Search Loop (persistent 24/7 global process), News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update (read-time Top-K + cross-route safe invalidation + disconnected-only REST reconciliation)

@@ -2,12 +2,12 @@
 
 > **Owner**: Phương
 > **Status**: Active
-> **Last Updated**: 2026-08-28
+> **Last Updated**: 2026-08-31
 
 ## 1. Overview
 - **Description**: When a backtest completes, the leaderboard persists the result and emits a privacy-safe `leaderboard:update` invalidation. An app-level provider owns live leaderboard state across client-side routes and refetches the caller-scoped REST snapshot when Live updates is ON.
 - **Primary Actor**: Event Infrastructure (triggered by `BacktestCompleted` event)
-- **Business Value**: Users watch strategy rankings evolve live without polling — this is the visual payoff of the entire generate → backtest → evaluate → rank loop (spec Section 21–23)
+- **Business Value**: Users watch strategy rankings evolve through WebSocket invalidation, with a bounded disconnected-only REST fallback — this is the visual payoff of the entire generate → backtest → evaluate → rank loop (spec Section 21–23)
 - **Modules Involved**: Event Infrastructure (Job Queue Worker, LeaderboardService, PushGateway), Strategy Engine (source of `BacktestCompleted`), Auth (current session/identity), Frontend (app-level live provider and route consumers)
 
 ## 2. Preconditions
@@ -24,17 +24,17 @@
 2. `LeaderboardService` (Observer) consumes the event — Event Infrastructure (internal)
 3. `LeaderboardService` checks idempotency — if a `LeaderboardEntry` with this `backtestResultId` already exists (duplicate event delivery), the handler exits without side effects
 4. `LeaderboardService` computes `score` from the metrics using the configured scoring formula (Business Rules, BR-2)
-5. Entry is inserted (or, for a re-run of an existing `strategyVersionId`, a new entry is inserted alongside the previous one — see Business Rules, BR-4) — Event Infrastructure → PostgreSQL
-6. The service computes the system-only Top-K used by the safe event. For REST, visibility is applied first and each caller-visible dataset is independently sorted, ranked `1..N`, timestamped, and trimmed to Top-K.
+5. Entry is inserted once with stored `rank = 0` (or, for a re-run of an existing `strategyVersionId`, a new entry is inserted alongside the previous one — see Business Rules, BR-4). The stored rank is intentionally non-authoritative; the write path performs no survivor updates — Event Infrastructure → PostgreSQL.
+6. The service queries the bounded system-only Top-K used by the safe event. For REST, visibility is applied first and each caller-visible dataset is independently reduced to the best result per strategy version, sorted, ranked `1..N`, timestamped, and limited to Top-K at read time.
 7. `LeaderboardUpdated` is published using the existing `kb/contracts/events.yaml` wire shape. Its namespace-wide payload is privacy-safe: `topK` is system-only and a private trigger uses `triggeredByBacktestResultId: null`.
 8. `PushGateway` relays the event on the existing `leaderboard:update` channel. The event is a safe invalidation signal, not an authoritative per-viewer snapshot; no room, socket-auth handshake, namespace, or client-side privacy filter is introduced.
-9. If Live updates is ON, the app-level provider's one handler refetches the relevant leaderboard REST snapshot with the current session even when Dashboard is not mounted. Race/watermark protection prevents an older request from overwriting a newer snapshot.
+9. If Live updates is ON, the app-level provider's one handler refetches the relevant leaderboard REST snapshot with the current session even when Dashboard is not mounted. While the WebSocket is disconnected, the provider additionally reconciles maintained projections through REST every 15 seconds and stops that interval after reconnection or when Live is turned OFF. Race/watermark protection prevents an older request from overwriting a newer snapshot.
 10. Route consumers render the provider cache. For viewer A, that cache may contain only system entries plus A's private entries; anonymous cache may contain only system entries. Existing sort/selection is preserved when still visible.
 
 ## 4. Postconditions
 - Exactly one `LeaderboardEntry` exists for the triggering `backtestResultId` (no duplicates, even under repeated event delivery)
 - The event's `topK` matches the current system-only Top-K. Private rows remain persisted but never appear in the namespace-wide payload.
-- Every client with Live updates ON either reconciles through caller-scoped REST after invalidation or does so after reconnect; a client with Live updates OFF keeps its frozen snapshot.
+- Every client with Live updates ON reconciles through caller-scoped REST after invalidation, every 15 seconds while disconnected, and once after reconnect; a client with Live updates OFF keeps its frozen snapshot.
 - Client-side navigation does not duplicate the handler, reset the Live updates preference, or couple the preference to Dashboard mount state.
 - The leaderboard is queryable by any of the supported sort criteria without re-running any backtest
 - Every returned entry has a currently valid source result whose `strategyVersionId` and `userId` agree with the denormalized projection.
@@ -77,14 +77,15 @@
 - The backtest itself is not considered failed — `BacktestResult` still exists and is viewable individually; only its leaderboard placement is affected
 - This is treated as a contract violation and should not occur once `kb/contracts/events.yaml` and `kb/contracts/strategy.yaml` are reconciled (see open question in `kb/modules/event-infrastructure.md`)
 
-### Database write fails during entry upsert
+### Database write fails during entry insert
 - Step 5 fails (e.g., transient DB error) — the handler logs the error and does not publish `LeaderboardUpdated`
 - No retry is attempted from within the event handler (Observer handlers are fire-and-forget); the leaderboard will simply reflect this result on the *next* successful `BacktestCompleted` for the same strategy, or an operator can be alerted via logs
 - This remains a process-local Event Bus limitation. BullMQ persists jobs, not the domain event log; a future durable `IEventBus` adapter is required for event replay.
 
 ### Frontend WebSocket disconnected
-- `PushGateway` has no active connection for a client — the broadcast is simply not received by that client (no error, no retry queue for offline clients)
-- On reconnect while Live updates is ON, the app-level provider keeps exactly one handler and refetches the caller-scoped REST snapshot using the current session.
+- `PushGateway` has no active connection for a client — the broadcast is simply not received by that client (no error, no retry queue for offline clients).
+- While disconnected and Live updates is ON, the app-level provider reconciles the maintained caller-scoped REST projections every 15 seconds. The interval is cleared when the socket reconnects, Live is turned OFF, the viewer is unresolved, or the provider unmounts.
+- On reconnect while Live updates is ON, the app-level provider keeps exactly one handler and immediately refetches the caller-scoped REST snapshot using the current session.
 - On reconnect while Live updates is OFF, it does not reattach the leaderboard handler, refetch solely for live reconciliation, or mutate the frozen snapshot. The shared socket may reconnect for other infrastructure consumers without changing this preference.
 
 ### Scoped REST refetch fails or completes after identity changes
@@ -93,7 +94,7 @@
 
 ### Source result/version was deleted manually
 - `LeaderboardEntry.strategyVersionId` and `backtestResultId` are logical ID references, not database foreign keys, so a direct Supabase deletion does not cascade immediately.
-- On backend startup and every five minutes, `LeaderboardService` validates each projection through Strategy Engine's public `IBacktestResultPort`. A missing result, mismatched strategy version, or mismatched owner confirms an orphan; that entry is deleted and surviving rows are reranked.
+- On backend startup and every five minutes, `LeaderboardService` validates each projection through Strategy Engine's public `IBacktestResultPort`. A missing result, mismatched strategy version, or mismatched owner confirms an orphan; only that entry is deleted. Surviving rows are not updated because rank is computed on the next read.
 - If the public port throws or is temporarily unavailable, the check is inconclusive and the entry is retained. REST reads independently exclude an invalid source, so stale data is not shown while cleanup is pending.
 
 ### Tie in ranking
@@ -113,6 +114,8 @@
 - **BR-11**: The app-level provider below Auth/Infrastructure owns the Live updates preference, leaderboard cache, request generation, and exactly one event handler across client-side navigation. Page-level hooks/components consume that state and do not register competing handlers.
 - **BR-12**: The browser-persisted user choice is authoritative. No stored choice defaults to OFF. OFF freezes the last valid snapshot across navigation, reload, browser restart, and reconnect; ON invalidation, reload, re-enable, and reconnect reconcile through REST with the current session. Neither state controls the global search loop.
 - **BR-13**: `LeaderboardEntry.strategyVersionId` and `backtestResultId` are cross-module logical references with no Prisma relation or database FK. Lifecycle consistency is enforced by public-port validation plus startup/five-minute cleanup; only confirmed orphans are deleted.
+- **BR-14**: Persisted `LeaderboardEntry.rank` is non-authoritative and remains `0` on insert. Every system/caller projection assigns contiguous ranks only at read time after visibility filtering, best-per-version selection, deterministic ordering, and Top-K limiting. Insert and cleanup paths never update all surviving rows.
+- **BR-15**: WebSocket invalidation is the primary Live-update mechanism. A 15-second REST reconciliation interval runs only while Live is ON and the infrastructure socket is disconnected; it stops on reconnect or OFF.
 
 ## 8. Related
 - **Contracts**: `kb/contracts/events.yaml`, `kb/contracts/strategy.yaml`, `kb/contracts/auth.yaml`

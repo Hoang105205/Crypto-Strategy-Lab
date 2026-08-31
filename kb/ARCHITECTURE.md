@@ -34,14 +34,14 @@ Modules depend on shared interfaces only — never on each other's implementatio
 ## Technology Stack
 | Layer | Technology | Version | Notes |
 |-------|-----------|---------|-------|
-| Frontend | Next.js (TypeScript) | 15.x | App router dashboard, real-time via WebSocket, `lightweight-charts` for candlesticks |
+| Frontend | Next.js (TypeScript) | 16.3.x | App router dashboard, real-time via WebSocket, `lightweight-charts` for candlesticks |
 | Backend | NestJS (TypeScript) | 11.x | Each NestJS module maps to a domain module. Built-in DI, EventEmitter2, WebSocket Gateway |
 | Database | PostgreSQL + Prisma | 16 / 6.x | Type-safe ORM, JSONB for flexible strategy params. Connection pooling |
 | Module communication | EventEmitter2 | n/a (NestJS built-in) | In-process typed event bus behind `IEventBus` interface (ADR-0005). Swap to Redis Pub/Sub later |
 | Backtest queue | BullMQ + Redis | 5.x / 7.x | Durable `backtest` queue behind `IJobQueue`; priorities, retries, locks, and job retention (ADR-0013) |
 | Extensibility | Strategy Registry + Adapter Pattern | n/a | Plugin arch for strategies (ADR-0003), adapters for data sources (ADR-0004) |
 | Sentiment service | Python FastAPI | 0.115+ | Isolated process (ADR-0009); frontend never touches it directly. VADER sentiment model |
-| Testing | Jest (backend) + Vitest (frontend) | 29.x / 2.x | Unit tests for business logic, integration tests for API endpoints |
+| Testing | Jest (backend) + Vitest (frontend) | 30.x / 2.x | Unit tests for business logic, integration tests for API endpoints |
 | Monorepo | Turborepo | 2.x | `apps/backend` + `apps/frontend` + `libs/shared`. One `npm install`, one CI pipeline |
 
 ## Source Code Structure
@@ -88,7 +88,7 @@ crypto-strategy-lab/
 │           └── events/                  # Event type definitions
 ├── kb/                                  # Knowledge Base
 ├── sdd_artifacts/                       # Per-feature SDD artifacts
-├── docker-compose.yml                   # PostgreSQL + Redis (Redis AOF enabled for BullMQ)
+├── docker-compose.yml                   # Local Redis for BullMQ; PostgreSQL is configured through DATABASE_URL (Supabase in current development)
 ├── package.json                         # Monorepo root
 ├── turbo.json                           # Turborepo config
 └── README.md
@@ -117,11 +117,11 @@ crypto-strategy-lab/
 1. User request → Strategy Engine; Loop Controller calls the `SearchEngine` Facade to request candidate strategies (`RANDOM` or `DOMAIN_GUIDED`). The producer generates `jobId` + `correlationId`, awaits `IJobQueue.enqueue()`, and receives confirmation only after BullMQ stores the prioritized job in Redis.
 2. After durable enqueue, the producer publishes `BacktestRequested` as an observational notification (`source=USER` or `source=SEARCH_LOOP`); the queue does not subscribe to this Event. A BullMQ Worker then claims the Redis job.
 3. Worker calls `IMarketDataService.getCandlesRange()` to fetch historical candles
-4. Worker calls `IBacktester.run(strategy, candles, config)` → produces `Trade[]`
+4. Worker calls `IBacktester.run(strategy, candles, config)` → built-in strategies use an isolated incremental analysis session (`next(candle)`) while compatible plugins may receive the accumulated prefix array → produces `Trade[]`
 5. Worker calls `IEvaluator.evaluate(trades, capital)` → produces `EvaluationMetrics`
 6. Worker persists `BacktestResult` and publishes `BacktestCompleted` with metrics; on terminal failure it publishes `BacktestFailed` exactly once
-7. Leaderboard subscribes → persists the nullable-owner entry → publishes `LeaderboardUpdated` with system-only Top-K
-8. WebSocket Gateway relays the existing payload as a safe invalidation; while ON, the app-level provider below Auth/Infrastructure refetches caller-scoped REST with the current session even off Dashboard
+7. Leaderboard subscribes → performs one nullable-owner insert with non-authoritative stored rank 0 → computes bounded rank/Top-K on read → publishes `LeaderboardUpdated` with system-only Top-K
+8. WebSocket Gateway relays the existing payload as a safe invalidation; while ON, the app-level provider below Auth/Infrastructure refetches caller-scoped REST with the current session even off Dashboard. If the socket is disconnected, one 15-second REST reconciliation interval runs until reconnection.
 9. Before A → B or A → anonymous renders, the provider clears the prior cache and invalidates old requests. The explicit browser-local ON/OFF choice survives navigation/reload/restart; absence defaults OFF. It freezes only the client view and never controls the global loop.
 
 > See `kb/flows/strategy-backtest.md` and `kb/flows/strategy-search-loop.md` for full flows.
@@ -147,10 +147,10 @@ crypto-strategy-lab/
 ### Development (W1–W4)
 - **Backend**: NestJS dev server (`npm run dev:backend`) — runs on `localhost:3001`
 - **Frontend**: Next.js dev server (`npm run dev:frontend`) — runs on `localhost:3000`
-- **Database**: PostgreSQL via `docker-compose up` — runs on `localhost:5432`
+- **Database**: PostgreSQL through `DATABASE_URL`; the current development template uses hosted Supabase PostgreSQL rather than a Compose PostgreSQL service
 - **Queue store**: Redis via `docker-compose up` — runs on `localhost:6379` with AOF persistence
 - **Sentiment Service**: Python FastAPI (`python -m uvicorn app:app`) — runs on `localhost:8000`
-- **All application processes plus Redis/PostgreSQL** run locally. Turborepo orchestrates application startup; Docker Compose provides infrastructure.
+- **Application processes and Redis** run locally. PostgreSQL is currently managed by Supabase. Turborepo/npm scripts start the applications; Docker Compose provides Redis only.
 
 ### Production (if deployed for demo)
 - **Option A (simplest)**: Single VPS running all processes via `docker-compose` (NestJS + Next.js + PostgreSQL + Redis + Python)
