@@ -1,5 +1,7 @@
 # Agent Learn Index
 
+- [Gemini LLM Selector Discovery - 2026-08-31](lessons/gemini-crawler-selector-discovery-2026-08-31.md): Google Gemini 2.5 Flash REST API integration for automated CSS selector discovery, 10s AbortController SLA timeout, structured JSON prompt parsing, and seamless graceful fallback to Cheerio semantic DOM heuristics.
+
 - [Split Leaderboard Boxes Phase 5 - 2026-08-25](lessons/split-leaderboard-boxes-phase-5-2026-08-25.md): reusable projection-state cards, source-scoped detail race rejection, vertical ranking composition with mobile source order, public leaderboard middleware policy, and accessible independent UI states.
 
 - [Split Leaderboard Boxes Phase 4 - 2026-08-25](lessons/split-leaderboard-boxes-phase-4-2026-08-25.md): projection-keyed v2 cache, maintained Combined plus scoped reads, one-listener invalidation, independent projection state, identity-generation race rejection, and scoped consumer adapters.

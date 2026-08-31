@@ -59,3 +59,18 @@ export interface ManualCrawlResult {
   message: string;
 }
 
+export interface DiscoveredRule {
+  domain: string;
+  targetUrl: string;
+  containerSelector: string;
+  titleSelector: string;
+  contentSelector: string;
+  linkSelector: string;
+  dateSelector: string;
+}
+
+export interface GeminiDiscoveryConfig {
+  apiKey?: string;
+  model?: string;
+  timeoutMs?: number;
+}

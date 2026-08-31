@@ -24,6 +24,8 @@
 | `INewsProvider` | Abstraction interface returning unified format (`RawArticle`) from any source | Adapter Interface | `apps/backend/src/news/providers/news.provider.interface.ts` |
 | `RSSProvider` | Fetches and parses crypto news from public RSS feeds (CoinDesk, CoinTelegraph, Decrypt) | Adapter | `apps/backend/src/news/providers/rss.provider.ts` |
 | `WebCrawlerProvider` | High-performance adaptive crawler using cached DB selectors and fast HTML parsing | Adapter + Cache | `apps/backend/src/news/providers/crawler.provider.ts` |
+| `CrawlerDiscoveryService` | Orchestrates CSS selector discovery and self-healing across registered domains | Discovery & Self-Healing | `apps/backend/src/news/services/crawler-discovery.service.ts` |
+| `GeminiDiscoveryClient` | Communicates with Google Gemini API (Gemini 2.5 Flash) for structured JSON selector discovery with Cheerio heuristic fallback | AI Client / Fallback | `apps/backend/src/news/services/gemini-discovery.client.ts` |
 | `CrawlerRule` | Persistent database entity storing LLM-discovered CSS selectors per domain | SSoT Entity / Schema | `prisma/schema.prisma` |
 | `NewsCollectorCron` | Scheduled cron job to collect, normalize, deduplicate, and store news every 5 minutes (`*/5 * * * *`) | Scheduler / Cron | `apps/backend/src/news/cron/news-collector.cron.ts` |
 | `NewsController` | Exposes REST APIs: `GET /api/news`, `GET /api/sentiment/aggregate` (with breakdown ratios), `POST /api/news/crawl` (with 120s cooldown & mutex lock) | Controller | `apps/backend/src/news/news.controller.ts` |
@@ -106,13 +108,14 @@
 - **Integration**: Implements `IStrategy` interface and registers into `StrategyRegistry.register(NewsSentimentStrategy)` (ADR-0003).
 
 ### 5. LLM-Assisted Adaptive Web Crawler with Database Selector Caching & Self-Healing (ADR-0014)
-- **Where**: `apps/backend/src/news/providers/crawler.provider.ts` & `CrawlerRule` table.
+- **Where**: `apps/backend/src/news/providers/crawler.provider.ts`, `apps/backend/src/news/services/crawler-discovery.service.ts`, `apps/backend/src/news/services/gemini-discovery.client.ts` & `CrawlerRule` table.
 - **Why**: Solving the brittle selector problem of traditional web crawlers without incurring continuous LLM token costs or high scraping latency.
 - **How**:
-  1. *Discovery Tier*: When crawling a domain for the first time, a small HTML sample is passed to the LLM to identify the CSS selectors (`container`, `title`, `content`, `link`, `date`).
-  2. *Cache Tier*: Discovered selectors are persisted in PostgreSQL (`CrawlerRule`).
-  3. *Execution Tier*: Daily cron runs query the cached `CrawlerRule` from the database and perform ultra-fast, zero-token HTML parsing using `cheerio` (<50ms).
-  4. *Self-Healing Tier*: If cached selectors extract 0 articles (indicating a website layout update), an automatic LLM re-discovery event is triggered to heal the DB rule.
+  1. *Discovery Tier (Gemini LLM)*: When crawling a new domain or encountering an unknown layout, an HTML sample is sent to `GeminiDiscoveryClient` (Google Gemini 2.5 Flash API) to analyze the DOM structure and extract semantic CSS selectors (`container`, `title`, `content`, `link`, `date`) in structured JSON format.
+  2. *Graceful Heuristic Fallback*: If `GEMINI_API_KEY` is not provided, or if the Gemini API request times out (>10s) / fails (429/5xx), `CrawlerDiscoveryService` gracefully degrades to semantic Cheerio DOM heuristics without interrupting the ingestion pipeline.
+  3. *Cache Tier*: Discovered selectors are persisted in PostgreSQL (`CrawlerRule`).
+  4. *Execution Tier*: Daily/periodic cron runs query the cached `CrawlerRule` from the database and perform ultra-fast, zero-token HTML parsing using `cheerio` (<50ms).
+  5. *Self-Healing Tier*: If cached selectors extract 0 articles (indicating a website layout redesign), an automatic LLM re-discovery event is triggered to heal the DB rule.
 
 ---
 
@@ -122,7 +125,7 @@
 2. **On-Demand Ingestion**: User or operator hits `POST /api/news/crawl`. Backend verifies the 120s cooldown timer and mutex lock. If cooldown is violated, it returns `429 Too Many Requests` with `retryAfterSeconds`; if another crawl is running, it returns `409 Conflict`.
 3. `NewsService` queries all active `INewsProvider` implementations (`RSSProvider`, `WebCrawlerProvider`).
 4. For web crawler sources, `WebCrawlerProvider` retrieves active `CrawlerRule` records from PostgreSQL.
-5. If a rule exists, it parses raw HTML via `cheerio` and extracts articles; if not, it triggers LLM selector discovery, saves the rule to DB, and extracts articles.
+5. If a rule exists and extracts articles, it parses raw HTML via `cheerio`; if not, `CrawlerDiscoveryService` triggers `GeminiDiscoveryClient` (with Cheerio heuristic fallback), saves the discovered rule to DB, and extracts articles.
 6. Providers return standardized `RawArticle[]` with dynamically tagged `relatedCoins` (or `GENERAL`).
 7. `NewsService` deduplicates articles by URL/hash, assigns `crawledAt` timestamp, and saves unique records to PostgreSQL.
 8. `NewsService` sends article text to `SentimentClient` for Python VADER ML analysis.
@@ -133,7 +136,7 @@
 
 ## 5. Sequence Diagrams
 
-### Adaptive Web Crawler & Sentiment Pipeline (Scheduled + On-Demand)
+### 1. Adaptive Web Crawler & Sentiment Pipeline (Scheduled + On-Demand)
 
 ```text
 User / Cron      NewsController       NewsService         WebCrawlerProvider       FastAPI (VADER)      PostgreSQL DB
@@ -150,6 +153,26 @@ User / Cron      NewsController       NewsService         WebCrawlerProvider    
     │                   │<──9. saved count─│                                                                  │
     │<──10. 200 OK──────│                  │                                                                  │
     │   {success, count}│                  │                                                                  │
+```
+
+### 2. LLM Selector Discovery & Self-Healing Flow (Gemini + Cheerio Fallback)
+
+```text
+WebCrawlerProvider     CrawlerDiscoveryService     GeminiDiscoveryClient      Google Gemini API       PostgreSQL DB
+        │                         │                          │                        │                     │
+        │──1. crawlDomain(rule)──>│                          │                        │                     │
+        │   (extracts 0 items)    │                          │                        │                     │
+        │──2. repairSelectors()──>│                          │                        │                     │
+        │                         │──3. discoverSelectors()─>│                        │                     │
+        │                         │                          │──4. POST /v1beta/...──>│                     │
+        │                         │                          │     (DOM snippet)      │                     │
+        │                         │                          │<──5. JSON Selectors────│                     │
+        │                         │                          │   (or fallback error)                        │
+        │                         │<──6. DiscoveredRule──────│                                              │
+        │                         │   (Gemini or Cheerio)    │                                              │
+        │                         │──7. upsert CrawlerRule in DB───────────────────────────────────────────>│
+        │<──8. return healed rule─│                                                                         │
+        │──9. re-parse with rule─>│                                                                         │
 ```
 
 ---
@@ -176,7 +199,8 @@ See `kb/contracts/news.yaml`.
 
 ## 8. Quality Attributes
 - **Extensibility**: Adding new news providers requires 1 adapter class implementing `INewsProvider`. Adding new web portals requires 0 code changes (auto-discovered via LLM and cached in DB).
-- **Cost & Performance Efficiency**: 99%+ reduction in LLM costs via Database Selector Caching; parsing runs in <50ms with Cheerio.
+- **Cost & Performance Efficiency**: 99%+ reduction in LLM costs via Database Selector Caching; regular parsing runs in <50ms with Cheerio without calling LLM.
+- **AI Resilience & Graceful Fallback**: `GeminiDiscoveryClient` uses Google Gemini API (Gemini 2.5 Flash) with strict 10s timeout. If API key is missing or service is unavailable, it gracefully degrades to Cheerio DOM heuristics.
 - **Rate-Limiting & Anti-Spam (120s Cooldown)**: `POST /api/news/crawl` enforces a 2-minute cooldown on both backend (in-memory timestamp check + HTTP 429) and frontend UI (OP.GG-style countdown timer with `localStorage` persistence).
 - **Concurrency Safety (Mutex Lock)**: An in-memory mutex flag ensures only one crawling job executes at any given time, rejecting duplicate concurrent triggers with HTTP `409 Conflict`.
 - **Reliability & Graceful Degradation**: If Python service is down, `SentimentClient` returns neutral score (`0`), and `NewsSentimentStrategy` outputs `HOLD`, keeping main charts and trading loop safe.
@@ -184,7 +208,7 @@ See `kb/contracts/news.yaml`.
 ---
 
 ## 9. Testing Strategy
-- **Unit tests**: Test provider normalization to `RawArticle`; test LLM selector parser fallback; test `NewsSentimentStrategy` signal thresholds (>0.X BUY, <-0.X SELL).
+- **Unit tests**: Test provider normalization to `RawArticle`; test `GeminiDiscoveryClient` structured parsing & Cheerio fallback; test `NewsSentimentStrategy` signal thresholds (>0.X BUY, <-0.X SELL).
 - **Integration tests**: Test composite strategies combining `MA + RSI + NewsSentimentStrategy`.
 
 ---
@@ -192,5 +216,5 @@ See `kb/contracts/news.yaml`.
 ## 10. Open Questions / TODOs
 - [x] Complete module structure & component definitions.
 - [x] Specify Adaptive Crawler Architecture with Selector Caching (ADR-0014).
-- [ ] Implement `CrawlerRule` Prisma migration in backend.
-- [ ] Connect Gemini LLM endpoint for selector discovery.
+- [x] Implement `CrawlerRule` Prisma migration in backend.
+- [ ] Connect Gemini LLM endpoint for selector discovery (Planned in SDD feature `gemini-crawler-selector-discovery`).
