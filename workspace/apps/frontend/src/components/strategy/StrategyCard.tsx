@@ -97,7 +97,7 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete();
+                onDelete?.();
               }}
               title="Delete strategy"
               className="text-[10px] font-extrabold text-[#f6465d] bg-[#f6465d]/10 hover:bg-[#f6465d]/20 border border-[#f6465d]/30 rounded-md uppercase tracking-wider transition-colors"
