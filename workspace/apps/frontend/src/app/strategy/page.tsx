@@ -167,7 +167,6 @@ export default function StrategyBuilderPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error';
       alert(`Failed to create composite: ${message}`);
-      setActiveTab('catalog');
     } finally {
       setIsLoading(false);
     }
