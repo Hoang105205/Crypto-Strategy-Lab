@@ -25,7 +25,7 @@ authenticated userId to other modules via a decorator.**
 | `SupabaseJwtGuard` | `auth/supabase-jwt.guard.ts` | Guard | Verifies Supabase JWT from Authorization header. Fetches JWKS (cached). Attaches `userId` to `request.user`. |
 | `RequireAuth` | `auth/require-auth.guard.ts` | Guard | Companion guard — rejects if `userId` is null. Use after `SupabaseJwtGuard` for protected routes. |
 | `@CurrentUser()` | `auth/current-user.decorator.ts` | Parameter Decorator | Extracts `userId` from `request.user`. Returns `string | null`. |
-| `AuthController` | `auth/auth.controller.ts` | Controller | Debug endpoint `GET /api/auth/me` — returns current user profile. |
+| `AuthController` | `auth/auth.controller.ts` | Controller | `@Controller('api/auth')`. `GET /api/auth/me` (debug profile) + `POST /api/auth/logout` (JWT-guarded logout acknowledgement; logs userId, returns `{ message }`). |
 | `AuthModule` | `auth/auth.module.ts` | Module | Registers guard, decorator, controller. Exports nothing — guards are used directly. |
 
 ### Frontend (Next.js)
@@ -38,6 +38,7 @@ authenticated userId to other modules via a decorator.**
 | Register page | `app/register/page.tsx` | Email/password form — calls `supabase.auth.signUp()` |
 | API client update | `services/api-client.ts` | Attaches `Authorization: Bearer <token>` from Supabase session |
 | ProtectedRoute | `components/auth/protected-route.tsx` | Client-side fallback — redirects to /login if unauthenticated |
+| UserNavSection | `components/auth/user-nav-section.tsx` | Far-right top-nav profile section — shows current user's display name/email (avatar-initials chip) and an accessible dropdown with **Log Out**. Logout calls `POST /api/auth/logout` best-effort, then `supabase.auth.signOut()`, then `router.replace('/login')`. Rendered by `AppShell`; renders nothing when anonymous and a placeholder while the session resolves. |
 | Middleware | `src/middleware.ts` | **Server-side route protection** — checks Supabase session cookie on every request, redirects to /login if no session. Protects ALL routes automatically. Exempts /login and /register. |
 
 ## 3. Design Patterns
@@ -103,8 +104,15 @@ Application tables that gain a `userId` column (nullable String):
 
 See `kb/contracts/auth.yaml` for full endpoint documentation.
 
-Note: Register, login, and logout are handled by Supabase Auth directly from the frontend.
-The backend only implements `GET /api/auth/me` for debugging.
+Note: Register and login are handled by Supabase Auth directly from the frontend.
+The backend implements `GET /api/auth/me` (debugging) and `POST /api/auth/logout`
+(a JWT-guarded acknowledgement that logs the userId and returns `{ message }`).
+Because Supabase JWTs are stateless and the backend holds no session store,
+`POST /api/auth/logout` does NOT revoke the token — authoritative session
+invalidation is `supabase.auth.signOut()` on the frontend (clears the refresh
+token + `@supabase/ssr` cookies). The frontend calls the endpoint best-effort and
+tolerates failure, then always signs out locally and redirects to `/login`
+(Constitution IV — no token denylist).
 
 ## 7. Quality Attributes
 

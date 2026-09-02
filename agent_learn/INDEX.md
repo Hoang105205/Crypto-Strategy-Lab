@@ -1,5 +1,7 @@
 # Agent Learn Index
 
+- [Current User Display and Logout - 2026-09-03](lessons/current-user-display-logout-2026-09-03.md): Far-right top-nav identity chip + accessible dropdown logout; `POST /api/auth/logout` as a JWT-guarded acknowledgement (no denylist per Constitution IV); `@Controller('auth')` → `api/auth` contract fix; stale `libs/shared/dist` rebuild clears cross-app tsc errors; module-graph mocking to keep Supabase env singleton out of Vitest.
+
 - [Immutable Strategy Enforcement - 2026-09-02](lessons/immutable-strategy-enforcement-2026-09-02.md): Strict enforcement of ADR-0008 strategy immutability by removing UI delete triggers, setting canDelete: false, and rejecting DELETE requests with HTTP 403 Forbidden.
 
 - [Gemini LLM Selector Discovery - 2026-08-31](lessons/gemini-crawler-selector-discovery-2026-08-31.md): Google Gemini 2.5 Flash REST API integration for automated CSS selector discovery, 10s AbortController SLA timeout, structured JSON prompt parsing, and seamless graceful fallback to Cheerio semantic DOM heuristics.
@@ -108,3 +110,4 @@ It is for agent read-only reference — do not modify manually unless you are up
 | 2026-08-17 | news-general-tagging-clean | [lessons/news-general-tagging-clean-2026-08-17.md](lessons/news-general-tagging-clean-2026-08-17.md) | Dynamic TradingPair coin extraction; explicit `GENERAL` fallback; React 19 pure effect data fetching; ESLint 9 0-warning compliance |
 | 2026-08-18 | news-sentiment-sync | [lessons/news-sentiment-sync-2026-08-18.md](lessons/news-sentiment-sync-2026-08-18.md) | Promise/Async support for Strategy interface; Worker robustness using this.stage(); fix deeply nested DI tests |
 | 2026-08-19 | remove-update-strategy-api | [lessons/remove-update-strategy-api-2026-08-19.md](lessons/remove-update-strategy-api-2026-08-19.md) | Enforce Immutability in Strategy Engine by removing in-place UI updates |
+| 2026-09-03 | current-user-display-logout | [lessons/current-user-display-logout-2026-09-03.md](lessons/current-user-display-logout-2026-09-03.md) | `@Controller('auth')`→`api/auth` contract fix; logout as JWT-guarded acknowledgement (Supabase `signOut()` is authoritative revocation, no denylist); rebuild stale `libs/shared/dist` before suspecting feature code for "no exported member" tsc errors; mock api-client + auth-context to keep Supabase env singleton out of Vitest; keep Log Out mounted (no `setIsOpen(false)`) so pending/disabled state is testable |
