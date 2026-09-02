@@ -57,7 +57,8 @@ export class StrategyController {
     const latestVersions = new Map<string, any>();
     for (const v of dbVersions) {
       const isSystem = v.userId === null;
-      const canDelete = !isSystem && Boolean(userId) && v.userId === userId;
+      // Per ADR-0008 (Immutable Snapshots), strategies can never be deleted
+      const canDelete = false;
       if (!latestVersions.has(v.name) || latestVersions.get(v.name).version < v.version) {
         latestVersions.set(v.name, {
           name: v.name,
@@ -101,8 +102,8 @@ export class StrategyController {
       }
     }
 
-    // Note: User strategies in DB are immutable snapshots (ADR-0008).
-    throw new HttpException(`Strategy deletion is not permitted`, HttpStatus.FORBIDDEN);
+    // Note: User strategies in DB are immutable snapshots (ADR-0008). Deletion is permanently forbidden.
+    throw new HttpException(`Strategy deletion is not permitted per ADR-0008 (Immutable Snapshots)`, HttpStatus.FORBIDDEN);
   }
 
   @Post('composite')

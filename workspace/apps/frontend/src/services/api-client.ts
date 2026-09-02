@@ -316,6 +316,9 @@ export const apiClient = {
     );
   },
 
+  /**
+   * @deprecated Strategy deletion is permanently prohibited per ADR-0008 (Immutable Snapshots).
+   */
   async deleteUserStrategy(strategyName: string): Promise<void> {
     await apiRequest(
       `/api/strategies/${encodeURIComponent(strategyName)}`,

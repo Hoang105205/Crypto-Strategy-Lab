@@ -172,6 +172,22 @@ describe('StrategyController', () => {
     await expect(controller.deleteStrategy('SystemComposite', USER_ID)).rejects.toThrow(
       "Cannot delete system strategy 'SystemComposite'",
     );
+
+    versions.push({
+      id: randomUUID(),
+      userId: USER_ID,
+      strategyType: StrategyType.COMPOSITE,
+      name: 'UserComposite',
+      version: 1,
+      parameters: {},
+      isComposite: true,
+      childVersionIds: [],
+      createdAt: new Date(),
+    });
+
+    await expect(controller.deleteStrategy('UserComposite', USER_ID)).rejects.toThrow(
+      'Strategy deletion is not permitted per ADR-0008 (Immutable Snapshots)',
+    );
   });
 
   it('POST /api/strategies/composite registers and versions a composite', async () => {

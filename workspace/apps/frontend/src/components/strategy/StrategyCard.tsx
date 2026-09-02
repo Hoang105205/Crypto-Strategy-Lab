@@ -17,13 +17,9 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   name,
   type,
   parameters,
-  isSystem = false,
-  canDelete,
   isSelected = false,
   onSelect,
-  onDelete,
 }) => {
-  const showDelete = Boolean(onDelete) && !isSystem && canDelete !== false;
   const getTypeBadgeColor = (t: string) => {
     switch (t.toUpperCase()) {
       case 'MA':
@@ -92,20 +88,6 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           >
             {type}
           </span>
-          {showDelete && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete?.();
-              }}
-              title="Delete strategy"
-              className="text-[10px] font-extrabold text-[#f6465d] bg-[#f6465d]/10 hover:bg-[#f6465d]/20 border border-[#f6465d]/30 rounded-md uppercase tracking-wider transition-colors"
-              style={{ padding: '0.25rem 0.5rem' }}
-            >
-              DELETE
-            </button>
-          )}
         </div>
       </div>
 
