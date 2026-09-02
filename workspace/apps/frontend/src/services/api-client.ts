@@ -251,6 +251,11 @@ export interface UserBacktestResult {
   trades?: unknown;
 }
 
+/** Response of POST /api/auth/logout — see kb/contracts/auth.yaml §endpoints. */
+export interface LogoutResponse {
+  message: string;
+}
+
 function parseLoopRun(raw: SearchLoopRunWire): SearchLoopRun {
   return {
     ...raw,
@@ -288,6 +293,16 @@ function parseCandle(raw: Candle): Candle {
 }
 
 export const apiClient = {
+  /**
+   * Logout acknowledgement (best-effort). Authoritative session invalidation is
+   * supabase.auth.signOut() on the frontend; callers MUST tolerate a rejection here
+   * (401/5xx/network) and still clear local state + redirect.
+   * See: kb/contracts/auth.yaml §endpoints, sdd_artifacts/current-user-display-logout
+   */
+  async logout(): Promise<LogoutResponse> {
+    return apiRequest<LogoutResponse>("/api/auth/logout", { method: "POST" });
+  },
+
   async getStrategies(): Promise<StrategyCatalogItem[]> {
     return apiRequest<StrategyCatalogItem[]>("/api/strategies");
   },
