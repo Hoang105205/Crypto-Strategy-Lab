@@ -1,0 +1,36 @@
+feature: current-user-display-logout
+description: |
+  Build a complete "Current User Display and Logout" feature (FE + BE).
+  FE: add a user profile section on the far-right of the top navigation bar that
+  displays the current logged-in user's name/email, plus a functional "Log Out"
+  button (next to the name or in a dropdown). Clean, modern UI/UX.
+  BE + Integration: create a backend endpoint (POST /api/auth/logout) to handle
+  session invalidation / token revocation securely; FE calls the logout endpoint,
+  clears local state/tokens (localStorage/cookies), and redirects to /login.
+created: 2026-09-02
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  design_loaded: true
+  modules_affected:
+    - Auth (Hoàng) — backend acknowledgement endpoint + contract update
+    - Frontend (shell: Phương) — top-bar user section, logout wiring
+  contracts_affected:
+    - kb/contracts/auth.yaml (POST /api/auth/logout, GET /api/auth/me)
+  related_adrs:
+    - ADR-0015 (Supabase Auth)
+    - ADR-0016 (app-level userId filtering)
+  key_constraint: >
+    Auth is Supabase-based with stateless JWTs verified via JWKS; the backend holds
+    no session store. Secure logout is driven by supabase.auth.signOut() (invalidates
+    refresh token + clears cookies). POST /api/auth/logout is a guarded acknowledgement
+    endpoint (Constitution IV Simplicity — no token denylist). Contract V: interface
+    change requires a contract + module-doc update.
