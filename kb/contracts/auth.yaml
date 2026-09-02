@@ -102,18 +102,33 @@ endpoints:
   - method: POST
     path: /api/auth/logout
     description: >
-      Logout. Handled by Supabase Auth (frontend calls supabase.auth.signOut()).
+      Logout acknowledgement. IMPLEMENTED in NestJS (AuthController, path `api/auth`).
+      Guarded by SupabaseJwtGuard + RequireAuth: verifies the Supabase JWT and logs the
+      userId for audit, then returns { message }. This endpoint does NOT revoke the
+      stateless JWT (no server session store; a token denylist is intentionally out of
+      scope per Constitution IV). Authoritative session invalidation is performed by the
+      frontend via supabase.auth.signOut(), which invalidates the refresh token at
+      Supabase and clears the @supabase/ssr cookies. The frontend calls this endpoint
+      best-effort BEFORE signOut() and tolerates any failure (never blocks logout).
+    guard: "@UseGuards(SupabaseJwtGuard, RequireAuth)"
+    request:
+      headers:
+        Authorization: "Bearer <supabase_access_token>"
+      body: none
     response:
-      type: "{ message: string }"
+      type: "{ message: string }"   # e.g. "Logged out successfully"
+    errors:
+      - "401 UNAUTHORIZED — missing, invalid, or expired token (frontend still signs out locally and redirects to /login)"
 
   - method: GET
     path: /api/auth/me
     description: >
       Get current user profile. Frontend reads from Supabase session, not from NestJS.
-      This endpoint exists for debugging/testing purposes.
+      This endpoint exists for debugging/testing purposes. IMPLEMENTED in NestJS
+      (AuthController, path `api/auth`).
     guard: "@UseGuards(SupabaseJwtGuard, RequireAuth)"
     response:
-      type: "{ id: UUID, email: string }"
+      type: "{ id: UUID }"
 
 # Data scoping rules — each module owner applies these to their own queries
 data_scoping:
