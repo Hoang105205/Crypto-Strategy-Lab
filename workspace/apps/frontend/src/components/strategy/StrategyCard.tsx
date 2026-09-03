@@ -6,6 +6,8 @@ export interface StrategyCardProps {
   name: string;
   type: string;
   parameters: Record<string, unknown>;
+  isSystem?: boolean;
+  canDelete?: boolean;
   isSelected?: boolean;
   onSelect?: () => void;
   onDelete?: () => void;
@@ -17,7 +19,6 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
   parameters,
   isSelected = false,
   onSelect,
-  onDelete,
 }) => {
   const getTypeBadgeColor = (t: string) => {
     switch (t.toUpperCase()) {
@@ -87,20 +88,6 @@ export const StrategyCard: React.FC<StrategyCardProps> = ({
           >
             {type}
           </span>
-          {onDelete && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              title="Delete strategy"
-              className="text-[10px] font-extrabold text-[#f6465d] bg-[#f6465d]/10 hover:bg-[#f6465d]/20 border border-[#f6465d]/30 rounded-md uppercase tracking-wider transition-colors"
-              style={{ padding: '0.25rem 0.5rem' }}
-            >
-              DELETE
-            </button>
-          )}
         </div>
       </div>
 

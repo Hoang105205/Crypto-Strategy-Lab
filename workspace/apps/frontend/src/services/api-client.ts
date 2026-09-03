@@ -218,6 +218,9 @@ export interface StrategyCatalogItem {
   name: string;
   type: string;
   parameters: Record<string, unknown>;
+  userId?: string | null;
+  isSystem?: boolean;
+  canDelete?: boolean;
 }
 
 export interface CreateCompositeStrategyRequest {
@@ -246,6 +249,11 @@ export interface UserBacktestJob {
 
 export interface UserBacktestResult {
   trades?: unknown;
+}
+
+/** Response of POST /api/auth/logout — see kb/contracts/auth.yaml §endpoints. */
+export interface LogoutResponse {
+  message: string;
 }
 
 function parseLoopRun(raw: SearchLoopRunWire): SearchLoopRun {
@@ -285,6 +293,16 @@ function parseCandle(raw: Candle): Candle {
 }
 
 export const apiClient = {
+  /**
+   * Logout acknowledgement (best-effort). Authoritative session invalidation is
+   * supabase.auth.signOut() on the frontend; callers MUST tolerate a rejection here
+   * (401/5xx/network) and still clear local state + redirect.
+   * See: kb/contracts/auth.yaml §endpoints, sdd_artifacts/current-user-display-logout
+   */
+  async logout(): Promise<LogoutResponse> {
+    return apiRequest<LogoutResponse>("/api/auth/logout", { method: "POST" });
+  },
+
   async getStrategies(): Promise<StrategyCatalogItem[]> {
     return apiRequest<StrategyCatalogItem[]>("/api/strategies");
   },
@@ -313,6 +331,9 @@ export const apiClient = {
     );
   },
 
+  /**
+   * @deprecated Strategy deletion is permanently prohibited per ADR-0008 (Immutable Snapshots).
+   */
   async deleteUserStrategy(strategyName: string): Promise<void> {
     await apiRequest(
       `/api/strategies/${encodeURIComponent(strategyName)}`,

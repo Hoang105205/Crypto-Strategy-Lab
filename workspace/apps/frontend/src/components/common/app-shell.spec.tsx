@@ -32,6 +32,12 @@ vi.mock("../../services/infrastructure-socket", () => ({
   disconnectInfrastructureSocket: disconnectInfrastructureSocketMock,
 }));
 
+// AppShell renders <UserNavSection /> in the header; stub it so the shell contract
+// stays testable without an AuthProvider/Supabase env. It has its own spec.
+vi.mock("../auth/user-nav-section", () => ({
+  UserNavSection: () => null,
+}));
+
 type Handler = (...args: unknown[]) => void;
 
 class FakeEmitter {

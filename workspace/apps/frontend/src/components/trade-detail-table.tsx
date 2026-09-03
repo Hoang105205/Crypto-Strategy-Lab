@@ -28,6 +28,21 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
   const wins = trades.filter((t) => t.pnl > 0).length;
   const losses = trades.filter((t) => t.pnl <= 0).length;
   const totalProfit = trades.reduce((sum, t) => sum + t.pnl, 0);
+  const winRate = trades.length > 0 ? (wins / trades.length) * 100 : 0;
+
+  let maxDrawdown = 0;
+  let peak = 0;
+  let currentBalance = 0;
+  for (const t of trades) {
+    currentBalance += t.pnl;
+    if (currentBalance > peak) {
+      peak = currentBalance;
+    }
+    const drawdown = peak - currentBalance;
+    if (drawdown > maxDrawdown) {
+      maxDrawdown = drawdown;
+    }
+  }
 
   const totalPages = Math.ceil(trades.length / TRADES_PER_PAGE);
   const startIndex = (currentPage - 1) * TRADES_PER_PAGE;
@@ -36,11 +51,11 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
   return (
     <div className="space-y-4">
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-lg bg-surface-card p-4">
           <div className="text-sm text-body-secondary">Win Rate</div>
-          <div className="text-xl font-bold text-body">
-            {((wins / trades.length) * 100).toFixed(1)}%
+          <div className={`text-xl font-bold ${winRate > 50 ? 'text-trading-up' : winRate < 50 ? 'text-trading-down' : 'text-body'}`}>
+            {winRate.toFixed(1)}%
           </div>
           <div className="text-xs text-body-secondary">
             {wins} wins / {losses} losses
@@ -53,6 +68,15 @@ export function TradeDetailTable({ trades }: TradeDetailTableProps) {
           </div>
           <div className="text-xs text-body-secondary">
             Cumulative Return
+          </div>
+        </div>
+        <div className="rounded-lg bg-surface-card p-4">
+          <div className="text-sm text-body-secondary">Max Drawdown</div>
+          <div className="text-xl font-bold text-trading-down">
+            -${maxDrawdown.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </div>
+          <div className="text-xs text-body-secondary">
+            Peak to Trough
           </div>
         </div>
         <div className="rounded-lg bg-surface-card p-4">

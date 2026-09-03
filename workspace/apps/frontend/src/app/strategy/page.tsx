@@ -167,7 +167,6 @@ export default function StrategyBuilderPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error';
       alert(`Failed to create composite: ${message}`);
-      setActiveTab('catalog');
     } finally {
       setIsLoading(false);
     }
@@ -232,20 +231,6 @@ export default function StrategyBuilderPage() {
     }
   };
 
-  const handleDeleteStrategy = async (strategyName: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa chiến lược '${strategyName}' không?`)) return;
-
-    try {
-      await apiClient.deleteUserStrategy(strategyName);
-    } catch {
-      // Local fallback
-    }
-
-    setStrategies((prev) => prev.filter((s) => s.name !== strategyName));
-    if (selectedStrategy?.name === strategyName) {
-      setSelectedStrategy(null);
-    }
-  };
 
   return (
     <div className="w-full min-h-screen strategy-builder-bg px-4 sm:px-8 pt-8 pb-24 font-sans flex flex-col items-center">
@@ -324,13 +309,9 @@ export default function StrategyBuilderPage() {
                     name={strat.name}
                     type={strat.type}
                     parameters={strat.parameters}
+                    isSystem={strat.isSystem}
                     isSelected={selectedStrategy?.name === strat.name}
                     onSelect={() => handleSelectStrategy(strat)}
-                    onDelete={
-                      strat.type.toUpperCase() === 'COMPOSITE'
-                        ? () => handleDeleteStrategy(strat.name)
-                        : undefined
-                    }
                   />
                 ))}
               </div>

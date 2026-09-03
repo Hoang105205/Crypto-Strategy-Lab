@@ -177,7 +177,7 @@ endpoints:
   - method: DELETE
     path: /api/strategies/:name
     auth: "Optional SupabaseJwtGuard"
-    description: "Compatibility endpoint; system registry entries and immutable user snapshots cannot be deleted"
+    description: "Permanently prohibited per ADR-0008; system registry entries and immutable user snapshots cannot be deleted to preserve composite dependencies and leaderboard reproducibility"
     response:
       type: "403 Forbidden"
 

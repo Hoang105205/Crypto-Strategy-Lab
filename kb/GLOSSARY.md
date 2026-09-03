@@ -40,6 +40,7 @@ in code, documentation, and communication.
 | NewsArticle | Standardized news data entity containing `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins`, `url` | News & Sentiment |
 | CrawlerRule | Database entity storing LLM-discovered CSS selectors (`container`, `title`, `content`, `link`, `date`) per domain for fast reusable parsing (ADR-0014) | News & Sentiment |
 | Adaptive Web Crawler | Intelligent web crawler that uses LLMs for semantic selector discovery and Cheerio for high-performance extraction with selector caching (ADR-0014) | News & Sentiment |
+| Gemini Discovery Client | AI client integrating Google Gemini 2.5 Flash API to semantically discover CSS selectors from HTML DOM trees with structured JSON output and Cheerio heuristic fallback | News & Sentiment |
 | Selector Caching | Architectural optimization persisting discovered CSS scraping rules in PostgreSQL to avoid recurring LLM token costs and latency | News & Sentiment |
 | Self-Healing Extraction | Fault recovery mechanism that automatically triggers LLM re-discovery when target website redesigns cause selector staleness | News & Sentiment |
 | NewsSentimentStrategy | Strategy plugin generating BUY/SELL/HOLD signals from news sentiment scores for composite strategies (e.g. `MA + RSI + News Sentiment`) | News & Sentiment, Strategy Engine |

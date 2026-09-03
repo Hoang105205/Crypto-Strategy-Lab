@@ -50,6 +50,17 @@ interfaces:
     methods:
       - analyzeText(text: string): Promise<SentimentResult>
 
+  GeminiDiscoveryClient:
+    methods:
+      - discoverSelectors(htmlSample: string, domain: string, targetUrl: string): Promise<DiscoveredRule>
+    config:
+      env_key: GEMINI_API_KEY
+      model: GEMINI_MODEL # default 'gemini-3.6-flash'
+      timeout_ms: 10000
+    fallback:
+      strategy: "Semantic Cheerio DOM Heuristics"
+      trigger: "API Key missing, network timeout (>10s), 429 rate limit, or 5xx service unavailable"
+
   IAdaptiveCrawler:
     methods:
       - discoverSelectors(htmlSample: string, domain: string): Promise<CrawlerRule>

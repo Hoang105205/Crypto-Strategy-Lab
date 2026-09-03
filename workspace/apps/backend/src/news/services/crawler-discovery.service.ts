@@ -1,44 +1,72 @@
 // CrawlerDiscoveryService — LLM-Assisted Semantic Selector Discovery & Self-Healing Service
-// Owner: Thuan | See: ADR-0014, kb/modules/news-sentiment.md Section 3
+// Owner: Thuan | See: ADR-0014, kb/modules/news-sentiment.md Section 3 & 8
 
 import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { PrismaService } from '../../database/prisma.service';
 import { CrawlerRule } from '@prisma/client';
+import { DiscoveredRule } from '@crypto-strategy-lab/shared';
+import { GeminiDiscoveryClient } from './gemini-discovery.client';
 
-export interface DiscoveredRule {
-  domain: string;
-  targetUrl: string;
-  containerSelector: string;
-  titleSelector: string;
-  contentSelector: string;
-  linkSelector: string;
-  dateSelector: string;
-}
+export type { DiscoveredRule };
 
 @Injectable()
 export class CrawlerDiscoveryService {
   private readonly logger = new Logger(CrawlerDiscoveryService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geminiClient: GeminiDiscoveryClient,
+  ) {}
 
   /**
-   * Discovers CSS selectors from an HTML sample using semantic DOM heuristic analysis
-   * with LLM structured reasoning fallback (ADR-0014 Tier 1).
+   * Discovers CSS selectors from an HTML sample using Gemini 2.5 Flash LLM
+   * with automatic Cheerio semantic DOM heuristic fallback (ADR-0014 Tier 1).
    */
   async discoverSelectors(
     htmlSample: string,
     domain: string,
     targetUrl: string,
   ): Promise<DiscoveredRule> {
-    await Promise.resolve();
+    if (!htmlSample || htmlSample.trim().length === 0) {
+      throw new Error(`Empty HTML content provided for domain ${domain}`);
+    }
+
     this.logger.log(
       `Starting CSS selector discovery for domain: ${domain} (${targetUrl})`,
     );
 
-    if (!htmlSample || htmlSample.trim().length === 0) {
-      throw new Error(`Empty HTML content provided for domain ${domain}`);
+    // Tier 1: Try Gemini LLM Discovery if API key is configured
+    if (this.geminiClient && this.geminiClient.isConfigured()) {
+      try {
+        const geminiDiscovered = await this.geminiClient.discoverSelectors(
+          htmlSample,
+          domain,
+          targetUrl,
+        );
+        return geminiDiscovered;
+      } catch (error) {
+        this.logger.warn(
+          `Gemini LLM discovery failed for ${domain} (${error.message}). Activating Cheerio semantic heuristic fallback.`,
+        );
+      }
     }
+
+    // Tier 1 Fallback: Cheerio Semantic DOM Heuristics
+    return this.discoverSelectorsWithHeuristics(htmlSample, domain, targetUrl);
+  }
+
+  /**
+   * Heuristic CSS Selector Discovery using Cheerio static DOM analysis
+   */
+  discoverSelectorsWithHeuristics(
+    htmlSample: string,
+    domain: string,
+    targetUrl: string,
+  ): DiscoveredRule {
+    this.logger.log(
+      `Executing Cheerio DOM heuristic analysis for ${domain}...`,
+    );
 
     const $ = cheerio.load(htmlSample);
 
@@ -165,7 +193,7 @@ export class CrawlerDiscoveryService {
     };
 
     this.logger.log(
-      `Discovered selectors for ${domain}: container="${matchedContainer}", title="${matchedTitle}"`,
+      `Discovered selectors for ${domain} via Cheerio: container="${matchedContainer}", title="${matchedTitle}"`,
     );
     return discovered;
   }
