@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
 > **Last Updated**: 2026-08-31
-> **Status**: Active — Gemini LLM Selector Discovery client with Cheerio heuristic fallback, on-demand crawl endpoint, and 3-color sentiment breakdown are documented and aligned across KB
+> **Status**: Active — Database-authoritative 24/7 Search Loop, read-time bounded Leaderboard ranking, incremental built-in backtesting, Gemini LLM Selector Discovery client with Cheerio heuristic fallback, on-demand crawl endpoint, and 3-color sentiment breakdown are documented and aligned across KB
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
