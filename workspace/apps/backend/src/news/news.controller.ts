@@ -153,5 +153,21 @@ export class NewsController {
       );
     }
   }
+
+  /**
+   * POST /api/news/rescore
+   * Re-score all historical articles that currently have score 0.0 or label NEUTRAL
+   * (useful when Python Sentiment Service was started after initial ingestion).
+   */
+  @Post('news/rescore')
+  async triggerRescore(@Query('limit') limitStr?: string) {
+    const limit = limitStr ? parseInt(limitStr, 10) || 300 : 300;
+    const result = await this.newsService.rescoreUnscoredNews(limit);
+    return {
+      success: true,
+      message: `Successfully re-scored ${result.rescoredCount} of ${result.processedCount} articles with live VADER model.`,
+      data: result,
+    };
+  }
 }
 

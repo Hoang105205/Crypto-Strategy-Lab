@@ -2,10 +2,10 @@
 
 > **Owner**: Thuận  
 > **Status**: Active  
-> **Last Updated**: 2026-08-25
+> **Last Updated**: 2026-09-03
 
 ## 1. Overview
-- **Responsibility**: Collect crypto news articles from external data providers (RSS multi-feeds and LLM-assisted adaptive web crawlers), normalize into a standardized news schema (`NewsArticle`), analyze sentiment via an isolated Python FastAPI ML service, and expose sentiment analysis both as a dashboard feed (with 24h sentiment breakdown ratios and on-demand crawl trigger with 2-minute cooldown anti-spam) and as a pluggable trading strategy (`NewsSentimentStrategy`).
+- **Responsibility**: Collect crypto news articles from external data providers (RSS multi-feeds and LLM-assisted adaptive web crawlers), normalize into a standardized news schema (`NewsArticle`), analyze sentiment via an isolated Python FastAPI ML service, and expose sentiment analysis both as a dashboard feed (with 24h sentiment breakdown ratios, on-demand crawl trigger with 2-minute cooldown anti-spam, and batch re-scoring for fallback articles) and as a pluggable trading strategy (`NewsSentimentStrategy`).
 - **Layer**: Backend (NestJS + Python FastAPI) + Frontend (Next.js `NewsFeed` component)
 - **Depends on**: Shared types + `IEventBus`
 - **Depended by**: Strategy Engine (via `NewsSentimentStrategy` registration in `StrategyRegistry`), Frontend (via REST API for News Feed, Sentiment Breakdown & On-demand Crawler Trigger)
@@ -28,7 +28,7 @@
 | `GeminiDiscoveryClient` | Communicates with Google Gemini API (Gemini 2.5 Flash) for structured JSON selector discovery with Cheerio heuristic fallback | AI Client / Fallback | `apps/backend/src/news/services/gemini-discovery.client.ts` |
 | `CrawlerRule` | Persistent database entity storing LLM-discovered CSS selectors per domain | SSoT Entity / Schema | `prisma/schema.prisma` |
 | `NewsCollectorCron` | Scheduled cron job to collect, normalize, deduplicate, and store news every 5 minutes (`*/5 * * * *`) | Scheduler / Cron | `apps/backend/src/news/cron/news-collector.cron.ts` |
-| `NewsController` | Exposes REST APIs: `GET /api/news`, `GET /api/sentiment/aggregate` (with breakdown ratios), `POST /api/news/crawl` (with 120s cooldown & mutex lock) | Controller | `apps/backend/src/news/news.controller.ts` |
+| `NewsController` | Exposes REST APIs: `GET /api/news`, `GET /api/sentiment/aggregate` (with breakdown ratios), `POST /api/news/crawl` (with 120s cooldown), `POST /api/news/rescore` (batch re-scoring) | Controller | `apps/backend/src/news/news.controller.ts` |
 | `NewsService` | High-level orchestrator for news ingestion, normalization, and sentiment enrichment | Service | `apps/backend/src/news/services/news.service.ts` |
 | `SentimentClient` | NestJS HTTP client connecting to isolated Python FastAPI service | Client / HTTP | `apps/backend/src/news/services/sentiment.client.ts` |
 | `FastAPI Sentiment App` | Python process running VADER sentiment analysis model | Process Isolation | `apps/sentiment/app.py`, `analyzer.py`, `models.py` |
