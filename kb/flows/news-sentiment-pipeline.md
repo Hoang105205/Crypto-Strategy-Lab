@@ -2,11 +2,11 @@
 
 > **Owner**: Thuận  
 > **Status**: Active  
-> **Last Updated**: 2026-08-25
+> **Last Updated**: 2026-09-03
 
 ## 1. Overview
 - **Description**: Crypto news articles are collected periodically via provider adapters (RSS multi-feeds and LLM-assisted adaptive web crawlers), normalized into a standard schema (`id, title, content, source, publishedAt, crawledAt, relatedCoins, url`), scored for sentiment by an isolated Python FastAPI ML service, stored in PostgreSQL, and fed into both the Next.js Frontend (with 24h sentiment breakdown ratios and an on-demand crawl button with a 2-minute cooldown anti-spam timer) and `NewsSentimentStrategy` for composite strategy creation (`MA + RSI + News Sentiment`).
-- **Primary Actor**: Cron Scheduler (5m) / On-Demand User Request (`POST /api/news/crawl`)
+- **Primary Actor**: Cron Scheduler (5m) / On-Demand User Request (`POST /api/news/crawl`, `POST /api/news/rescore`)
 - **Business Value**: Enriches market data with real-time news sentiment and provides a non-technical analysis signal source for composite trading strategies.
 - **Modules Involved**: News & Sentiment Module (NestJS + Python FastAPI), Strategy Engine (Consumer of `NewsSentimentStrategy`), Frontend (Consumer of News Feed REST API).
 
@@ -27,9 +27,9 @@
    - If another crawl execution is in-flight, return HTTP `409 Conflict`.
 3. **Decoupled Multi-Provider Ingestion**:
    - `NewsService` queries active `TradingPair` symbols from PostgreSQL.
-   - For `RSSProvider`: Fetches and parses live XML feeds from CoinDesk, CoinTelegraph, Decrypt.
+   - For `RSSProvider`: Fetches and parses live XML feeds from CoinDesk, CoinTelegraph, Decrypt (or environment override via `NEWS_RSS_FEEDS`).
    - For `WebCrawlerProvider`: Reads cached `CrawlerRule` from PostgreSQL. If rules exist, parses HTML via `cheerio` (<50ms); if missing or failing, triggers LLM selector discovery (ADR-0014), saves rule to DB, and extracts articles.
-4. **Normalize, Tag & Deduplicate**: Each provider converts raw items to `RawArticle` format and extracts matching coins from the active `TradingPair` list. Articles mentioning non-trading coins or macro economics are tagged with `relatedCoins: ['GENERAL']`. `NewsService` deduplicates articles by URL hash and assigns `crawledAt` timestamp.
+4. **Normalize, Tag & Deduplicate**: Each provider converts raw items to `RawArticle` format and extracts matching coins from the active `TradingPair` list using the `COIN_SYNONYMS` dictionary. Articles mentioning non-trading coins or macro economics are tagged with `relatedCoins: ['GENERAL']`. `NewsService` deduplicates articles by URL hash and assigns `crawledAt` timestamp.
 5. **Persist Raw Articles**: `NewsService` stores unique articles into PostgreSQL database.
 6. **Sentiment Scoring Request**: `NewsService` forwards article text (title + content summary) to `SentimentClient`.
 7. **ML Inference**: `SentimentClient` issues HTTP POST `/analyze` request to Python FastAPI ML service (500ms timeout).
@@ -57,6 +57,12 @@
 - Request calls NestJS `POST /api/news/crawl`.
 - `NewsService` executes full ingestion pipeline immediately, persists new articles, and returns `{ success: true, count: number }`.
 - Frontend automatically re-fetches news articles and aggregate mood without full page reload.
+
+### Automatic & On-Demand Fallback Re-scoring
+- When Python Sentiment Microservice is restarted after downtime:
+  1. During regular cron crawls or manual crawl triggers (`POST /api/news/crawl`), `NewsService` inspects existing duplicate articles. If an existing article has a fallback `0.0 / NEUTRAL` score, it automatically analyzes the article with Python VADER and updates the database.
+  2. Operators can also trigger batch re-scoring on demand via `POST /api/news/rescore?limit=300`.
+  3. Upon completion, in-memory aggregate sentiment caches are automatically cleared to reflect live compound sentiment immediately.
 
 ### Offset Pagination & Multi-Coin Load More (Frontend)
 - User opens Next.js News Feed (`app/news/page.tsx`).
