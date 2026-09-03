@@ -1,6 +1,6 @@
 # Module Boundaries
 
-> **Last Updated**: 2026-08-31
+> **Last Updated**: 2026-09-03
 
 ## Module Overview
 
@@ -9,7 +9,7 @@
 | **Auth** | **Hoàng** | **Supabase Auth integration — JWT verification guard, @CurrentUser() decorator, frontend session management** | **Backend (cross-cutting) + Frontend** | **Supabase Auth service** |
 | Market Data | Hoàng | Binance data ingestion, caching, real-time relay | Backend | Shared types |
 | Strategy Engine | Huy | Strategy registry, analysis, composition, backtesting, search | Backend | Shared interfaces (`IMarketDataService`, `IEventBus`, `IJobQueue`) |
-| News & Sentiment | Thuận | News collection, sentiment analysis (Python), sentiment strategy | Backend | Shared types + `IEventBus` |
+| News & Sentiment | Thuận | News collection (12-Factor RSS + Adaptive Web Crawler), sentiment analysis (Python VADER), auto-rescoring, sentiment strategy | Backend | Shared types + `IEventBus` |
 | Event Infrastructure | Phương | Event bus, BullMQ/Redis backtest queue, leaderboard, search loop, dashboard BFF | Backend | Shared interfaces (`IBacktester`, `IStrategyGenerator`, `IMarketDataService`) + Redis |
 | Frontend | All (shell: Phương) | Dashboard, builder, leaderboard, news feed; app-level cross-route leaderboard live state | Frontend | Auth session + REST + shared WebSocket infrastructure |
 
@@ -38,8 +38,8 @@
 - **Contracts**: `kb/contracts/strategy.yaml`
 
 ### News & Sentiment (Thuận)
-- **Scope**: `INewsProvider` adapters (RSS multi-feeds, LLM-assisted Adaptive Web Crawler with Selector Caching & Self-Healing per ADR-0014), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER per ADR-0009), NewsSentimentStrategy plugged into StrategyRegistry (returns HOLD when service is down)
-- **Exposes**: News + sentiment REST API, `NewsSentimentStrategy`, `CrawlerRule` configuration
+- **Scope**: `INewsProvider` adapters (12-Factor RSS multi-feeds, LLM-assisted Adaptive Web Crawler with Selector Caching & Self-Healing per ADR-0014, Data-Driven `COIN_SYNONYMS` dictionary), cron collection → normalize → dedupe → store, SentimentClient → isolated Python FastAPI (VADER per ADR-0009), auto re-scoring for fallback 0.0/NEUTRAL articles (`POST /api/news/rescore`), NewsSentimentStrategy plugged into StrategyRegistry (returns HOLD when service is down)
+- **Exposes**: News + sentiment REST API (`GET /api/news`, `GET /api/sentiment/aggregate`, `POST /api/news/crawl`, `POST /api/news/rescore`), `NewsSentimentStrategy`, `CrawlerRule` configuration
 - **Dependencies**: Shared types + `IEventBus`
 - **Module doc**: `kb/modules/news-sentiment.md`
 - **Contracts**: `kb/contracts/news.yaml`
