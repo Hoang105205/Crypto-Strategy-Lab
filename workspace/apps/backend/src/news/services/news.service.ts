@@ -162,6 +162,47 @@ export class NewsService {
           });
 
           if (existing) {
+            // If existing article has fallback 0.0/NEUTRAL score (e.g. from when Python service was offline), re-score it now!
+            if (
+              existing.sentimentScore === 0 ||
+              existing.sentimentLabel === 'NEUTRAL' ||
+              existing.sentimentScore === null
+            ) {
+              const textToAnalyze = `${raw.title}. ${raw.content || ''}`;
+              const sentimentResult =
+                await this.sentimentClient.analyzeText(textToAnalyze);
+
+              if (
+                sentimentResult.score !== 0.0 ||
+                sentimentResult.label !== SentimentLabel.NEUTRAL
+              ) {
+                const updated = await this.prisma.newsArticle.update({
+                  where: { id: existing.id },
+                  data: {
+                    sentimentScore: sentimentResult.score,
+                    sentimentLabel: sentimentResult.label,
+                  },
+                });
+
+                await this.prisma.sentimentScore.create({
+                  data: {
+                    articleId: existing.id,
+                    score: sentimentResult.score,
+                    label: sentimentResult.label,
+                    model: 'VADER',
+                    scoredAt: now,
+                  },
+                });
+
+                this.logger.log(
+                  `Re-scored existing article [${existing.id}]: ${existing.title} -> ${sentimentResult.label} (${sentimentResult.score})`,
+                );
+                reAnalyzedCount++;
+                savedArticles.push(updated as unknown as NewsArticle);
+                continue;
+              }
+            }
+
             this.logger.verbose(`Skipping existing article: ${raw.title}`);
             savedArticles.push(existing as unknown as NewsArticle);
             continue;
@@ -214,13 +255,15 @@ export class NewsService {
         }
       }
 
-      // Batch Re-scoring: scan and re-analyze historical articles lacking a VADER audit record
+      // Batch Re-scoring: scan and re-analyze historical articles lacking a VADER audit record or with 0.0/NEUTRAL fallback score
       try {
         const historicalUnscored = await this.prisma.newsArticle.findMany({
           where: {
             OR: [
-              { sentimentScores: { none: { model: 'VADER' } } },
+              { sentimentScore: 0 },
               { sentimentScore: null },
+              { sentimentLabel: 'NEUTRAL' },
+              { sentimentScores: { none: { model: 'VADER' } } },
             ],
           },
           take: 100, // Batch up to 100 historical articles per cycle
@@ -292,6 +335,79 @@ export class NewsService {
     } finally {
       this.isCrawling = false;
     }
+  }
+
+  /**
+   * Re-scores all historical articles that currently have score 0 or label NEUTRAL (e.g. when Python service was offline)
+   */
+  async rescoreUnscoredNews(limit: number = 300): Promise<{
+    processedCount: number;
+    rescoredCount: number;
+  }> {
+    const unscored = await this.prisma.newsArticle.findMany({
+      where: {
+        OR: [
+          { sentimentScore: 0 },
+          { sentimentScore: null },
+          { sentimentLabel: 'NEUTRAL' },
+        ],
+      },
+      take: limit,
+      orderBy: { publishedAt: 'desc' },
+    });
+
+    let rescoredCount = 0;
+    const now = new Date();
+    const CHUNK_SIZE = 15;
+
+    for (let i = 0; i < unscored.length; i += CHUNK_SIZE) {
+      const chunk = unscored.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async (item) => {
+          try {
+            const textToAnalyze = `${item.title}. ${item.content || ''}`;
+            const sentimentResult =
+              await this.sentimentClient.analyzeText(textToAnalyze);
+
+            await this.prisma.newsArticle.update({
+              where: { id: item.id },
+              data: {
+                sentimentScore: sentimentResult.score,
+                sentimentLabel: sentimentResult.label,
+              },
+            });
+
+            await this.prisma.sentimentScore.create({
+              data: {
+                articleId: item.id,
+                score: sentimentResult.score,
+                label: sentimentResult.label,
+                model: 'VADER',
+                scoredAt: now,
+              },
+            });
+
+            if (
+              sentimentResult.score !== 0.0 ||
+              sentimentResult.label !== SentimentLabel.NEUTRAL
+            ) {
+              rescoredCount++;
+            }
+          } catch {
+            // continue on single item error
+          }
+        }),
+      );
+    }
+
+    if (rescoredCount > 0) {
+      this.backtestCache.clear();
+      this.logger.log(
+        `Rescored ${rescoredCount}/${unscored.length} historical articles with real VADER compound scores.`,
+      );
+    }
+
+    return { processedCount: unscored.length, rescoredCount };
   }
 
   /**

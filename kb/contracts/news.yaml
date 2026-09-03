@@ -122,8 +122,20 @@ endpoints:
           retryAfterSeconds: number # Remaining seconds until next allowed crawl
       409:
         description: "Concurrent crawl conflict"
+  - method: POST
+    path: /api/news/rescore
+    description: "Re-scores historical articles that have fallback 0.0/NEUTRAL scores with the live Python VADER service."
+    queryParams:
+      limit: number # default 300
+    responses:
+      200:
+        description: "Re-scoring completed successfully"
         body:
-          error: string # "Crawl in progress. Please wait for current execution to finish."
+          success: boolean
+          message: string
+          data:
+            processedCount: number
+            rescoredCount: number
 
 internal_service:
   python_sentiment_api:
@@ -134,3 +146,9 @@ internal_service:
       score: number # -1.0 to 1.0
       label: string # POSITIVE | NEGATIVE | NEUTRAL
     notes: "Internal HTTP call from NestJS SentimentClient to Python FastAPI. Never exposed to frontend."
+
+environment_variables:
+  NEWS_RSS_FEEDS: "Comma-separated RSS feed URLs (default: CoinDesk, CoinTelegraph, Decrypt)"
+  NEWS_CRAWLER_TARGETS: "Comma-separated crawler target URLs (default: cryptoslate.com, bitcoinmagazine.com)"
+  SENTIMENT_SERVICE_URL: "URL of Python FastAPI sentiment service (default: http://localhost:8000)"
+  SENTIMENT_SERVICE_TIMEOUT_MS: "Strict SLA timeout in ms for sentiment analysis (default: 500)"
