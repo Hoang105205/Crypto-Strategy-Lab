@@ -63,21 +63,12 @@ npm install
 
 ### Bước 2: Cấu hình biến môi trường (`.env`)
 
-Tạo file `.env` từ file mẫu `.env.example` trong thư mục `workspace`:
-
-```powershell
-# Trên Windows PowerShell:
-Copy-Item .env.example .env
-
-# Hoặc trên Linux/macOS/Git Bash:
-cp .env.example .env
-```
-
-Mở file `.env` và cập nhật các thông số cần thiết:
-* `DATABASE_URL`: Đường dẫn kết nối PostgreSQL (Supabase hoặc local PostgreSQL).
-* `REDIS_HOST=localhost`, `REDIS_PORT=6379`: Kết nối Redis cho BullMQ.
-* `GEMINI_API_KEY`: API Key của Google Gemini (để dùng tính năng LLM Crawler Selector Discovery).
-* `SENTIMENT_SERVICE_URL=http://localhost:8000`: Kết nối tới Python FastAPI service.
+> **Lưu ý quan trọng dành cho Thầy / Người chấm bài**:  
+> Để Thầy không mất thời gian đăng ký tài khoản và lấy các API keys phức tạp, nhóm đã chuẩn bị sẵn **3 file `.env`** (đã cấu hình sẵn toàn bộ Database Supabase, Google Gemini API Key, Auth JWT, Redis...) trong **thư mục Google Drive** nộp bài.  
+> Thầy chỉ cần tải về và dán (paste) trực tiếp vào 3 vị trí tương ứng:
+> 1. `workspace/.env` (Thư mục gốc `workspace/`)
+> 2. `workspace/apps/backend/.env` (Thư mục Backend)
+> 3. `workspace/apps/frontend/.env` (Thư mục Frontend)  
 
 ---
 
@@ -129,32 +120,33 @@ npx prisma migrate deploy
 
 # Quay trở lại thư mục workspace
 cd ../..
+
+# Build toàn bộ services
+npm run build
 ```
 
 ---
 
 # 3. KHỞI CHẠY CÁC SERVICES (RUNNING THE SYSTEM)
 
----
-
 ### Khởi chạy từng tiến trình riêng biệt
 
-#### Terminal 1: Backend (NestJS - Port 3001)
+#### Terminal 1: Sentiment Service (Python FastAPI - Port 8000)
+```powershell
+cd workspace/apps/sentiment
+uvicorn app:app --reload --port 8000
+```
+
+#### Terminal 2: Backend (NestJS - Port 3001)
 ```powershell
 cd workspace/apps/backend
 npm run start:dev
 ```
 
-#### Terminal 2: Frontend (Next.js - Port 3000)
+#### Terminal 3: Frontend (Next.js - Port 3000)
 ```powershell
 cd workspace/apps/frontend
 npm run dev
-```
-
-#### Terminal 3: Sentiment Service (Python FastAPI - Port 8000)
-```powershell
-cd workspace/apps/sentiment
-uvicorn app:app --reload --port 8000
 ```
 
 ---
