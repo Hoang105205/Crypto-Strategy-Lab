@@ -14,7 +14,7 @@ A module consumes another module only through its contract — never its source.
 
 ### III. Extension Points Must Be Demonstrable
 Every extension point (new strategy, new search algorithm, new data provider,
-new news provider, queue backend swap) MUST be demonstrable in the final demo.
+new news provider, BullMQ queue behavior) MUST be demonstrable in the final demo.
 If it cannot be demonstrated, it does not count as extensible.
 
 ### IV. Simplicity Over Cleverness
@@ -32,13 +32,13 @@ Prefer explicit code over magic. Prefer named constants over literals.
 Prefer clear naming over comments.
 
 ## Constraints
-- **Tech Stack**: Modular Monolith — NestJS + Next.js + PostgreSQL/Prisma + EventEmitter2 + Python FastAPI (sentiment), see ARCHITECTURE.md
+- **Tech Stack**: Modular Monolith — NestJS + Next.js + PostgreSQL/Prisma + EventEmitter2 + BullMQ/Redis + Python FastAPI (sentiment), see ARCHITECTURE.md
 - **Scale**: Course project — 4 members, 4 weeks; architecture must support 10 documented extensibility scenarios
-- **Security**: No real funds, no user accounts — API keys for external data sources stored in env vars, never committed
+- **Security**: No real funds. User authentication via Supabase Auth (ADR-0015) — email/password only. API keys for external data sources stored in env vars, never committed. Per-user data isolation via app-level userId filtering (ADR-0016): `WHERE userId IS NULL OR userId = :currentUserId`
 
 ## Governance
 - Constitution supersedes all other practices
 - Amendments require documentation in ADR/ and team approval (Hoàng approves)
 - Use GLOSSARY.md for consistent terminology
 
-**Version**: 1.0 | **Ratified**: 2026-08-05 | **Last Amended**: 2026-08-05
+**Version**: 1.2 | **Ratified**: 2026-08-05 | **Last Amended**: 2026-08-18 (auth added per ADR-0015/0016)

@@ -1,0 +1,18 @@
+feature: immutable-strategy-enforcement
+description: |
+  Enforce absolute immutability of created strategies: completely disallow deletion and in-place editing across both UI and Backend API, preserving ADR-0008 reproducibility and lineage integrity.
+created: 2026-09-02T12:47:00Z
+status: completed
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: complete
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - strategy-engine
+    - frontend

@@ -22,6 +22,8 @@ build/
 
 # Testing
 coverage/
+test-results/
+playwright-report/
 
 # Python
 __pycache__/
@@ -32,7 +34,8 @@ venv/
 *.egg-info/
 
 # Prisma
-**/prisma/migrations/
+# migrations/ is COMMITTED so teammates run `prisma migrate deploy` (not `dev`)
+# against the shared Supabase DB — see sdd_artifacts/market-data-backend/note.md §4.
 
 # IDE
 .idea/
@@ -52,4 +55,4 @@ npm-debug.log*
 .turbo
 *.tsbuildinfo
 
-docs/member-d-study-guide.md
+docs

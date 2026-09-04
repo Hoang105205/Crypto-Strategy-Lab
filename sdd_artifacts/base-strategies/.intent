@@ -1,0 +1,17 @@
+feature: base-strategies
+description: |
+  Triển khai các chiến lược kỹ thuật cơ sở (MA, RSI, Bollinger, Support Resistance)
+created: 2026-08-11T19:37:00+07:00
+status: analyze_completed
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected: 
+    - Strategy Engine

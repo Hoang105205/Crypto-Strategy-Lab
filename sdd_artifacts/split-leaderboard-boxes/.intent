@@ -1,0 +1,29 @@
+feature: split-leaderboard-boxes
+description: |
+  Split the full /leaderboard route into two independent projections: a
+  System Leaderboard containing only system-owned entries (userId = null) and
+  My Strategies containing only entries owned by the current authenticated
+  user. Each projection must compute its own Top-K, contiguous ranks, and
+  updatedAt after scope filtering. Prefer a backward-compatible
+  scope=system|mine|combined query on the existing REST endpoint, with combined
+  remaining the default for existing clients and the Dashboard. Preserve the
+  current Prisma schema, nullable ownership model, global Search Loop, and
+  system-safe leaderboard:update invalidation wire. Do not add socket rooms,
+  handshakes, namespaces, or client-side authorization filtering.
+created: 2026-08-25
+status: tasks_ready
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - event-infrastructure
+    - frontend
+    - auth-consumption
+    - shared-contracts

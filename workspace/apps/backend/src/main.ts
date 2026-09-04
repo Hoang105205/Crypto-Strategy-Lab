@@ -6,6 +6,7 @@ async function bootstrap() {
   app.enableCors({
     origin: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000',
   });
+  app.enableShutdownHooks();
   await app.listen(process.env.BACKEND_PORT ?? 3001);
 }
-bootstrap();
+void bootstrap();

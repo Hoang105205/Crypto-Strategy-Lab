@@ -1,0 +1,17 @@
+feature: composite-strategy
+description: |
+  Triển khai Composite Strategy và các bộ kết hợp tín hiệu (MajorityVoteCombiner, WeightedScoreCombiner)
+created: 2026-08-12T10:19:00+07:00
+status: analyze_completed
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Strategy Engine

@@ -1,0 +1,21 @@
+﻿feature: gemini-crawler-selector-discovery
+description: |
+  Tích hợp Google Gemini LLM API vào CrawlerDiscoveryService:
+  1. Tạo GeminiDiscoveryClient tại apps/backend/src/news/services/gemini-discovery.client.ts sử dụng GEMINI_API_KEY (Gemini 2.5 Flash qua Google GenAI SDK hoặc HTTP REST API) để gửi trích đoạn DOM HTML và nhận về JSON CSS Selectors (containerSelector, titleSelector, contentSelector, linkSelector, dateSelector).
+  2. Xây dựng prompt chuyên dụng cho LLM để phân tích cấu trúc DOM và trả về định dạng JSON có cấu trúc (Structured Outputs).
+  3. Đảm bảo cơ chế Graceful Degradation: Nếu GEMINI_API_KEY không có hoặc Gemini API gặp lỗi (503/429/timeout >10s), hệ thống tự động fallback về Cheerio DOM Heuristics hiện tại mà không làm gián đoạn pipeline cào tin.
+  4. Bổ sung Unit Tests kiểm thử cả 2 trường hợp: Gemini API thành công và Gemini API lỗi/fallback.
+created: 2026-08-31T18:57:15Z
+status: proposed
+phases:
+  - specify: pending
+  - plan: pending
+  - tasks: pending
+  - implement: pending
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - News & Sentiment

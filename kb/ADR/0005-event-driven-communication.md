@@ -38,6 +38,11 @@ course project. Modules publish typed events (`BacktestRequested`, `BacktestComp
 about; no module imports another module's service classes for the purpose of triggering a side
 effect.
 
+Events are fire-and-forget notifications, not acknowledged commands. When a caller must know that
+an operation succeeded before responding (notably durable BullMQ enqueue), it awaits the public
+interface method and may publish a notification afterward. ADR-0013 applies this rule to
+`IJobQueue.enqueue` and `BacktestRequested`.
+
 Because the bus is accessed exclusively through the `IEventBus` interface (never `EventEmitter2`
 directly, and never imported by consumer modules), the underlying transport can be swapped for
 Redis Pub/Sub or a message broker later without any consumer code change — this satisfies the
@@ -57,7 +62,8 @@ Redis Pub/Sub or a message broker later without any consumer code change — thi
   the live-update mechanism, not a synchronous confirmation).
 - Negative: in-process `EventEmitter2` does not persist events — if the process crashes between
   `publish()` and a subscriber's handler completing, that delivery is lost. Acceptable for course
-  project scope; explicitly tracked as a durability gap addressed by ADR-0012's migration path.
+  project scope. ADR-0013 makes backtest jobs durable but does not turn this Event Bus into a
+  durable event log; a separate `IEventBus` transport decision is still required.
 - Risk: without discipline, a developer could still be tempted to import a sibling module's service
   directly "just this once" — mitigated by the module boundary rule in `kb/MODULES.md` and code
   review checklist item in `kb/CONTRIBUTING.md`.
@@ -66,5 +72,6 @@ Redis Pub/Sub or a message broker later without any consumer code change — thi
 - Relates to ADR-0002 (Modular Monolith over Microservices)
 - Relates to ADR-0006 (Job Queue + Worker for Backtesting) — the queue is itself triggered by an event
 - Relates to ADR-0011 (Leaderboard as Observer of Events) — a direct application of this decision
-- Relates to ADR-0012 (In-Memory Queue with BullMQ Migration Path) — the migration path this decision keeps open
+- Historical: ADR-0012 documented the queue migration path and is superseded by ADR-0013
+- Relates to ADR-0013 (BullMQ/Redis Backtest Jobs) — durable jobs with a still process-local Event Bus
 - Superseded by: none

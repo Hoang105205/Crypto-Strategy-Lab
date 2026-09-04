@@ -11,8 +11,14 @@ in code, documentation, and communication.
 | Signal | Output of a strategy: BUY, SELL, or HOLD | Strategy Engine |
 | Backtest | Simulating a strategy over historical candles | Strategy Engine, Event Infrastructure |
 | Evaluation Metrics | Return, Win Rate, Max Drawdown, Sharpe Ratio | Strategy Engine |
-| Leaderboard | Top-K ranked strategies by evaluation metric | Event Infrastructure |
-| Search Loop | Continuous cycle: generate candidates → backtest → evaluate → rank | Event Infrastructure |
+| Leaderboard | Caller-visible Top-K ranked strategies: system entries plus the current user's private entries, computed after visibility scoping | Event Infrastructure, Frontend |
+| Leaderboard Entry | Denormalized Event Infrastructure read-model row created from `BacktestCompleted`; it stores copied metrics plus logical `strategyVersionId`/`backtestResultId` references and is not the authoritative backtest result | Event Infrastructure |
+| Logical ID Reference | UUID stored to identify an entity owned by another module without declaring a Prisma relation or database foreign key; validity is maintained through public contracts and reconciliation | All modules |
+| Orphaned Leaderboard Entry | A leaderboard projection whose source result is missing or whose strategy/owner IDs no longer match; confirmed orphans are deleted by the startup/five-minute reconciler, while surviving rows remain unchanged and receive contiguous rank values on the next read | Event Infrastructure |
+| Search Loop | One global system process continuously cycling through generate → backtest → evaluate → rank; browser navigation and Live updates do not control it | Event Infrastructure |
+| Search Loop Supervisor | In-process scheduler that reads persistent desired state, owns a PostgreSQL lease, and creates successive bounded Search Loop Runs while automation is enabled (ADR-0017) | Event Infrastructure |
+| Search Loop Control | Singleton PostgreSQL record containing the global loop ON/OFF desired state, rolling backtest configuration, retry schedule, and supervisor lease. It is seeded from `SEARCH_LOOP_DEFAULT_ENABLED` only when absent; once present, the database is authoritative across restart and environment changes | Event Infrastructure |
+| Search Loop Operator | Authenticated Supabase user whose UUID is listed in `SEARCH_LOOP_OPERATOR_USER_IDS`; only these users may mutate the singleton global Search Loop. An empty list denies every mutation | Event Infrastructure |
 | Strategy Generator | Algorithm producing candidate strategies (Random, Domain-Guided) | Strategy Engine |
 | Sentiment Score | Numeric sentiment of a news article (VADER) | News & Sentiment |
 | Adapter | Class implementing a provider interface (Binance, RSS, CryptoPanic) | Market Data, News & Sentiment |
@@ -20,6 +26,9 @@ in code, documentation, and communication.
 | Job | Unit of async work in the queue (e.g., a backtest) | Event Infrastructure |
 | Worker | Queue consumer process executing jobs | Event Infrastructure |
 | Dead-letter Queue | Destination for jobs that exhausted retries | Event Infrastructure |
+| BullMQ | Node.js queue library used by Event Infrastructure to persist and coordinate backtest jobs through Redis | Event Infrastructure |
+| Redis | External data store required by BullMQ for durable queue state, priority, retry delays, locks, and job retention; not merely a cache in this context | Event Infrastructure |
+| Stalled Job | BullMQ job whose worker lock was not renewed; it is recovered for another attempt subject to the configured stalled-job policy | Event Infrastructure |
 | BFF | Backend-for-Frontend — dashboard composition layer | Event Infrastructure |
 | Strategy Registry | Central registry implementing Plugin Pattern — `register()` adds a strategy, `get()` retrieves by name, `analyze()` delegates to the registered strategy | Strategy Engine |
 | Strategy Version | Immutable snapshot of a strategy's type + parameters + version number. New params = new version. Used for reproducibility (ADR-0008) | Strategy Engine |
@@ -29,17 +38,25 @@ in code, documentation, and communication.
 | Reproducibility | Ability to re-run experiment #N with the exact same strategy version + params and get the same result. Enabled by immutable `StrategyVersion` snapshots (ADR-0008) | Strategy Engine |
 | INewsProvider | Abstraction interface for news sources (RSS, News API, Web Crawlers) returning normalized `RawArticle` payloads (ADR-0010) | News & Sentiment |
 | NewsArticle | Standardized news data entity containing `id`, `title`, `content`, `source`, `publishedAt`, `crawledAt`, `relatedCoins`, `url` | News & Sentiment |
+| CrawlerRule | Database entity storing LLM-discovered CSS selectors (`container`, `title`, `content`, `link`, `date`) per domain for fast reusable parsing (ADR-0014) | News & Sentiment |
+| Adaptive Web Crawler | Intelligent web crawler that uses LLMs for semantic selector discovery and Cheerio for high-performance extraction with selector caching (ADR-0014) | News & Sentiment |
+| Gemini Discovery Client | AI client integrating Google Gemini 2.5 Flash API to semantically discover CSS selectors from HTML DOM trees with structured JSON output and Cheerio heuristic fallback | News & Sentiment |
+| Selector Caching | Architectural optimization persisting discovered CSS scraping rules in PostgreSQL to avoid recurring LLM token costs and latency | News & Sentiment |
+| Self-Healing Extraction | Fault recovery mechanism that automatically triggers LLM re-discovery when target website redesigns cause selector staleness | News & Sentiment |
 | NewsSentimentStrategy | Strategy plugin generating BUY/SELL/HOLD signals from news sentiment scores for composite strategies (e.g. `MA + RSI + News Sentiment`) | News & Sentiment, Strategy Engine |
 | Process Isolation | Architecture pattern running Python ML service as an isolated process from NestJS backend to contain CPU loads and crashes (ADR-0009) | News & Sentiment |
 | Graceful Degradation | Reliability mechanism falling back to neutral sentiment (`0.0`) and `HOLD` signal when ML sentiment service is unreachable | News & Sentiment |
-| Event Bus | Typed pub/sub abstraction (`IEventBus`) wrapping EventEmitter2. The only channel modules use to communicate — never direct method calls (ADR-0005) | Event Infrastructure |
+| Event Bus | Typed pub/sub abstraction (`IEventBus`) wrapping EventEmitter2 for fire-and-forget notifications. Acknowledged operations use public contract interfaces such as `IJobQueue` (ADR-0005/0013) | Event Infrastructure |
 | Event Envelope | Wrapper around every published event: `eventId`, `eventType`, `eventVersion`, `occurredAt`, `correlationId`, `payload`. Auto-generated by `IEventBus.publish()` | Event Infrastructure |
 | Correlation ID | Identifier propagated across a chain of related events (e.g. `BacktestRequested → BacktestCompleted → LeaderboardUpdated`) so the full chain can be traced in logs | Event Infrastructure |
-| Idempotent (handler) | An event handler that produces the same end state no matter how many times the same event is delivered — e.g. Leaderboard upsert keyed on `backtestResultId` | Event Infrastructure |
-| Retry Policy | Rule set governing how a failed job is retried: max attempts, exponential backoff delays, and what happens once attempts are exhausted (dead-letter) | Event Infrastructure |
-| Exponential Backoff | Retry delay strategy where each retry waits longer than the last (e.g. 1s, 4s, 16s) to avoid hammering a failing dependency | Event Infrastructure |
-| Top-K | The K highest-ranked entries kept on the Leaderboard (default K = 10); results outside Top-K are still stored but not broadcast | Event Infrastructure |
-| Search Loop Run | One execution of the continuous strategy search loop, from start to a terminal state (`COMPLETED`, `STOPPED_BY_USER`, or `FAILED`); tracked as a `SearchLoopRun` record | Event Infrastructure |
+| Idempotent (handler) | An event handler that produces the same end state no matter how many times the same event is delivered — e.g. Leaderboard insert guarded by a unique `backtestResultId` | Event Infrastructure |
+| Retry Policy | Rule set governing how a failed BullMQ job is retried: three total attempts, active delays of 1s then 4s, and terminal dead-letter handling | Event Infrastructure |
+| Backoff | Delay strategy between job attempts; the backtest queue uses a deterministic custom BullMQ schedule of 1s before attempt 2 and 4s before attempt 3 | Event Infrastructure |
+| Top-K | The K highest-ranked entries after applying the relevant visibility scope (default K = 10); the namespace-wide event carries only the system Top-K | Event Infrastructure |
+| Search Loop Run | One bounded execution record of the global system search process; it has no user ownership. The 24/7 supervisor creates a later run after this record becomes terminal | Event Infrastructure |
+| Live Updates Preference | Explicit browser-persisted user choice controlling the leaderboard listener; absent choice defaults OFF, and reload/reconnect never forces ON | Frontend |
+| Safe Invalidation | A privacy-safe `leaderboard:update` notification whose payload is not trusted as a viewer snapshot; while the persisted Live updates choice is ON, the app-level provider refetches REST using the current session and temporarily reconciles every 15 seconds only while the WebSocket is disconnected | Event Infrastructure, Frontend |
+| Incremental Analysis Session | Isolated per-backtest strategy state created by `createAnalysisSession()` and advanced one candle at a time with `next(candle)`, avoiding repeated full-prefix indicator calculation while preserving chronological no-lookahead behavior | Strategy Engine |
 | WebSocket Gateway | Server-side component (`PushGateway`) that relays bus events (`LeaderboardUpdated`, `SearchLoopProgress`, etc.) to connected frontend clients over WebSocket | Event Infrastructure |
 | Leaderboard Score | Weighted combination of normalized return, win rate, and a risk score, used to rank strategies (see `kb/flows/leaderboard-update.md` BR-2) | Event Infrastructure |
 | IMarketDataAdapter | Abstraction interface for external market data sources (Binance, OKX, etc.). Implementations: `BinanceAdapter` (ADR-0004). All exchange-specific parsing stays inside the adapter | Market Data |
@@ -49,6 +66,16 @@ in code, documentation, and communication.
 | TradingPair | A tradable crypto pair (e.g., `BTCUSDT`) with `baseAsset`, `quoteAsset`, and `isActive` fields. Defined in `kb/contracts/market-data.yaml` | Market Data |
 | Subscription Deduplication | Pattern where multiple frontend clients watching the same `symbol:timeframe` share a single Binance WebSocket stream. `subscriberCount` tracks active viewers; the stream closes only when count reaches 0 | Market Data |
 | Auto-Reconnect | Automatic reconnection strategy for external WebSocket connections using exponential backoff (1s, 4s, 16s, max 3 attempts). On reconnect, missed candles are fetched via REST API (ADR-0007) | Market Data |
+
+| Authentication | Process of verifying a user's identity. Handled by Supabase Auth (ADR-0015) — email/password only. Frontend uses `@supabase/ssr` for cookie-based sessions | Auth, Frontend |
+| Authorization | Process of determining what data a user can access. Implemented via app-level userId filtering (ADR-0016): `WHERE userId IS NULL OR userId = :currentUserId` | All modules |
+| SupabaseJwtGuard | NestJS guard that verifies Supabase JWTs from the Authorization header. Fetches JWKS (cached), checks expiry, attaches userId to `request.user` | Auth |
+| @CurrentUser() | NestJS parameter decorator that extracts the authenticated userId from `request.user`. Returns `string | null` (null = unauthenticated). MUST be used with `@UseGuards(SupabaseJwtGuard)` | Auth, All modules |
+| RequireAuth | Companion guard that rejects requests where userId is null. Use after `SupabaseJwtGuard` for routes requiring a logged-in user | Auth |
+| userId (nullable) | Column on StrategyVersion, BacktestResult, LeaderboardEntry. `null` = system/shared data (loop-discovered). Non-null = user-private data. Filter: `WHERE userId IS NULL OR userId = :currentUserId` | Strategy Engine, Event Infrastructure |
+| System Data | Data with `userId = null` — shared across all users. Includes loop-discovered strategies, system backtests, and system leaderboard entries | All modules |
+| User-Private Data | Data with `userId = <uuid>` — visible only to the owning user. Includes user-created strategies, user-initiated backtests, and user leaderboard entries | All modules |
+| Equity Curve | Cumulative profit chart showing account balance growth over time, computed from `BacktestResult.trades[]` | Frontend |
 
 ## Naming Conventions
 - **API paths**: kebab-case (e.g., `/api/market-data`, `/api/strategy-backtest`)

@@ -1,0 +1,24 @@
+feature: adaptive-news-crawler
+description: |
+  Xây dựng bộ cào tin tức thích ứng LLM-Assisted Adaptive Web Crawler với Selector Caching và Self-Healing theo ADR-0014. 
+  - Entity: Tạo bảng CrawlerRule trong Prisma PostgreSQL (id, domain, targetUrl, containerSelector, titleSelector, contentSelector, linkSelector, dateSelector, isActive, lastDiscoveredAt).
+  - Discovery: Sử dụng LLM để phân tích mẫu HTML thô của trang tin (ví dụ: decrypt.co/news) và tự động sinh bộ CSS Selectors JSON.
+  - Caching: Lưu trữ bộ CSS Selectors vào bảng CrawlerRule trong Database để tái sử dụng vĩnh viễn.
+  - Fast Parsing: Mỗi chu kỳ cào định kỳ 15 phút, WebCrawlerProvider đọc CrawlerRule từ DB và dùng thư viện Cheerio bóc tách HTML siêu tốc (<50ms, 0 tốn chi phí LLM token).
+  - Normalization: Chuẩn hóa dữ liệu về RawArticle/NewsArticle, trích xuất coin động theo TradingPair DB (hoặc gán GENERAL), deduplicate theo URL và gửi sang Python VADER ML chấm điểm.
+  - Self-Healing: Tự động kích hoạt chu kỳ LLM Re-discovery để cập nhật lại CrawlerRule trong DB khi trang web đổi giao diện khiến bộ selector cũ bị gãy/trả về rỗng.
+created: 2026-08-18T15:10:00.000Z
+status: complete
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: complete
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - News & Sentiment
+    - Strategy Engine

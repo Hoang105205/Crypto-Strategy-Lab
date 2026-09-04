@@ -2,14 +2,17 @@
 # Owner: Huy | Status: Active
 # This file is the Single Source of Truth for the Strategy Engine module's API.
 # See also: kb/modules/strategy-engine.md, ADR-0003, ADR-0008
+# Reviewed 2026-08-31 for authenticated user backtests and incremental analysis sessions.
 
 entities:
   BacktestConfig:
     fields:
       initialCapital: float       # Starting capital (e.g., 10000)
       positionSizePercent: float  # % of capital per trade
-      commission: float?          # Trading fee percentage
-      slippage: float?            # Slippage simulation
+      commission: float?          # Trading fee percentage (e.g., 0.001 = 0.1%)
+      slippage: float?            # Slippage simulation rate (e.g., 0.0005 = 5bps)
+      stopLossPercent: float?     # Stop-loss as % from entry price (e.g., 0.02 = 2% below entry for LONG)
+      takeProfitPercent: float?   # Take-profit as % from entry price (e.g., 0.05 = 5% above entry for LONG)
 
   EvaluationMetrics:
     fields:
@@ -30,6 +33,7 @@ entities:
   StrategyVersion:
     fields:
       id: UUID                        # Primary key
+      userId: UUID?                   # null = system-discovered (shared), non-null = user-created (private). See ADR-0016
       strategyType: string            # e.g. "MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite"
       name: string                    # Human-readable name (e.g. "MA-20/50 Crossover")
       version: number                 # Monotonic per strategyType
@@ -44,6 +48,8 @@ entities:
   BacktestResult:
     fields:
       id: UUID                        # Primary key
+      jobId: UUID                     # Unique producer job ID; create-once idempotency key
+      userId: UUID?                   # null = system backtest (from loop), non-null = user-initiated. See ADR-0016
       strategyVersionId: UUID         # FK → StrategyVersion.id
       pair: string                    # e.g. "BTCUSDT"
       timeframe: string              # e.g. "1h", "4h", "1d"
@@ -55,7 +61,7 @@ entities:
       sharpeRatio: float              # Risk-adjusted return
       profitFactor: float             # Gross profit / gross loss
       totalTrades: number
-      trades: JSONB                   # Array of { entryDate, exitDate, entryPrice, exitPrice, side, pnl, quantity }
+      trades: JSONB                   # Array of Trade (see Trade entity below — includes stopLoss, takeProfit, etc.)
       executedAt: DateTime
       executionTimeMs: number
 
@@ -68,9 +74,14 @@ entities:
       side: string                    # "LONG" | "SHORT"
       pnl: float                     # Profit/loss percentage
       quantity: float
+      stopLoss: float?                # Stop-loss price for this trade (computed from BacktestConfig.stopLossPercent)
+      takeProfit: float?              # Take-profit price for this trade (computed from BacktestConfig.takeProfitPercent)
+      transactionCost: float?         # Fee charged on this trade (commission rate × trade value)
+      slippage: float?                # Actual slippage applied (slippage rate × entry price)
+      volumeUsd: float?               # Trade volume in USD (entryPrice × quantity)
 
 enums:
-  StrategyType: ["MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite"]
+  StrategyType: ["MA", "RSI", "Bollinger", "SR", "Sentiment", "Composite", "MACD", "STOCHASTIC", "ATR"]
   SignalAction: ["BUY", "SELL", "HOLD"]
   CombinerType: ["MajorityVote", "WeightedScore"]
 
@@ -81,7 +92,17 @@ interfaces:
       - name: analyze
         args: "(candles: Candle[])"
         returns: "Signal"
-        description: "Analyze candle data and produce a BUY/SELL/HOLD signal"
+        description: "Compatibility/direct API: analyze accumulated candle data and produce a BUY/SELL/HOLD signal"
+      - name: analyzeAsync
+        args: "(candles: Candle[])"
+        returns: "Promise<Signal>"
+        optional: true
+        description: "Optional asynchronous compatibility analysis"
+      - name: createAnalysisSession
+        args: "()"
+        returns: "IStrategyAnalysisSession"
+        optional: true
+        description: "Preferred backtest path: create isolated per-run state advanced one candle at a time"
       - name: getName
         args: "()"
         returns: "string"
@@ -92,13 +113,21 @@ interfaces:
         args: "()"
         returns: "Record<string, any>"
 
+  IStrategyAnalysisSession:
+    description: "Isolated per-backtest incremental strategy state; sessions must not be shared across runs"
+    methods:
+      - name: next
+        args: "(candle: Candle)"
+        returns: "Signal | Promise<Signal>"
+        description: "Advance indicators with exactly one chronological candle and return the current signal"
+
   IBacktester:
     description: "Backtesting execution — simulates a strategy over historical candles"
     methods:
       - name: run
         args: "(strategy: IStrategy, candles: Candle[], config: BacktestConfig)"
-        returns: "Trade[]"
-        description: "Replay candles, simulate trades based on strategy signals"
+        returns: "Promise<Trade[]>"
+        description: "Replay candles chronologically; prefer an isolated incremental session and use the accumulated-prefix API only as a compatibility fallback"
 
   IEvaluator:
     description: "Computes evaluation metrics from raw backtest trades"
@@ -116,6 +145,19 @@ interfaces:
         returns: "IStrategy[]"
         description: "Generate N candidate strategies (Random or Domain-Guided)"
 
+  IStrategyCandidatePort:
+    description: >
+      Strategy-owned public boundary used by the Search Loop. It selects the
+      requested generator, materializes exactly one generated IStrategy as an
+      immutable StrategyVersion, and returns only its stable reference.
+    methods:
+      - name: generateCandidate
+        args: "(generatorType: 'RANDOM' | 'DOMAIN_GUIDED')"
+        returns: "Promise<{ strategyVersionId: UUID, strategyName: string }>"
+        description: >
+          The returned ID is the persisted StrategyVersion.id. Callers must not
+          synthesize an ID or access StrategyVersion persistence directly.
+
   ICombiner:
     description: "Combines multiple strategy signals into a single signal"
     methods:
@@ -127,33 +169,43 @@ interfaces:
 endpoints:
   - method: GET
     path: /api/strategies
-    description: "List all registered strategies with their parameters"
+    auth: "Optional SupabaseJwtGuard; system strategies plus caller-visible user strategies"
+    description: "List the caller-visible strategy catalog with parameters"
     response:
-      type: "StrategyVersion[]"
-      example: '[{ id, strategyType, name, version, parameters, isComposite }]'
+      type: "{ name: string, type: StrategyType, parameters: JSONB, version?: number, isComposite?: boolean }[]"
+
+  - method: DELETE
+    path: /api/strategies/:name
+    auth: "Optional SupabaseJwtGuard"
+    description: "Permanently prohibited per ADR-0008; system registry entries and immutable user snapshots cannot be deleted to preserve composite dependencies and leaderboard reproducibility"
+    response:
+      type: "403 Forbidden"
 
   - method: GET
     path: /api/strategies/:id
+    auth: "Optional SupabaseJwtGuard; lookup is scoped to system plus current user"
     description: "Get a specific strategy version by ID"
     response:
       type: "StrategyVersion"
 
   - method: POST
     path: /api/strategies/composite
+    auth: "SupabaseJwtGuard + RequireAuth; anonymous callers receive 401"
     description: "Create a composite strategy from child strategies + combiner"
     request:
-      childStrategyIds: "UUID[]"
+      childStrategyNames: "string[]"
       combinerType: '"MajorityVote" | "WeightedScore"'
       combinerWeights: "number[]?    # Required for WeightedScore"
       name: "string"
     response:
-      type: "StrategyVersion"
+      type: "{ message: string, strategy: { name: string, type: StrategyType, version: number } }"
 
   - method: POST
     path: /api/strategies/backtest
+    auth: "SupabaseJwtGuard + RequireAuth; anonymous callers receive 401"
     description: "Submit a backtest request (enqueued via job queue)"
     request:
-      strategyVersionId: "UUID"
+      strategyName: "string"
       pair: "string                  # e.g. 'BTCUSDT'"
       timeframe: "string             # e.g. '1h'"
       startDate: "DateTime"
@@ -161,15 +213,22 @@ endpoints:
       backtestConfig: "BacktestConfig"
     response:
       type: "{ jobId: string, status: 'queued' }"
+      semantics: "202 is returned only after IJobQueue/BullMQ confirms Redis acceptance"
+    errors:
+      - "401 UNAUTHORIZED"
+      - "409 DUPLICATE_JOB_ID"
+      - "503 QUEUE_UNAVAILABLE"
 
   - method: GET
     path: /api/strategies/backtest/:id
-    description: "Get backtest result by ID"
+    auth: "SupabaseJwtGuard + RequireAuth; result is filtered by the verified userId"
+    description: "Get the caller-owned backtest result by producer job ID"
     response:
       type: "BacktestResult"
 
   - method: GET
     path: /api/strategies/:id/versions
+    auth: "Optional SupabaseJwtGuard; versions are scoped to system plus current user"
     description: "List all versions of a strategy type"
     response:
       type: "StrategyVersion[]"
@@ -177,9 +236,10 @@ endpoints:
 events_published:
   - name: BacktestRequested
     description: >
-      Published by Strategy Engine for a user-submitted request after validation. Strategy Engine
-      generates jobId and sets source=USER and loopRunId=null. Loop-originated requests are published
-      independently by Event Infrastructure's Loop Controller.
+      Observational notification published by Strategy Engine only after IJobQueue/BullMQ durably
+      accepts a user-submitted job. Strategy Engine generates jobId + correlationId, awaits enqueue,
+      sets source=USER and loopRunId=null, then publishes with the same identities. Loop-originated
+      notifications follow the same order in Event Infrastructure.
     payload_contract: "kb/contracts/events.yaml#/events/BacktestRequested/payload"
 
 events_consumed:

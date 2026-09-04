@@ -16,7 +16,8 @@ graph TD
   MD["Market Data<br/>(Hoàng)<br/>Binance Adapter"]
   SE["Strategy Engine<br/>(Huy)<br/>Plugin Registry"]
   NW["News & Sentiment<br/>(Thuận)<br/>Python FastAPI"]
-  INF["Event Bus + Job Queue<br/>Leaderboard + Loop<br/>(Phương)"]
+  INF["Event Bus + BullMQ Workers<br/>Leaderboard + Loop<br/>(Phương)"]
+  REDIS[("Redis<br/>BullMQ state")]
   DB[("PostgreSQL + Prisma")]
   FE <-->|REST + WebSocket| MD
   FE <-->|REST + WebSocket| SE
@@ -25,6 +26,7 @@ graph TD
   SE --> INF
   NW --> INF
   INF --> DB
+  INF --> REDIS
 ```
 
 Modules depend on shared interfaces only — never on each other's implementations.
@@ -32,13 +34,14 @@ Modules depend on shared interfaces only — never on each other's implementatio
 ## Technology Stack
 | Layer | Technology | Version | Notes |
 |-------|-----------|---------|-------|
-| Frontend | Next.js (TypeScript) | 15.x | App router dashboard, real-time via WebSocket, `lightweight-charts` for candlesticks |
+| Frontend | Next.js (TypeScript) | 16.3.x | App router dashboard, real-time via WebSocket, `lightweight-charts` for candlesticks |
 | Backend | NestJS (TypeScript) | 11.x | Each NestJS module maps to a domain module. Built-in DI, EventEmitter2, WebSocket Gateway |
 | Database | PostgreSQL + Prisma | 16 / 6.x | Type-safe ORM, JSONB for flexible strategy params. Connection pooling |
 | Module communication | EventEmitter2 | n/a (NestJS built-in) | In-process typed event bus behind `IEventBus` interface (ADR-0005). Swap to Redis Pub/Sub later |
+| Backtest queue | BullMQ + Redis | 5.x / 7.x | Durable `backtest` queue behind `IJobQueue`; priorities, retries, locks, and job retention (ADR-0013) |
 | Extensibility | Strategy Registry + Adapter Pattern | n/a | Plugin arch for strategies (ADR-0003), adapters for data sources (ADR-0004) |
 | Sentiment service | Python FastAPI | 0.115+ | Isolated process (ADR-0009); frontend never touches it directly. VADER sentiment model |
-| Testing | Jest (backend) + Vitest (frontend) | 29.x / 2.x | Unit tests for business logic, integration tests for API endpoints |
+| Testing | Jest (backend) + Vitest (frontend) | 30.x / 2.x | Unit tests for business logic, integration tests for API endpoints |
 | Monorepo | Turborepo | 2.x | `apps/backend` + `apps/frontend` + `libs/shared`. One `npm install`, one CI pipeline |
 
 ## Source Code Structure
@@ -60,9 +63,9 @@ crypto-strategy-lab/
 │   │   │   ├── strategy/                # Huy — Strategy Engine (domain logic)
 │   │   │   ├── news/                    # Thuận — News & Sentiment module
 │   │   │   ├── events/                  # Phương — Event Bus (EventEmitter2 wrapper)
-│   │   │   ├── queue/                   # Phương — Job Queue + Worker pool
+│   │   │   ├── queue/                   # Phương — BullMQ queue adapter + BacktestWorker
 │   │   │   ├── leaderboard/             # Phương — Leaderboard (Observer)
-│   │   │   ├── loop/                    # Phương — Strategy Loop Controller
+│   │   │   ├── loop/                    # Phương — bounded Strategy Loop + persistent 24/7 supervisor
 │   │   │   ├── dashboard/              # Phương — BFF composition layer
 │   │   │   └── database/               # Shared — Prisma schema + repositories
 │   │   └── test/
@@ -70,7 +73,8 @@ crypto-strategy-lab/
 │   │   └── src/
 │   │       ├── app/                     # App router pages
 │   │       ├── components/              # Chart, strategy, leaderboard, news, dashboard components
-│   │       ├── hooks/                   # useWebSocket, useMarketData, useLeaderboard, useNews
+│   │       ├── contexts/                # Auth + app-level cross-route leaderboard live state
+│   │       ├── hooks/                   # route consumers: useMarketData, useLeaderboard, useNews
 │   │       └── services/                # REST + WebSocket API clients
 │   └── sentiment/                       # Thuận — Python FastAPI sentiment service
 │       ├── app.py
@@ -84,7 +88,7 @@ crypto-strategy-lab/
 │           └── events/                  # Event type definitions
 ├── kb/                                  # Knowledge Base
 ├── sdd_artifacts/                       # Per-feature SDD artifacts
-├── docker-compose.yml                   # PostgreSQL + Redis (for BullMQ if used)
+├── docker-compose.yml                   # Local Redis for BullMQ; PostgreSQL is configured through DATABASE_URL (Supabase in current development)
 ├── package.json                         # Monorepo root
 ├── turbo.json                           # Turborepo config
 └── README.md
@@ -93,6 +97,8 @@ crypto-strategy-lab/
 ## Communication Patterns
 - **Client → Server**: REST API (JSON) + WebSocket for real-time charts
 - **Module → Module**: EventEmitter2 events (typed events, see `contracts/events`)
+- **Job dispatch**: BullMQ stores `BACKTEST` jobs in Redis; workers consume with configurable concurrency
+- **24/7 loop control**: PostgreSQL stores the authoritative singleton Search Loop desired state and lease. On a new database only, bootstrap seeds it from `SEARCH_LOOP_DEFAULT_ENABLED`; an in-process supervisor then creates successive bounded runs with rolling data windows and persisted retry backoff (ADR-0017, ADR-0018)
 - **External**: Binance REST + WebSocket adapters; news providers via adapters; NestJS → Python sentiment via HTTP
 
 ## Data Flow
@@ -108,14 +114,15 @@ crypto-strategy-lab/
 > See `kb/flows/realtime-market-data.md` for full step-by-step flow with error handling.
 
 ### Strategy Backtest Flow (secondary use case)
-1. User request → Strategy Engine; search candidate → Loop Controller. The applicable producer generates `jobId` and publishes the complete `BacktestRequested` event (`source=USER` or `source=SEARCH_LOOP`).
-2. Job Queue subscribes → preserves the producer-supplied `jobId` → enqueues BACKTEST job → Worker picks it up
+1. User request → Strategy Engine; Loop Controller calls the `SearchEngine` Facade to request candidate strategies (`RANDOM` or `DOMAIN_GUIDED`). The producer generates `jobId` + `correlationId`, awaits `IJobQueue.enqueue()`, and receives confirmation only after BullMQ stores the prioritized job in Redis.
+2. After durable enqueue, the producer publishes `BacktestRequested` as an observational notification (`source=USER` or `source=SEARCH_LOOP`); the queue does not subscribe to this Event. A BullMQ Worker then claims the Redis job.
 3. Worker calls `IMarketDataService.getCandlesRange()` to fetch historical candles
-4. Worker calls `IBacktester.run(strategy, candles, config)` → produces `Trade[]`
+4. Worker calls `IBacktester.run(strategy, candles, config)` → built-in strategies use an isolated incremental analysis session (`next(candle)`) while compatible plugins may receive the accumulated prefix array → produces `Trade[]`
 5. Worker calls `IEvaluator.evaluate(trades, capital)` → produces `EvaluationMetrics`
 6. Worker persists `BacktestResult` and publishes `BacktestCompleted` with metrics; on terminal failure it publishes `BacktestFailed` exactly once
-7. Leaderboard subscribes → updates Top-K ranking → publishes `LeaderboardUpdated`
-8. WebSocket Gateway relays `LeaderboardUpdated` to frontend
+7. Leaderboard subscribes → performs one nullable-owner insert with non-authoritative stored rank 0 → computes bounded rank/Top-K on read → publishes `LeaderboardUpdated` with system-only Top-K
+8. WebSocket Gateway relays the existing payload as a safe invalidation; while ON, the app-level provider below Auth/Infrastructure refetches caller-scoped REST with the current session even off Dashboard. If the socket is disconnected, one 15-second REST reconciliation interval runs until reconnection.
+9. Before A → B or A → anonymous renders, the provider clears the prior cache and invalidates old requests. The explicit browser-local ON/OFF choice survives navigation/reload/restart; absence defaults OFF. It freezes only the client view and never controls the global loop.
 
 > See `kb/flows/strategy-backtest.md` and `kb/flows/strategy-search-loop.md` for full flows.
 
@@ -129,25 +136,29 @@ crypto-strategy-lab/
 > See `kb/flows/news-sentiment-pipeline.md` for full flow.
 
 ## Security Model
-- **Authentication**: None (course project, no user accounts)
-- **Authorization**: n/a
-- **Data protection**: External API keys in `.env` (never committed); rate-limit handling in adapters
+- **Authentication**: Supabase Auth (ADR-0015) — email/password. Frontend uses `@supabase/ssr` for cookie-based sessions. Backend verifies Supabase JWTs via `SupabaseJwtGuard`.
+- **Authorization**: App-level userId filtering (ADR-0016). Each module owner adds `@CurrentUser()` to their controllers and filters queries: `WHERE userId IS NULL OR userId = :currentUserId`. null = system/shared data (loop-discovered), non-null = user-private data.
+- **Global operation authorization**: Search Loop state is shared by the whole system, so all start/pause/resume/stop and control enable/disable/config mutations require an authenticated Supabase user whose UUID is listed in `SEARCH_LOOP_OPERATOR_USER_IDS`. An empty list denies every mutation; read-only status remains available (ADR-0019).
+- **Data scoping**: Market Data (candles, pairs) and News are global (no userId). StrategyVersion, BacktestResult, and LeaderboardEntry have nullable `userId`. SearchLoopRun and the singleton SearchLoopControl are global system data. `enabled=true` persists the 24/7 desired state while each run remains bounded; the environment supplies only the value used when that singleton is first created. LeaderboardEntry is a separate denormalized read model: its Strategy Engine IDs are logical references without cross-module database FKs and are reconciled through the public result port.
+- **Data protection**: External API keys in `.env` (never committed); rate-limit handling in adapters. Supabase service keys in `.env` (never committed).
 
 ## Deployment Topology
 
 ### Development (W1–W4)
 - **Backend**: NestJS dev server (`npm run dev:backend`) — runs on `localhost:3001`
 - **Frontend**: Next.js dev server (`npm run dev:frontend`) — runs on `localhost:3000`
-- **Database**: PostgreSQL via `docker-compose up` — runs on `localhost:5432`
+- **Database**: PostgreSQL through `DATABASE_URL`; the current development template uses hosted Supabase PostgreSQL rather than a Compose PostgreSQL service
+- **Queue store**: Redis via `docker-compose up` — runs on `localhost:6379` with AOF persistence
 - **Sentiment Service**: Python FastAPI (`python -m uvicorn app:app`) — runs on `localhost:8000`
-- **All 4 processes** run locally on the developer's machine. Turborepo orchestrates parallel startup.
+- **Application processes and Redis** run locally. PostgreSQL is currently managed by Supabase. Turborepo/npm scripts start the applications; Docker Compose provides Redis only.
 
 ### Production (if deployed for demo)
-- **Option A (simplest)**: Single VPS running all processes via `docker-compose` (NestJS + Next.js + PostgreSQL + Python)
-- **Option B (if needed)**: Vercel for Next.js frontend, Railway/Fly.io for NestJS backend, managed PostgreSQL
+- **Option A (simplest)**: Single VPS running all processes via `docker-compose` (NestJS + Next.js + PostgreSQL + Redis + Python)
+- **Option B (if needed)**: Vercel for Next.js frontend, Railway/Fly.io for NestJS backend, managed PostgreSQL and managed Redis
 - **Not a concern for grading**: The spec focuses on architecture quality, not production deployment. Local dev is sufficient for the demo.
 
-### Scalability Path (not built, documented for interview)
-- If backtesting needs to scale from 100 → 100,000 candidates: swap in-memory queue → BullMQ/Redis (ADR-0012), add worker processes
+### Scalability Path
+- BullMQ/Redis is the accepted durable queue backend (ADR-0013). Current workers remain in the NestJS process.
+- If backtesting needs to scale from 100 → 100,000 candidates: first replace the process-local `IEventBus` transport, then run BullMQ workers as separate processes and scale them horizontally.
 - If real-time data needs to scale: swap EventEmitter2 → Redis Pub/Sub (ADR-0005), extract Market Data as a separate service
-- These are migration paths, not current architecture — see ADR-0002 (Modular Monolith) for rationale
+- The modular monolith remains current; only the queue state is externalized to Redis.

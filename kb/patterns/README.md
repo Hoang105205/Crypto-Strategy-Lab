@@ -10,7 +10,7 @@ Patterns used across the project, with where they appear and why.
 | Plugin Registry | StrategyRegistry | Strategy Engine | Open-Closed extension for strategies |
 | Composite | MajorityVote, WeightedScore combiners | Strategy Engine | Strategy composition |
 | Observer | Leaderboard subscribes to BacktestCompleted | Event Infrastructure | Reactive ranking without coupling |
-| Job Queue / Worker | Backtest execution | Event Infrastructure | Async scale for long-running work |
+| Job Queue / Worker | BullMQ `backtest` queue + Redis + BacktestWorker | Event Infrastructure | Durable async execution, priority, retry, and controlled concurrency |
 | BFF | DashboardService | Event Infrastructure | Frontend-specific composition |
 | Graceful Degradation | NewsSentimentStrategy returns HOLD | News & Sentiment | Fault tolerance |
 | Event Envelope | Every event wrapped with eventId/correlationId/occurredAt before publish | Event Infrastructure | Idempotency + tracing across async event chains |

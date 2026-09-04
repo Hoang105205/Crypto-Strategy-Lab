@@ -46,6 +46,7 @@ model TradingPair {
 
 model StrategyVersion {
   id              String   @id @default(uuid())
+  userId          String? // null = system-discovered (shared), non-null = user-created (private). See ADR-0016
   strategyType    String
   name            String
   version         Int
@@ -64,6 +65,8 @@ model StrategyVersion {
 
 model BacktestResult {
   id                String   @id @default(uuid())
+  jobId             String   @unique
+  userId            String? // null = system backtest (from loop), non-null = user-initiated. See ADR-0016
   strategyVersionId String
   pair              String
   timeframe         String
@@ -79,7 +82,7 @@ model BacktestResult {
   executedAt        DateTime @default(now())
   executionTimeMs   Int
 
-  strategyVersion   StrategyVersion @relation(fields: [strategyVersionId], references: [id])
+  strategyVersion StrategyVersion @relation(fields: [strategyVersionId], references: [id])
 
   @@index([strategyVersionId])
   @@index([pair, timeframe])
@@ -98,14 +101,15 @@ model NewsArticle {
   publishedAt    DateTime
   crawledAt      DateTime
   relatedCoins   String[]
-  sentimentScore Float
-  sentimentLabel String
+  sentimentScore Float?
+  sentimentLabel String?
   createdAt      DateTime @default(now())
 
   sentimentScores SentimentScore[]
 
   @@index([publishedAt])
   @@index([source])
+  @@index([relatedCoins])
 }
 
 model SentimentScore {
@@ -121,42 +125,131 @@ model SentimentScore {
   @@index([articleId])
 }
 
+model CrawlerRule {
+  id                String   @id @default(uuid())
+  domain            String   @unique
+  targetUrl         String
+  containerSelector String
+  titleSelector     String
+  contentSelector   String
+  linkSelector      String
+  dateSelector      String
+  isActive          Boolean  @default(true)
+  lastDiscoveredAt  DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("crawler_rules")
+}
+
 // ──────────────────────────────────────────────
 // Event Infrastructure — kb/contracts/events.yaml
+// + kb/modules/event-infrastructure.md Section 6
+// Entity shapes defined by Phương, Prisma models written by Hoàng
 // ──────────────────────────────────────────────
 
 model LeaderboardEntry {
-  id                  String   @id @default(uuid())
-  rank                Int
-  strategyVersionId   String
-  strategyName        String
-  strategyType        String
-  isComposite         Boolean
-  backtestResultId    String
-  score               Float
-  totalReturn         Float
-  winRate             Float
-  maxDrawdown         Float
-  sharpeRatio         Float
-  totalTrades         Int
-  updatedAt           DateTime @default(now())
+  id                String   @id @default(uuid())
+  userId            String? // null = system entry (shared), non-null = user entry (private). See ADR-0016
+  rank              Int
+  strategyVersionId String // ID-only reference to StrategyVersion (no FK join, per MODULES.md Rule 2)
+  strategyName      String
+  strategyType      String
+  isComposite       Boolean
+  backtestResultId  String   @unique // ID-only reference to BacktestResult; UNIQUE for idempotent upsert
+  score             Float
+  totalReturn       Float
+  winRate           Float
+  maxDrawdown       Float
+  sharpeRatio       Float
+  totalTrades       Int
+  executedAt        DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  @@index([rank])
   @@index([strategyVersionId])
+  @@index([score(sort: Desc)])
+  @@index([userId, score(sort: Desc)])
+  @@index([strategyVersionId, score(sort: Desc)])
 }
 
 model SearchLoopRun {
-  id                    String    @id @default(uuid())
-  status                String
-  generatorType         String
-  maxCandidates         Int?
-  maxDurationMs         Int?
-  stopOnNoImprovement   Int?
-  startedAt             DateTime  @default(now())
-  stoppedAt             DateTime?
-  bestStrategyVersionId String?
-  bestScore             Float?
-  testedCandidates      Int       @default(0)
+  id                                String    @id @default(uuid())
+  status                            String // RUNNING | PAUSED | COMPLETED | STOPPED_BY_USER | FAILED
+  generatorType                     String // RANDOM | DOMAIN_GUIDED
+  iteration                         Int       @default(0)
+  testedCandidates                  Int       @default(0)
+  maxCandidates                     Int?
+  maxDurationMs                     Int?
+  stopOnNoImprovementIterations     Int       @default(50)
+  currentCandidateStrategyVersionId String?
+  bestStrategyVersionId             String?
+  bestScore                         Float?
+  stopReason                        String?
+  startedAt                         DateTime  @default(now())
+  pausedAt                          DateTime?
+  stoppedAt                         DateTime?
+
+  candidates SearchLoopCandidate[]
 
   @@index([status])
+}
+
+model SearchLoopCandidate {
+  id                String   @id @default(uuid())
+  loopRunId         String
+  jobId             String   @unique
+  strategyVersionId String // ID-only reference to StrategyVersion (no FK join)
+  backtestResultId  String? // ID-only reference to BacktestResult; nullable until backtest completes
+  iteration         Int
+  score             Float?
+  status            String // GENERATING | BACKTESTING | EVALUATED | FAILED
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  loopRun SearchLoopRun @relation(fields: [loopRunId], references: [id])
+
+  @@index([loopRunId])
+}
+
+// Singleton desired-state and lease record for the 24/7 system search loop.
+// Individual SearchLoopRun rows remain bounded; the supervisor creates the
+// next run while this control is enabled.
+model SearchLoopControl {
+  id                            String    @id
+  enabled                       Boolean   @default(false)
+  generatorType                 String    @default("RANDOM")
+  pair                          String    @default("BTCUSDT")
+  timeframe                     String    @default("1h")
+  backtestWindowDays            Int       @default(180)
+  initialCapital                Float     @default(10000)
+  positionSizePercent           Float     @default(100)
+  commission                    Float?
+  slippage                      Float?
+  maxCandidatesPerRun           Int?      @default(100)
+  maxDurationMsPerRun           Int?
+  stopOnNoImprovementIterations Int       @default(50)
+  cooldownMs                    Int       @default(30000)
+  failureCount                  Int       @default(0)
+  nextRunAt                     DateTime?
+  lastStartedRunId              String?
+  lastError                     String?
+  leaseOwner                    String?
+  leaseUntil                    DateTime?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  @@index([enabled, nextRunAt])
+  @@index([leaseUntil])
+}
+
+model DeadLetterJob {
+  id             String    @id @default(uuid())
+  jobId          String    @unique
+  jobType        String
+  payload        Json
+  attempts       Int
+  lastError      String
+  deadLetteredAt DateTime  @default(now())
+  resolvedAt     DateTime?
 }

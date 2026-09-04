@@ -7,10 +7,10 @@ how multiple modules cooperate to fulfill a business scenario.
 |------|------|-------|--------|---------|
 | Realtime Market Data | `flows/realtime-market-data.md` | Hoàng | Active | Market Data, Frontend |
 | Strategy Backtest | `flows/strategy-backtest.md` | Huy | Active | Strategy Engine, Event Infrastructure, Market Data |
-| Strategy Search Loop | `flows/strategy-search-loop.md` | Phương | Active | Event Infrastructure, Strategy Engine |
-| News & Sentiment Pipeline | `flows/news-sentiment-pipeline.md` | Member C | Draft | News & Sentiment |
+| Strategy Search Loop (Persistent 24/7 Global Process) | `flows/strategy-search-loop.md` | Phương | Active | Event Infrastructure, Strategy Engine |
+| News & Sentiment Pipeline | `flows/news-sentiment-pipeline.md` | Thuận | Active | News & Sentiment |
 | Composite Strategy with Sentiment | `flows/composite-with-sentiment.md` | Huy | Active | Strategy Engine, News & Sentiment |
-| Leaderboard Update | `flows/leaderboard-update.md` | Phương | Active | Event Infrastructure, Frontend |
+| Leaderboard Update | `flows/leaderboard-update.md` | Phương | Active | Event Infrastructure, Auth, Frontend |
 
 > Module files (`kb/modules/`) capture **what's inside** each module.
 > Flow files capture **how modules cooperate** end-to-end.

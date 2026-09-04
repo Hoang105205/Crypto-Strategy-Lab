@@ -1,0 +1,162 @@
+# Contract: Auth
+# Owner: Hoàng | Status: Active
+# SSoT for authentication infrastructure — Supabase Auth integration.
+# See also: kb/modules/auth.md, ADR-0015, ADR-0016
+
+entities:
+  AuthUser:
+    description: >
+      Managed by Supabase Auth in the `auth.users` table (auth schema).
+      Prisma does NOT read or write this table. The backend only reads the userId (UUID)
+      from the verified JWT. Application tables store userId as a nullable String column.
+    fields:
+      id: UUID                # Supabase auth.users.id — stored as userId in app tables
+      email: string           # User email (from Supabase)
+      createdAt: DateTime     # Managed by Supabase
+
+  AuthSession:
+    description: >
+      Cookie-based session managed by @supabase/ssr on the frontend.
+      The backend never manages sessions — it only verifies the JWT on each request.
+    fields:
+      accessToken: string     # Supabase JWT — sent as Authorization: Bearer <token>
+      refreshToken: string    # HttpOnly cookie, managed by @supabase/ssr
+      expiresAt: DateTime
+
+decorators:
+  CurrentUser:
+    description: >
+      NestJS parameter decorator. Extracts the authenticated user's ID from the
+      verified Supabase JWT. Returns null if no JWT is present (unauthenticated request).
+      MUST be used with @UseGuards(SupabaseJwtGuard) on the controller or method.
+    usage_example: |
+      @Get()
+      @UseGuards(SupabaseJwtGuard)
+      async getStrategies(@CurrentUser() userId: string | null) {
+        // userId is the Supabase auth.users.id UUID
+        // Filter: WHERE userId IS NULL OR userId = userId
+      }
+    returns: "string | null  # Supabase user UUID, or null if unauthenticated"
+
+guards:
+  SupabaseJwtGuard:
+    description: >
+      NestJS guard that verifies the Supabase JWT from the Authorization header.
+      Fetches Supabase JWKS (cached). If the token is invalid or expired, returns 401.
+      Does NOT block unauthenticated requests by default — use @UseGuards(SupabaseJwtGuard)
+      and check userId in the controller. For routes that require authentication
+      (no anonymous access), use @UseGuards(SupabaseJwtGuard, RequireAuth).
+    verification_steps:
+      - "Extract Bearer token from Authorization header"
+      - "Verify JWT signature against Supabase JWKS (cached for 10 minutes)"
+      - "Check token expiry"
+      - "Attach userId (sub claim) to request.user"
+    errors:
+      - "401 UNAUTHORIZED — invalid or expired token"
+
+  RequireAuth:
+    description: >
+      Companion guard that rejects requests where userId is null.
+      Use after SupabaseJwtGuard for routes that require a logged-in user.
+    usage: "@UseGuards(SupabaseJwtGuard, RequireAuth)"
+
+  SearchLoopOperatorGuard:
+    description: >
+      Event Infrastructure guard for mutations of the singleton global Search Loop.
+      Requires a verified request.user.id and exact membership in the comma-separated
+      SEARCH_LOOP_OPERATOR_USER_IDS environment allowlist. An empty list denies all mutations.
+    usage: "@UseGuards(SupabaseJwtGuard, SearchLoopOperatorGuard)"
+    errors:
+      - "401 UNAUTHORIZED — no authenticated user"
+      - "403 FORBIDDEN — authenticated user is not an allowlisted Search Loop operator"
+
+endpoints:
+  - method: POST
+    path: /api/auth/register
+    description: >
+      Register a new user. Handled by Supabase Auth (frontend calls supabase.auth.signUp()
+      directly — this endpoint is NOT implemented in NestJS. Documented here for contract
+      completeness).
+    request:
+      email: string
+      password: string         # Min 8 characters (Supabase default)
+    response:
+      type: "{ user: AuthUser, session: AuthSession }"
+    errors:
+      - "400 VALIDATION_ERROR — invalid email or password too short"
+      - "409 EMAIL_ALREADY_REGISTERED"
+
+  - method: POST
+    path: /api/auth/login
+    description: >
+      Login. Handled by Supabase Auth (frontend calls supabase.auth.signInWithPassword()
+      directly — this endpoint is NOT implemented in NestJS).
+    request:
+      email: string
+      password: string
+    response:
+      type: "{ user: AuthUser, session: AuthSession }"
+    errors:
+      - "401 INVALID_CREDENTIALS"
+
+  - method: POST
+    path: /api/auth/logout
+    description: >
+      Logout acknowledgement. IMPLEMENTED in NestJS (AuthController, path `api/auth`).
+      Guarded by SupabaseJwtGuard + RequireAuth: verifies the Supabase JWT and logs the
+      userId for audit, then returns { message }. This endpoint does NOT revoke the
+      stateless JWT (no server session store; a token denylist is intentionally out of
+      scope per Constitution IV). Authoritative session invalidation is performed by the
+      frontend via supabase.auth.signOut(), which invalidates the refresh token at
+      Supabase and clears the @supabase/ssr cookies. The frontend calls this endpoint
+      best-effort BEFORE signOut() and tolerates any failure (never blocks logout).
+    guard: "@UseGuards(SupabaseJwtGuard, RequireAuth)"
+    request:
+      headers:
+        Authorization: "Bearer <supabase_access_token>"
+      body: none
+    response:
+      type: "{ message: string }"   # e.g. "Logged out successfully"
+    errors:
+      - "401 UNAUTHORIZED — missing, invalid, or expired token (frontend still signs out locally and redirects to /login)"
+
+  - method: GET
+    path: /api/auth/me
+    description: >
+      Get current user profile. Frontend reads from Supabase session, not from NestJS.
+      This endpoint exists for debugging/testing purposes. IMPLEMENTED in NestJS
+      (AuthController, path `api/auth`).
+    guard: "@UseGuards(SupabaseJwtGuard, RequireAuth)"
+    response:
+      type: "{ id: UUID }"
+
+# Data scoping rules — each module owner applies these to their own queries
+data_scoping:
+  rule: "WHERE userId IS NULL OR userId = :currentUserId"
+  explanation: >
+    userId = null means system/shared data (loop-discovered strategies, system backtests).
+    userId = <uuid> means user-private data (user-created strategies, user backtests).
+    Market Data (candles, pairs) and News have NO userId column — they are always global.
+  applies_to:
+    - "StrategyVersion (kb/contracts/strategy.yaml)"
+    - "BacktestResult (kb/contracts/strategy.yaml)"
+    - "LeaderboardEntry (kb/contracts/events.yaml)"
+  does_not_apply_to:
+    - "Candle, TradingPair (global market data)"
+    - "NewsArticle, SentimentScore (global news)"
+    - "SearchLoopRun (global system loop)"
+    - "DeadLetterJob (global queue audit)"
+
+frontend:
+  package: "@supabase/ssr"
+  session_management: "Cookie-based (HttpOnly) — compatible with Next.js App Router SSR"
+  client_setup: |
+    // lib/supabase-client.ts
+    import { createBrowserClient } from '@supabase/ssr';
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+  api_header: >
+    The API client (services/api-client.ts) reads the access token from the Supabase
+    session and attaches it as `Authorization: Bearer <token>` on every REST request.

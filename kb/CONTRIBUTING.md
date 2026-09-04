@@ -22,10 +22,12 @@
 - [ ] `kb/contracts/` updated if any API/interface changed
 - [ ] GLOSSARY terms used consistently
 - [ ] Cross-references maintained (`kb/modules/`, `kb/flows/`, `kb/ADR/`)
+- [ ] Queue changes preserve producer `jobId`, USER/SEARCH_LOOP priority, retry semantics, idempotency, and Redis key isolation
 
 ## Testing Standards
 - **Unit tests**: Required for business logic (strategies, evaluator, combiners)
 - **Integration tests**: Required for API endpoints
+- **Infrastructure integration tests**: Queue changes require Redis-backed tests for restart recovery, priority/FIFO, retries, duplicate `jobId`, stalled jobs, and graceful shutdown
 - **E2E tests**: Optional — the W4 extensibility scenarios serve as the E2E proof
 
 ## Documentation Standards

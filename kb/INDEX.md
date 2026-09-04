@@ -1,7 +1,7 @@
 # Knowledge Base Index
 
-> **Last Updated**: 2026-08-09
-> **Status**: Active — All 12 ADRs complete, all W1 KB files filled
+> **Last Updated**: 2026-09-03
+> **Status**: Active — 12-Factor env configuration, data-driven coin synonyms, and batch sentiment re-scoring documented and aligned across KB
 
 ## Purpose
 This KB is the single source of truth for the Crypto Strategy Lab project's
@@ -35,6 +35,6 @@ read from here before generating any artifacts or code.
 
 ## Scope Coverage
 - **Domain**: Crypto trading strategy analysis, composition, and evaluation
-- **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, SearchLoopRun
+- **Core Entities**: MarketData (candles), Strategy, CompositeStrategy, Backtest, BacktestResult, LeaderboardEntry, NewsArticle, SentimentScore, CrawlerRule, SearchLoopRun, SearchLoopControl
 - **Modules**: Market Data (Hoàng), Strategy Engine (Huy), News & Sentiment (Thuận), Event Infrastructure (Phương — Event Bus + Job Queue + Leaderboard + Loop + Dashboard)
-- **Business Flows**: Realtime Market Data, Strategy Backtest, Strategy Search Loop, News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update
+- **Business Flows**: Realtime Market Data, Strategy Backtest (authenticated user path + incremental built-in analysis), Strategy Search Loop (persistent 24/7 global process), News & Sentiment Pipeline, Composite Strategy with Sentiment, Leaderboard Update (read-time Top-K + cross-route safe invalidation + disconnected-only REST reconciliation)

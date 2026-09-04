@@ -1,0 +1,17 @@
+feature: backtest-search-engine
+description: |
+  Triển khai Backtest Engine, Evaluator metrics, Search Generators (Random, DomainGuided) và Strategy Versioning Service
+created: 2026-08-12T11:10:00+07:00
+status: analyze_completed
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: complete
+  - analyze: complete
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Strategy Engine

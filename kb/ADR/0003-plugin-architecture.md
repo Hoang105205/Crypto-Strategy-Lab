@@ -41,11 +41,19 @@ Chosen option: **Strategy Registry (Plugin Pattern)**, because it satisfies OCP,
     │  name: string                                  │
     │  type: StrategyType                            │
     │  analyze(candles: Candle[]): Signal           │
+    │  createAnalysisSession?(): Session            │
     │  getParameters(): Record<string, any>           │
     └──┬──────┬──────┬──────┬──────┬────────────────┘
        │      │      │      │      │
       MA    RSI  Bollinger  SR  Sentiment  ... (future)
 ```
+
+### Incremental Analysis Sessions for Performance Optimization
+
+To prevent $O(M^2)$ history re-calculation during backtesting ($M$ candles), strategies can optionally implement `createAnalysisSession()`:
+- **Session API**: Returns an `IStrategyAnalysisSession` instance with a `next(candle: Candle): Signal` method. Indicators advance chronologically in $O(1)$ per candle ($O(M)$ total execution time).
+- **State Isolation**: Each backtest creates a fresh, isolated session instance, ensuring state is never leaked or shared across concurrent backtest jobs.
+- **Backward Compatibility**: `analyze(candles)` remains the direct compatibility contract. If a plugin omits `createAnalysisSession()`, the `Backtester` falls back to prefix-based evaluation without breaking contract.
 
 ### Registration Flow
 ```typescript
@@ -61,9 +69,11 @@ registry.register(new MACDStrategy({ fastPeriod: 12, slowPeriod: 26, signalPerio
 ### Consequences
 - **Positive**: Adding a strategy is O(1) effort. Backtester and Evaluator are strategy-agnostic. NewsSentimentStrategy (Member C) plugs in the same way. Demonstrable in final demo.
 - **Positive**: Composite strategies implement `IStrategy` too, enabling recursive composition (a composite can contain other composites).
+- **Positive**: Incremental sessions optimize backtest execution time from $O(M^2)$ to $O(M)$ while maintaining clean fallback compatibility.
 - **Negative**: The Registry is a central point — if it has a bug, all strategies are affected.
 - **Negative**: Strategy discovery is manual (`register()` call). No auto-discovery from filesystem (YAGNI for this project scope).
 - **Risks**: Strategy name collisions (mitigated by unique name validation in `register()`).
+
 
 ## Links
 - Relates to ADR-0001 (Record Architecture Decisions)

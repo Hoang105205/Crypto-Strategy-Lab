@@ -1,0 +1,36 @@
+feature: market-data-backend
+description: |
+  Implement the Market Data backend module — the data spine of the platform.
+  Covers the first 7 tasks from Hoang_planning_implemention.md:
+  (1) create 4 missing skeleton dirs, (2) run Prisma migrations + wire PrismaService,
+  (3) BinanceAdapter.fetchKlines + MarketDataService.getCandles/getCandlesRange with caching,
+  (4) BinanceAdapter WebSocket stream + bounded auto-reconnect (ADR-0007),
+  (5) MarketDataGateway WebSocket relay (market-data:candles + market-data:status),
+  (6) REST endpoints + subscribe/unsubscribe with subscription dedup,
+  (7) publish MarketDataUpdated event on IEventBus.
+  Frontend chart components (tasks 8-13) are OUT OF SCOPE.
+created: 2026-08-09
+status: specified
+owner: Hoang
+phases:
+  - specify: complete
+  - plan: complete
+  - tasks: complete
+  - implement: pending   # user will switch model before implementing
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected:
+    - Market Data (primary owner: Hoang)
+    - Shared infrastructure (owner: Hoang)
+    - Database / Prisma (owner: Hoang)
+  related_adrs:
+    - ADR-0002 (Modular Monolith)
+    - ADR-0004 (Adapter Pattern for Data Sources)
+    - ADR-0005 (Event-Driven Communication — MarketDataUpdated)
+    - ADR-0007 (Auto-Reconnect for External APIs)
+  contracts_loaded:
+    - kb/contracts/market-data.yaml (SSoT for entities, interfaces, endpoints, WS channels)
+    - kb/contracts/events.yaml (IEventBus, MarketDataUpdated payload, EventEnvelope)

@@ -1,7 +1,12 @@
 # ADR-0006: Job Queue + Worker for Backtesting
 
 ## Status
-Accepted
+Accepted for the Job Queue/Worker pattern; concrete backend superseded by ADR-0013
+
+> **Backend update (2026-08-12)**: The Job Queue/Worker pattern remains accepted, but the concrete
+> in-memory implementation and Event-triggered enqueue are superseded by BullMQ/Redis in ADR-0013.
+> Producers now await `IJobQueue.enqueue` before returning queued status and publish
+> `BacktestRequested` afterward as an observational notification.
 
 ## Context
 Backtesting a strategy over historical candle data is not instantaneous — replaying candles,
@@ -19,7 +24,7 @@ anything else in the system (spec Section 19, 23, 24, 43).
 - The team needs to demonstrate horizontal scalability conceptually within a 4-week timeline, without necessarily standing up a distributed system
 
 ## Decision Drivers (continued)
-- Must integrate with the event-driven architecture from ADR-0005 — the queue is triggered by `BacktestRequested` and reports back via `BacktestCompleted`/`BacktestFailed`, not via a return value
+- Must integrate with ADR-0005 — queue acceptance is acknowledged through `IJobQueue.enqueue`, while execution outcomes remain decoupled `BacktestCompleted`/`BacktestFailed` events (updated by ADR-0013)
 
 ## Considered Options
 1. **Synchronous execution** — run the backtest inline within the REST request handler
@@ -48,19 +53,17 @@ to a dead-letter queue and `BacktestFailed` + `BacktestDeadLettered` are publish
   processes against a durable queue) — the `IJobQueue` interface and every consumer of it
   (`LoopController`, `LeaderboardService`) do not change.
 - Positive: retry + dead-letter isolate one bad candidate from stalling the whole search loop.
-- Negative: the in-memory queue does not survive a process restart — any job mid-flight at crash
-  time is lost, and any `SearchLoopRun` in progress must be reconciled to a `FAILED` state on
-  restart (see `kb/flows/strategy-search-loop.md`, "System restarts mid-loop"). This is an accepted
-  MVP limitation, not a hidden defect.
+- Historical consequence: the original in-memory backend did not survive restart. ADR-0013 removes
+  this limitation for waiting/delayed BullMQ jobs and adds stalled-job recovery through Redis.
 - Negative: a single shared worker pool means a long-running search loop can compete with
   interactive user-submitted backtests for worker capacity. Mitigated conceptually by giving
   `source: "USER"` jobs priority in the dequeue order (tracked as an open question in
   `kb/modules/event-infrastructure.md`).
-- Risk: without back-pressure, an extremely large `maxCandidates` value could grow the in-memory
-  queue unbounded — acceptable for course-project data volumes, flagged for the BullMQ migration.
+- Risk: an extremely large `maxCandidates` can grow Redis queue depth; mitigate with bounded Loop
+  generation, queue health monitoring, retention, and future back-pressure.
 
 ## Links
 - Relates to ADR-0005 (Event-Driven Communication) — the queue is entered/exited entirely through events
 - Relates to ADR-0011 (Leaderboard as Observer of Events) — consumes the queue's `BacktestCompleted` output
-- Relates to ADR-0012 (In-Memory Queue with BullMQ Migration Path) — the scale-up path for this decision
-- Superseded by: none
+- Relates to ADR-0013 (BullMQ/Redis Backtest Jobs) — active backend for this pattern
+- Superseded by: ADR-0013 for the concrete queue backend only; this ADR's Job Queue/Worker pattern remains active

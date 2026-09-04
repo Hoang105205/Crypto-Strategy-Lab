@@ -26,35 +26,116 @@ entities:
       model: string # 'VADER'
       scoredAt: string (ISO8601)
 
+  CrawlerRule:
+    fields:
+      id: string (uuid)
+      domain: string # e.g. 'decrypt.co'
+      targetUrl: string # e.g. 'https://decrypt.co/news'
+      containerSelector: string # e.g. 'article.post-card'
+      titleSelector: string # e.g. 'h3.post-title'
+      contentSelector: string # e.g. 'p.post-excerpt'
+      linkSelector: string # e.g. 'a.story-link'
+      dateSelector: string # e.g. 'time'
+      isActive: boolean # default true
+      lastDiscoveredAt: string (ISO8601)
+      createdAt: string (ISO8601)
+      updatedAt: string (ISO8601)
+
 interfaces:
   INewsProvider:
     methods:
-      - fetchLatest(limit?: number, coin?: string): Promise<RawArticle[]>
+      - fetchLatest(limit?: number, coin?: string, activeCoins?: string[]): Promise<RawArticle[]>
   
   SentimentClient:
     methods:
       - analyzeText(text: string): Promise<SentimentResult>
+
+  GeminiDiscoveryClient:
+    methods:
+      - discoverSelectors(htmlSample: string, domain: string, targetUrl: string): Promise<DiscoveredRule>
+    config:
+      env_key: GEMINI_API_KEY
+      model: GEMINI_MODEL # default 'gemini-3.6-flash'
+      timeout_ms: 10000
+    fallback:
+      strategy: "Semantic Cheerio DOM Heuristics"
+      trigger: "API Key missing, network timeout (>10s), 429 rate limit, or 5xx service unavailable"
+
+  IAdaptiveCrawler:
+    methods:
+      - discoverSelectors(htmlSample: string, domain: string): Promise<CrawlerRule>
+      - extractArticles(html: string, rule: CrawlerRule, activeCoins?: string[]): Promise<RawArticle[]>
 
 endpoints:
   - method: GET
     path: /api/news
     queryParams:
       limit: number # default 10, max 50
-      coin: string # e.g. 'BTC'
+      offset: number # default 0 (for offset-based pagination / Load More)
+      coin: string # e.g. 'BTC', 'ETH', 'GENERAL', 'ALL' (single coin / general filter)
+      coins: string # e.g. 'BTC,ETH,SOL,GENERAL' (comma-separated multi-coin filter)
     response:
       success: boolean
       data: NewsArticle[]
+      pagination:
+        total: number # total articles matching filter
+        limit: number # requested limit
+        offset: number # requested offset
+        hasMore: boolean # true if offset + limit < total
+    notes: "Articles not matching any active TradingPair are tagged with 'GENERAL'. The frontend dynamically retrieves active trading pairs from GET /api/market-data/pairs."
 
   - method: GET
     path: /api/sentiment/aggregate
     queryParams:
-      timeframe: string # '1h' | '24h' | '7d'
-      coin: string # e.g. 'BTC'
+      timeframe: string # '1h' | '24h' | '7d' (default: '24h')
+      coin: string # e.g. 'BTC', 'ETH', 'GENERAL' (single coin)
+      coins: string # e.g. 'BTC,ETH' (multi-coin filter)
     response:
       score: number # average score -1.0 to 1.0
       label: string # POSITIVE | NEGATIVE | NEUTRAL
       articleCount: number
+      positiveCount: number
+      neutralCount: number
+      negativeCount: number
+      positiveRatio: number # 0 to 100 percentage
+      neutralRatio: number # 0 to 100 percentage
+      negativeRatio: number # 0 to 100 percentage
       updatedAt: string (ISO8601)
+
+  - method: POST
+    path: /api/news/crawl
+    description: "Manually trigger on-demand news collection across registered providers with 2-minute cooldown rate-limiting and mutex locking."
+    rate_limiting:
+      cooldown_seconds: 120 # 2 minutes cooldown between manual crawl triggers
+      enforcement: "Backend in-memory timestamp check + mutex lock"
+    responses:
+      200:
+        description: "News collection completed successfully"
+        body:
+          success: boolean
+          count: number # Number of processed/ingested articles
+          message: string
+      429:
+        description: "Rate limit exceeded (cooldown active)"
+        body:
+          error: string # "Rate limit exceeded. Please wait before crawling again."
+          retryAfterSeconds: number # Remaining seconds until next allowed crawl
+      409:
+        description: "Concurrent crawl conflict"
+  - method: POST
+    path: /api/news/rescore
+    description: "Re-scores historical articles that have fallback 0.0/NEUTRAL scores with the live Python VADER service."
+    queryParams:
+      limit: number # default 300
+    responses:
+      200:
+        description: "Re-scoring completed successfully"
+        body:
+          success: boolean
+          message: string
+          data:
+            processedCount: number
+            rescoredCount: number
 
 internal_service:
   python_sentiment_api:
@@ -65,3 +146,9 @@ internal_service:
       score: number # -1.0 to 1.0
       label: string # POSITIVE | NEGATIVE | NEUTRAL
     notes: "Internal HTTP call from NestJS SentimentClient to Python FastAPI. Never exposed to frontend."
+
+environment_variables:
+  NEWS_RSS_FEEDS: "Comma-separated RSS feed URLs (default: CoinDesk, CoinTelegraph, Decrypt)"
+  NEWS_CRAWLER_TARGETS: "Comma-separated crawler target URLs (default: cryptoslate.com, bitcoinmagazine.com)"
+  SENTIMENT_SERVICE_URL: "URL of Python FastAPI sentiment service (default: http://localhost:8000)"
+  SENTIMENT_SERVICE_TIMEOUT_MS: "Strict SLA timeout in ms for sentiment analysis (default: 500)"

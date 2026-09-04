@@ -1,38 +1,41 @@
 """
-Crypto Strategy Lab — Sentiment Analysis Service
+Crypto Strategy Lab — Sentiment Analysis Micro-Service
 Owner: Thuan
 
-FastAPI service for ML-based sentiment analysis.
-Called internally by the NestJS backend via POST http://localhost:8000/analyze
-Never exposed to the frontend directly.
+FastAPI service for ML-based VADER sentiment analysis.
+Called internally by NestJS SentimentClient via POST http://localhost:8000/analyze
+Process Isolation per ADR-0009.
 """
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-
+from models import AnalyzeRequest, AnalyzeResponse
 from analyzer import SentimentAnalyzer
 
-app = FastAPI(title="Crypto Strategy Lab — Sentiment Service", version="0.1.0")
+app = FastAPI(
+    title="Crypto Strategy Lab — Sentiment Service",
+    description="Python FastAPI VADER ML Sentiment Analysis Process",
+    version="1.0.0",
+)
+
 analyzer = SentimentAnalyzer()
-
-
-class AnalyzeRequest(BaseModel):
-    text: str
-
-
-class AnalyzeResponse(BaseModel):
-    score: float  # -1.0 to 1.0
-    label: str  # POSITIVE | NEGATIVE | NEUTRAL
 
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "model": "VADER"}
+    """Health check endpoint for process monitoring and readiness probes"""
+    return {"status": "ok", "service": "sentiment-fastapi", "model": "VADER"}
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze_text(request: AnalyzeRequest):
+    """
+    Analyze sentiment score (-1.0 to 1.0) and label (POSITIVE, NEGATIVE, NEUTRAL) for text content
+    """
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="Text must not be empty")
-    result = analyzer.analyze(request.text)
-    return AnalyzeResponse(score=result["score"], label=result["label"])
+
+    try:
+        result = analyzer.analyze(request.text)
+        return AnalyzeResponse(score=result["score"], label=result["label"])
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Sentiment processing failed: {str(err)}")

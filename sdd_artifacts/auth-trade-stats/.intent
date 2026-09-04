@@ -1,0 +1,20 @@
+feature: auth-trade-stats
+description: |
+  Hoàng's implementation tasks for new requirements (todo.md):
+  - A1-A4: Supabase Auth integration (Prisma migration, JWT guard, @CurrentUser decorator, frontend auth)
+  - B1: Extend Trade type with stopLoss, takeProfit, transactionCost, slippage, volumeUsd
+  - B3: Frontend trade detail table component
+  - C1-C2: Equity curve chart + dashboard integration
+created: 2026-08-18
+status: in_progress
+phases:
+  - specify: done
+  - plan: done
+  - tasks: done
+  - implement: in_progress
+  - analyze: pending
+  - converge: pending
+kb_snapshot:
+  constitution_loaded: true
+  architecture_loaded: true
+  modules_affected: [Auth, Market Data, Frontend, Strategy Engine (shared types only)]
